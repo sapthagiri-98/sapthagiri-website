@@ -235,3 +235,58 @@ select:focus,input:focus,textarea:focus{border-color:var(--orange);box-shadow:0 
 .day-drill-tabs button.t-green .n{color:#047857}.day-drill-tabs button.t-orange .n{color:#92400e}.day-drill-tabs button.t-purple .n{color:#6b21a8}.day-drill-tabs button.t-red .n{color:#b91c1c}
 
 @media(max-width:480px){.card{padding:18px 14px!important}.main-container{padding:14px 10px!important}.cal-day{min-height:60px}.cal-day .mini{display:none}}
+
+/* =======================================================================
+   MOBILE + DESKTOP POLISH  (appended — refines responsiveness only)
+   Shared by every portal page via portal.css. Nothing above was removed.
+   ======================================================================= */
+/* Footer branding now uses the header logo instead of the school-name text */
+.site-footer .f-brand{min-height:40px}
+.site-footer .f-brand .f-logo{height:40px;width:auto;background:#fff;padding:5px 10px;border-radius:10px;display:block}
+.site-footer .f-brand .f-fallback{font-family:var(--head);font-weight:700;color:#fff;font-size:15px}
+
+/* A touch more breathing room on large screens */
+@media(min-width:901px){ .app-main{padding:26px 28px 48px} }
+
+/* ---------- tablet & below: elegant sticky module nav ---------- */
+@media(max-width:900px){
+  .app-mobile-nav{position:sticky;top:66px;z-index:40;padding:10px 12px;gap:8px;
+    background:rgba(255,255,255,.96);-webkit-backdrop-filter:saturate(180%) blur(8px);backdrop-filter:saturate(180%) blur(8px);
+    border-bottom:1px solid var(--border);scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .app-mobile-nav::-webkit-scrollbar{display:none}
+  .app-mobile-nav a{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;
+    border:1px solid var(--border);background:#fff;font-weight:600;font-size:13px;color:var(--text-main);
+    white-space:nowrap;box-shadow:var(--shadow-sm);transition:background .15s ease,color .15s ease,box-shadow .15s ease}
+  .app-mobile-nav a i{font-size:18px;color:var(--maroon)}
+  .app-mobile-nav a.active{background:var(--maroon);color:#fff;border-color:var(--maroon);box-shadow:0 6px 16px rgba(138,22,24,.28)}
+  .app-mobile-nav a.active i{color:#fff}
+  .app-main{padding:18px 14px 44px}
+}
+
+/* ---------- phones ---------- */
+@media(max-width:640px){
+  .site-header .wrap{min-height:58px}
+  .app-mobile-nav{top:58px}
+  .header-actions{gap:8px}
+  .header-back{padding:8px 12px;font-size:.85rem}
+  .header-logout{padding:8px 12px}
+  /* toolbars & selectors go full width and stack cleanly */
+  .mod-toolbar{gap:8px}
+  .mod-toolbar .smart-selector{max-width:none;flex:1 1 100%}
+  .smart-selector-row{grid-template-columns:1fr 1fr}
+  /* bulk / action bars become equal tappable targets */
+  .att-bulkbar .btn{flex:1 1 auto}
+  /* modals slide up as bottom sheets */
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal-content{max-width:none;width:100%;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-bottom-left-radius:0;border-bottom-right-radius:0}
+  /* comfortable tap targets */
+  .pa-toggle button{padding:8px 16px}
+}
+
+/* ---------- very small phones ---------- */
+@media(max-width:430px){
+  .smart-selector-row{grid-template-columns:1fr}
+  .stat-row{grid-template-columns:1fr 1fr}
+  .att-counts{gap:8px}
+}

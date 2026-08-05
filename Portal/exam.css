@@ -141,3 +141,17 @@
 #exToast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #exToast.ok{background:#065f46}#exToast.err{background:#991b1b}
 #exToast i{font-size:18px}
+
+/* =======================================================================
+   MOBILE POLISH (appended) — keeps exam toolbars/tabs usable on phones.
+   ======================================================================= */
+@media(max-width:560px){
+  .ex-toolbar{flex-direction:column;align-items:stretch}
+  .ex-field{width:100%}
+  .ex-field select,.ex-field input{min-width:0;width:100%}
+  .ex-tabs{width:100%}
+  .ex-tabs button{flex:1 1 auto;justify-content:center}
+  .ex-actbar{flex-direction:column;align-items:stretch}
+  .ex-actbar .btn{width:100%}
+  .ex-kpis{grid-template-columns:repeat(2,1fr)}
+}

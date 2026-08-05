@@ -113,7 +113,7 @@
     document.body.insertBefore(head, document.body.firstChild);
     var foot = document.createElement("div");
     foot.innerHTML =
-      '<footer class="site-footer"><div class="wrap"><div class="f-brand"><i class="material-icons" style="color:#fff;">school</i>' + esc(S.name) + '</div><nav class="f-links"><a href="' + CONFIG.WEBSITE_URL + '">Home</a><a href="' + WA + '" target="_blank" rel="noopener">WhatsApp</a><a href="tel:' + S.phone + '">' + S.phone + '</a></nav><div class="f-copy">© <span>' + new Date().getFullYear() + '</span> ' + esc(S.name) + ', ' + esc(S.city) + '. Digital Portal.</div></div></footer>' +
+      '<footer class="site-footer"><div class="wrap"><div class="f-brand"><img class="f-logo" src="../header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\';"><span class="f-fallback" style="display:none;align-items:center;gap:8px;"><i class="material-icons" style="color:#fff;">school</i>' + esc(S.name) + '</span></div><nav class="f-links"><a href="' + CONFIG.WEBSITE_URL + '">Home</a><a href="' + WA + '" target="_blank" rel="noopener">WhatsApp</a><a href="tel:' + S.phone + '">' + S.phone + '</a></nav><div class="f-copy">© <span>' + new Date().getFullYear() + '</span> ' + esc(S.name) + ', ' + esc(S.city) + '. Digital Portal.</div></div></footer>' +
       '<a class="fab-wa" href="' + WA + '" target="_blank" rel="noopener" title="Chat on WhatsApp">💬</a>';
     document.body.appendChild(foot);
     var lo = document.getElementById("pv2Logout"); if (lo) lo.addEventListener("click", function () { Session.logout(); });
@@ -166,7 +166,8 @@
     var side = document.getElementById("nav");
     if (side) side.innerHTML = '<div class="pv2-sidebar-inner"><div class="pv2-sidebar-title">Portal Modules</div>' + items.map(function (m) { return '<a class="pv2-navitem ' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + m.label + '</span>' + (m.soon ? '<em class="pv2-soon">Soon</em>' : "") + '</a>'; }).join("") + '</div>';
     var mob = document.getElementById("mobileNav");
-    if (mob) mob.innerHTML = items.filter(function (m) { return !m.soon; }).map(function (m) { var parts = m.label.split(" "); return '<a class="' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '">' + parts[parts.length - 1] + '</a>'; }).join("");
+    var SHORT = { attendance: "Attendance", homework: "Homework", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", dashboard: "Dashboard" };
+    if (mob) mob.innerHTML = items.filter(function (m) { return !m.soon; }).map(function (m) { return '<a class="' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + (SHORT[m.id] || m.label) + '</span></a>'; }).join("");
   }
 
   /* Inject a Daily/Monthly-style sub-tab bar above #view (no page-script change). */
