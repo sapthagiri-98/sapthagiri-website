@@ -59,7 +59,7 @@
   (function () {
     var P = window.Portal;
     P.renderChrome({ app: false });
-    if (P.Session.get()) { location.replace("attendance.html"); return; }
+    if (P.Session.get()) { location.replace("dashboard.html"); return; }
     var seg = document.getElementById("loginSeg"), typeEl = { value: "Admin" }, empField = document.getElementById("employeeField"), empSel = document.getElementById("employee");
     var stuField = document.getElementById("studentField"), pass = document.getElementById("password"), btn = document.getElementById("loginBtn"), err = document.getElementById("error-msg");
     var employeesLoaded = false;
@@ -88,7 +88,7 @@
       if(t==="Admin")run=login(P.CONFIG.ADMIN_USER_NAME,pw,"Admin");
       else if(t==="Employee"){var name=empSel.value;if(!name){showError("Please select an account.");btn.disabled=false;btn.innerHTML=original;return;}run=login(name,pw,"Employee");}
       else{showError("Student / Parent login is not enabled yet.");btn.disabled=false;btn.innerHTML=original;return;}
-      run.then(function(ok){if(ok)location.href="attendance.html";else showError("Invalid login details.");}).catch(function(e){showError(e&&e.message?e.message:"Login failed.");}).finally(function(){btn.disabled=false;btn.innerHTML=original;});
+      run.then(function(ok){if(ok)location.href="dashboard.html";else showError("Invalid login details.");}).catch(function(e){showError(e&&e.message?e.message:"Login failed.");}).finally(function(){btn.disabled=false;btn.innerHTML=original;});
     }
     btn.addEventListener("click",doLogin);pass.addEventListener("keydown",function(e){if(e.key==="Enter")doLogin();});
   })();

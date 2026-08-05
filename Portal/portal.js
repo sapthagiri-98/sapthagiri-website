@@ -100,11 +100,11 @@
   };
 
   /* ---------------- site chrome ---------------- */
-  function _logo() { return '<img src="../header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';"><span class="fallback" style="display:none;"><i class="material-icons">school</i>' + esc(S.name) + '</span>'; }
+  function _logo() { return '<img src="header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';"><span class="fallback" style="display:none;"><i class="material-icons">school</i>' + esc(S.name) + '</span>'; }
   function renderChrome(opts) {
     opts = opts || {};
     var right = opts.app
-      ? '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '">🌐 Website</a><span class="header-user">Welcome, <strong>' + esc(opts.userName || "") + '</strong></span><button class="header-logout" id="pv2Logout"><i class="material-icons" style="font-size:16px;">logout</i> Log Out</button></div>'
+      ? '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '">🌐 Website</a><span class="header-user profile-chip" title="' + esc(opts.userName || "") + '"><i class="material-icons">account_circle</i><strong>' + esc(opts.userName || "") + '</strong></span><button class="header-logout" id="pv2Logout"><i class="material-icons" style="font-size:16px;">logout</i> Log Out</button></div>'
       : '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '">← Back to Website</a></div>';
     var head = document.createElement("div");
     head.innerHTML =
@@ -113,7 +113,7 @@
     document.body.insertBefore(head, document.body.firstChild);
     var foot = document.createElement("div");
     foot.innerHTML =
-      '<footer class="site-footer"><div class="wrap"><div class="f-brand"><img class="f-logo" src="../header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\';"><span class="f-fallback" style="display:none;align-items:center;gap:8px;"><i class="material-icons" style="color:#fff;">school</i>' + esc(S.name) + '</span></div><nav class="f-links"><a href="' + CONFIG.WEBSITE_URL + '">Home</a><a href="' + WA + '" target="_blank" rel="noopener">WhatsApp</a><a href="tel:' + S.phone + '">' + S.phone + '</a></nav><div class="f-copy">© <span>' + new Date().getFullYear() + '</span> ' + esc(S.name) + ', ' + esc(S.city) + '. Digital Portal.</div></div></footer>' +
+      '<footer class="site-footer"><div class="wrap"><div class="f-brand"><img class="f-logo" src="header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\';"><span class="f-fallback" style="display:none;align-items:center;gap:8px;"><i class="material-icons" style="color:#fff;">school</i>' + esc(S.name) + '</span></div><nav class="f-links"><a href="' + CONFIG.WEBSITE_URL + '">Home</a><a href="' + WA + '" target="_blank" rel="noopener">WhatsApp</a><a href="tel:' + S.phone + '">' + S.phone + '</a></nav><div class="f-copy">© <span>' + new Date().getFullYear() + '</span> ' + esc(S.name) + ', ' + esc(S.city) + '. Digital Portal.</div></div></footer>' +
       '<a class="fab-wa" href="' + WA + '" target="_blank" rel="noopener" title="Chat on WhatsApp">💬</a>';
     document.body.appendChild(foot);
     var lo = document.getElementById("pv2Logout"); if (lo) lo.addEventListener("click", function () { Session.logout(); });
@@ -125,16 +125,16 @@
      examinations-tracker, fees. Others → coming-soon.html.
      mgmt hides from teachers; teacherOnly hides from Management. */
   var MENU = [
-    { id: "attendance",  label: "Student Attendance",       icon: "assignment_turned_in", href: "attendance.html",           perm: "Daily Student Attendance" },
-    { id: "homework",    label: "Digital Homework Diary",   icon: "menu_book",            href: "homework.html",             perm: "Digital Homework Diary" },
-    { id: "attlog",      label: "My Attendance Log",        icon: "pending_actions",      href: "attendance-log.html",       perm: "My Attendance Log", teacherOnly: true },
-    { id: "stafftrack",  label: "Staff Attendance",         icon: "groups",               href: "staff-attendance.html",     perm: "Staff Attendance Tracker", mgmt: true },
-    { id: "holidays",    label: "Holidays Management",       icon: "event_busy",           href: "holidays.html",             perm: "Holidays Management", mgmt: true },
-    { id: "syllabus",    label: "Syllabus Tracker",         icon: "fact_check",           href: "syllabus.html",             perm: "Syllabus Tracker" },
-    { id: "exams",       label: "Examinations Management",  icon: "emoji_events",         href: "examinations.html",         perm: "Examinations Management", mgmt: true },
-    { id: "examstrack",  label: "Examinations Tracker",     icon: "event_available",      href: "examinations-tracker.html", perm: "Examinations Tracker", teacherOnly: true },
-    { id: "fees",        label: "Fee Ledger Database",      icon: "payments",             href: "fees.html",                 perm: "Fee Ledger Database", mgmt: true },
-    { id: "dashboard",   label: "Management Dashboard",     icon: "dashboard",            soon: true, perm: "Management Dashboard", mgmt: true }
+    { id: "attendance",  label: "Student Attendance",       icon: "assignment_turned_in", href: "attendance.html",           perm: "Daily Student Attendance", desc: "Daily attendance · Monthly sheets" },
+    { id: "homework",    label: "Digital Homework Diary",   icon: "menu_book",            href: "homework.html",             perm: "Digital Homework Diary", desc: "Assign homework · Review submissions" },
+    { id: "attlog",      label: "My Attendance Log",        icon: "pending_actions",      href: "attendance-log.html",       perm: "My Attendance Log", teacherOnly: true, desc: "Your punches · Monthly timesheet" },
+    { id: "stafftrack",  label: "Staff Attendance",         icon: "groups",               href: "staff-attendance.html",     perm: "Staff Attendance Tracker", mgmt: true, desc: "Monitor punches · Attendance summary" },
+    { id: "holidays",    label: "Holidays Management",       icon: "event_busy",           href: "holidays.html",             perm: "Holidays Management", mgmt: true, desc: "Holiday calendar · Add & manage" },
+    { id: "syllabus",    label: "Syllabus Tracker",         icon: "fact_check",           href: "syllabus.html",             perm: "Syllabus Tracker", desc: "Lesson progress · Completion tracking" },
+    { id: "exams",       label: "Examinations Management",  icon: "emoji_events",         href: "examinations.html",         perm: "Examinations Management", mgmt: true, desc: "Schedule exams · Set syllabus" },
+    { id: "examstrack",  label: "Examinations Tracker",     icon: "event_available",      href: "examinations-tracker.html", perm: "Examinations Tracker", teacherOnly: true, desc: "Upcoming exams · Syllabus readiness" },
+    { id: "fees",        label: "Fee Ledger Database",      icon: "payments",             href: "fees.html",                 perm: "Fee Ledger Database", mgmt: true, desc: "Student fee records · Payment history" },
+    { id: "dashboard",   label: "Management Dashboard",     icon: "dashboard",            soon: true, perm: "Management Dashboard", mgmt: true, desc: "School-wide analytics overview" }
   ];
 
   /* Sub-tabs group two+ pages under one sidebar module. Key = sidebar nav id. */
@@ -166,8 +166,11 @@
     var side = document.getElementById("nav");
     if (side) side.innerHTML = '<div class="pv2-sidebar-inner"><div class="pv2-sidebar-title">Portal Modules</div>' + items.map(function (m) { return '<a class="pv2-navitem ' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + m.label + '</span>' + (m.soon ? '<em class="pv2-soon">Soon</em>' : "") + '</a>'; }).join("") + '</div>';
     var mob = document.getElementById("mobileNav");
-    var SHORT = { attendance: "Attendance", homework: "Homework", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", dashboard: "Dashboard" };
-    if (mob) mob.innerHTML = items.filter(function (m) { return !m.soon; }).map(function (m) { return '<a class="' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + (SHORT[m.id] || m.label) + '</span></a>'; }).join("");
+    var SHORT = { home: "Home", attendance: "Attendance", homework: "Homework", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", dashboard: "Dashboard" };
+    // Mobile bottom navigation: a permanent "Home" (dashboard launcher) followed
+    // by the same permission-filtered modules used on desktop. No duplicate logic.
+    var homeItem = '<a class="' + (activeId === "home" ? "active" : "") + '" href="dashboard.html"><i class="material-icons">home</i><span>Home</span></a>';
+    if (mob) mob.innerHTML = homeItem + items.filter(function (m) { return !m.soon; }).map(function (m) { return '<a class="' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + (SHORT[m.id] || m.label) + '</span></a>'; }).join("");
   }
 
   /* Inject a Daily/Monthly-style sub-tab bar above #view (no page-script change). */
@@ -193,12 +196,64 @@
 
   function openModal(id) { var m = document.getElementById(id); if (m) m.classList.add("show"); }
   function closeModal(id) { var m = document.getElementById(id); if (m) m.classList.remove("show"); }
-  function bootPage(activeId) { var session = Session.require(); if (!session) return null; renderChrome({ app: true, userName: session.name }); renderNav(activeId, session); renderSubtabs(activeId, session); return session; }
+
+  /* ---------------- shared module helper (single source of truth) ----------
+     Returns ONLY the modules the logged-in user may see, reusing the exact
+     permission logic (_visibleMenu) that drives the desktop sidebar. The
+     dashboard launcher and the mobile bottom-nav both consume this, so the
+     permission rules are never duplicated. `soon` modules are excluded
+     because they are not launchable yet. */
+  function getVisibleModules(session) {
+    session = session || Session.get() || {};
+    return _visibleMenu(session).filter(function (m) { return !m.soon; });
+  }
+
+  /* Mobile Admin = Management role on a small screen. On phones the admin
+     dashboard is monitoring-only, so every write control is hidden via the
+     `mobile-admin` body class (presentation layer only — backend untouched). */
+  var MOBILE_ADMIN_BP = 900;
+  function isMobileAdmin(session) {
+    session = session || Session.get();
+    return !!(session && session.role === "Management" &&
+      (window.innerWidth || document.documentElement.clientWidth) < MOBILE_ADMIN_BP);
+  }
+  function _applyReadOnlyClass(session) {
+    var on = isMobileAdmin(session);
+    document.body.classList.toggle("mobile-admin", on);
+    return on;
+  }
+
+  function bootPage(activeId) {
+    var session = Session.require(); if (!session) return null;
+    renderChrome({ app: true, userName: session.name });
+    renderNav(activeId, session); renderSubtabs(activeId, session);
+    _applyReadOnlyClass(session);
+    window.addEventListener("resize", function () { _applyReadOnlyClass(session); });
+    return session;
+  }
+
+  /* Boot helper for the Dashboard (Home) launcher. The dashboard IS the
+     navigation, so we deliberately DO NOT populate the left sidebar here and
+     tag <body> with `dash-home` — CSS then hides the sidebar and lets the
+     module grid use the full width. Opening any module calls bootPage()
+     instead, which restores the normal sidebar. The mobile bottom-nav still
+     renders (with Home highlighted) for quick thumb navigation. */
+  function bootDashboard() {
+    var session = Session.require(); if (!session) return null;
+    document.body.classList.add("dash-home");
+    renderChrome({ app: true, userName: session.name });
+    renderNav("home", session); // fills the mobile bottom-nav (Home active) + desktop sidebar
+    var side = document.getElementById("nav"); if (side) side.innerHTML = ""; // no duplicate sidebar on Home
+    _applyReadOnlyClass(session);
+    window.addEventListener("resize", function () { _applyReadOnlyClass(session); });
+    return session;
+  }
 
   window.Portal = {
     CONFIG: CONFIG, WA: WA, api: api, overlay: overlay, perf: perf,
     Session: Session, Cache: Cache,
     renderChrome: renderChrome, renderNav: renderNav, bootPage: bootPage,
+    bootDashboard: bootDashboard, getVisibleModules: getVisibleModules, isMobileAdmin: isMobileAdmin,
     openModal: openModal, closeModal: closeModal,
     esc: esc, todayIso: todayIso, thisMonth: thisMonth, prettyDate: prettyDate, monthLabel: monthLabel, isSunday: isSunday, sortGrades: sortGrades
   };

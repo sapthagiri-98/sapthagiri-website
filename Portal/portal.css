@@ -290,3 +290,184 @@ select:focus,input:focus,textarea:focus{border-color:var(--orange);box-shadow:0 
   .stat-row{grid-template-columns:1fr 1fr}
   .att-counts{gap:8px}
 }
+
+/* =======================================================================
+   MOBILE APP EXPERIENCE + DASHBOARD (HOME) LAUNCHER  (appended)
+   Adds: compact greeting, sidebar-less Home screen, module cards, app-style
+   bottom navigation, read-only admin (mobile) mode, bottom-sheet modals,
+   48px touch targets, table→card helpers, and no-horizontal-scroll guards.
+   Nothing above was removed. Desktop behaviour is preserved; most rules are
+   scoped to the Home screen (body.dash-home) or to <=900px / <=640px.
+   ======================================================================= */
+
+/* ---------- global: never allow sideways scrolling ---------- */
+html,body{overflow-x:hidden}
+.app-main{min-width:0}
+
+/* ---------- native-feeling tap targets ---------- */
+.btn{min-height:48px}
+select,input[type="text"],input[type="number"],input[type="password"],
+input[type="date"],input[type="month"]{min-height:48px}
+
+/* ---------- header profile chip (replaces "Welcome, X") ---------- */
+.header-user.profile-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 7px;
+  background:var(--primary-light);border:1px solid var(--border);border-radius:999px}
+.header-user.profile-chip i{font-size:20px;color:var(--maroon)}
+.header-user.profile-chip strong{color:var(--text-main);font-size:13.5px;font-weight:700;
+  max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:640px){.header-user.profile-chip strong{max-width:90px}}
+
+/* =======================================================================
+   DASHBOARD (HOME): the dashboard IS the navigation → hide the sidebar and
+   let the module grid use the full content width.
+   ======================================================================= */
+body.dash-home .app-body{grid-template-columns:1fr}
+body.dash-home .pv2-sidebar{display:none}
+
+/* compact greeting — no oversized hero */
+.dash-greet{margin:2px 0 4px}
+.dash-hello{font-family:var(--head);font-weight:800;font-size:clamp(22px,5vw,30px);line-height:1.2;color:var(--text-main);margin:0}
+.dash-sub{color:var(--text-muted);font-size:13.5px;font-weight:600;margin:4px 0 0}
+.dash-prompt{font-size:15px;font-weight:600;color:var(--text-main);margin:16px 0 14px}
+
+.dashboard-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+
+.module-card{display:flex;align-items:center;gap:16px;background:var(--surface);
+  border:1px solid var(--border);border-radius:20px;padding:16px 18px;min-height:88px;
+  box-shadow:var(--shadow-sm);transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease;color:var(--text-main)}
+.module-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--maroon)}
+.module-card:active{transform:translateY(0) scale(.995)}
+.module-card .mc-icon{flex:0 0 auto;width:54px;height:54px;border-radius:15px;display:grid;place-items:center;
+  background:var(--primary-light);color:var(--maroon)}
+.module-card .mc-icon i{font-size:27px;color:var(--maroon)}
+.module-card .mc-body{min-width:0;display:flex;flex-direction:column;gap:2px;flex-grow:1}
+.module-card .mc-title{font-family:var(--head);font-weight:700;font-size:16.5px;line-height:1.2}
+.module-card .mc-desc{font-size:12.5px;color:var(--text-muted);line-height:1.35}
+.module-card .mc-chevron{flex:0 0 auto;color:var(--text-muted);font-size:22px}
+
+/* rotating icon tints so the grid feels lively (repeats every 6) */
+.module-card:nth-child(6n+2) .mc-icon{background:var(--accent-light)}
+.module-card:nth-child(6n+2) .mc-icon i{color:var(--accent-dark)}
+.module-card:nth-child(6n+3) .mc-icon{background:var(--success-light)}
+.module-card:nth-child(6n+3) .mc-icon i{color:#047857}
+.module-card:nth-child(6n+4) .mc-icon{background:#e0f2fe}
+.module-card:nth-child(6n+4) .mc-icon i{color:#075985}
+.module-card:nth-child(6n+5) .mc-icon{background:#f3e8ff}
+.module-card:nth-child(6n+5) .mc-icon i{color:#6b21a8}
+.module-card:nth-child(6n+6) .mc-icon{background:var(--warning-light)}
+.module-card:nth-child(6n+6) .mc-icon i{color:#92400e}
+
+.dash-empty{text-align:center;padding:44px 20px;color:var(--text-muted);border:1px dashed var(--border);border-radius:18px;background:#fafafa}
+.dash-empty i{font-size:42px;color:var(--maroon);display:block;margin-bottom:10px}
+.dash-empty .t{font-weight:800;font-size:16px;color:var(--text-main)}
+.dash-empty .s{font-size:13px;margin-top:6px}
+
+.dash-readonly{display:flex;align-items:center;gap:12px;background:var(--primary-light);border:1px solid var(--border);
+  border-left:4px solid var(--maroon);border-radius:14px;padding:11px 16px;margin:6px 0 14px;font-size:13px;color:var(--text-main)}
+.dash-readonly i{color:var(--maroon)}
+
+@media(max-width:700px){.dashboard-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.dashboard-grid{grid-template-columns:1fr}}
+
+/* On phones the Home screen has no sidebar anyway; give a touch more room. */
+@media(max-width:900px){ body.dash-home .app-main{padding-top:16px} }
+
+/* =======================================================================
+   APP-STYLE BOTTOM NAVIGATION  (<=900px)
+   Fixed bottom tab bar like the Microsoft 365 / Google Workspace apps.
+   ======================================================================= */
+@media(max-width:900px){
+  .app-mobile-nav{
+    position:fixed;left:0;right:0;bottom:0;top:auto;
+    display:flex;gap:0;padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));
+    background:rgba(255,255,255,.98);-webkit-backdrop-filter:saturate(180%) blur(10px);backdrop-filter:saturate(180%) blur(10px);
+    border-top:1px solid var(--border);border-bottom:none;
+    box-shadow:0 -6px 20px rgba(20,20,40,.08);
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+    z-index:120;margin:0;max-width:none;width:100%}
+  .app-mobile-nav::-webkit-scrollbar{display:none}
+  .app-mobile-nav a{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    min-width:64px;padding:6px 10px;border:none;border-radius:14px;background:transparent;box-shadow:none;
+    font-weight:600;font-size:11px;color:var(--text-muted);white-space:nowrap}
+  .app-mobile-nav a i{font-size:23px;color:var(--text-muted)}
+  .app-mobile-nav a.active{background:transparent;color:var(--maroon);border:none}
+  .app-mobile-nav a.active i{color:var(--maroon)}
+  .app-mobile-nav a.active span{font-weight:800}
+  .app-main{padding-bottom:88px}
+  .site-footer{padding-bottom:calc(26px + 72px + env(safe-area-inset-bottom,0px))}
+  .sticky-footer{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  .fab-wa{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+}
+
+/* =======================================================================
+   READ-ONLY ADMIN (mobile Management) — hide every write control.
+   Presentation-layer only: the backend permission model is unchanged.
+   ======================================================================= */
+body.mobile-admin .sticky-footer,
+body.mobile-admin .att-bulkbar,
+body.mobile-admin .pa-toggle,
+body.mobile-admin #attAdminInlineSave,
+body.mobile-admin .btn-success,
+body.mobile-admin .btn-danger,
+body.mobile-admin .btn-warning-action,
+body.mobile-admin .btn-remind,
+body.mobile-admin .slip-btn,
+body.mobile-admin .edit-only,
+body.mobile-admin .readonly-hide,
+body.mobile-admin [data-action="save"],
+body.mobile-admin [data-action="edit"],
+body.mobile-admin [data-action="delete"],
+body.mobile-admin [data-action="add"],
+body.mobile-admin [data-role="edit"]{display:none !important}
+
+body.mobile-admin input:not([type="search"]):not([readonly]),
+body.mobile-admin select,
+body.mobile-admin textarea{pointer-events:none;background:#f8fafc}
+/* keep filter/selector dropdowns usable for VIEWING different dates/classes */
+body.mobile-admin .smart-selector select,
+body.mobile-admin .smart-selector input,
+body.mobile-admin .mod-toolbar select,
+body.mobile-admin .mod-toolbar input,
+body.mobile-admin input[type="date"],
+body.mobile-admin input[type="month"]{pointer-events:auto;background:#fff}
+
+/* =======================================================================
+   BOTTOM-SHEET MODALS on phones
+   ======================================================================= */
+@media(max-width:640px){
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal-content{max-width:none;width:100%;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-radius:24px 24px 0 0;animation:sheetUp .26s cubic-bezier(.22,1,.36,1)}
+  .modal-content::before{content:"";display:block;width:44px;height:5px;border-radius:999px;background:#d7dbe3;margin:2px auto 14px}
+}
+@keyframes sheetUp{from{transform:translateY(28px);opacity:.6}to{transform:translateY(0);opacity:1}}
+
+/* =======================================================================
+   TABLE → CARD helper for small screens (opt-in via .stack-on-mobile).
+   ======================================================================= */
+.mobile-cards{display:none}
+.record-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow-sm)}
+.record-card .rc-title{font-weight:800;font-size:15px;color:var(--text-main);margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.record-card .rc-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:13.5px;border-top:1px solid #f1f2f6}
+.record-card .rc-row:first-of-type{border-top:none}
+.record-card .rc-k{color:var(--text-muted);font-weight:600}
+.record-card .rc-v{color:var(--text-main);font-weight:700;text-align:right}
+@media(max-width:700px){
+  .mobile-cards{display:block}
+  .stack-on-mobile .friendly-wrap,
+  .stack-on-mobile .friendly-table{display:none}
+}
+
+/* =======================================================================
+   TYPOGRAPHY & SPACING polish on phones
+   ======================================================================= */
+@media(max-width:640px){
+  .card h2{font-size:20px}
+  .mod-head{gap:10px}
+  .mod-toolbar{gap:8px}
+  .mod-toolbar .smart-selector{flex:1 1 100%;max-width:none}
+  .smart-selector-row{grid-template-columns:1fr}
+  .stat-row{grid-template-columns:1fr 1fr;gap:10px}
+  .att-bulkbar .btn{flex:1 1 auto;min-height:46px}
+}
