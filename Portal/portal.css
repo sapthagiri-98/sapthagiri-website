@@ -471,3 +471,54 @@ body.mobile-admin input[type="month"]{pointer-events:auto;background:#fff}
   .stat-row{grid-template-columns:1fr 1fr;gap:10px}
   .att-bulkbar .btn{flex:1 1 auto;min-height:46px}
 }
+
+/* =======================================================================
+   NATIVE APP SHELL POLISH  (appended)
+   Fixes the cramped mobile header, removes the redundant marketing topbar /
+   footer / WhatsApp-FAB on portal pages on phones (the bottom tab bar +
+   header already cover navigation), and balances the Home screen when a user
+   has only a few modules. Scoped to portal pages (body.pv2-app) and phones,
+   so desktop and the marketing website are untouched.
+   ======================================================================= */
+
+/* ---- header: keep everything on ONE tidy line ---- */
+.header-back,.header-logout{white-space:nowrap}
+.header-back .hicon,.header-logout .hicon{font-size:18px;line-height:1}
+.header-back{display:inline-flex;align-items:center;gap:6px}
+
+@media(max-width:640px){
+  .site-header .wrap{gap:8px;padding:0 12px}
+  .header-actions{gap:7px}
+  .header-back{padding:8px 12px;font-size:.85rem}
+  .header-logout{padding:8px 12px;font-size:.85rem}
+  .header-user.profile-chip{padding:5px 10px 5px 6px}
+  .header-user.profile-chip strong{max-width:96px}
+}
+/* very small phones: collapse the back + logout to icon-only pills */
+@media(max-width:430px){
+  body.pv2-app .header-back .hlabel,
+  body.pv2-app .header-logout .hlabel{display:none}
+  body.pv2-app .header-back,
+  body.pv2-app .header-logout{padding:9px 11px}
+  body.pv2-app .header-back .hicon,
+  body.pv2-app .header-logout .hicon{font-size:20px}
+  .header-user.profile-chip strong{max-width:120px}
+}
+
+/* ---- remove redundant marketing chrome on portal pages on phones ---- */
+@media(max-width:900px){
+  body.pv2-app .site-topbar{display:none}      /* phone/WhatsApp strip */
+  body.pv2-app .site-footer{display:none}      /* dark footer block */
+  body.pv2-app .fab-wa{display:none}           /* floating WA (overlapped nav) */
+  /* footer gone → the bottom tab bar is the only bottom element */
+  body.pv2-app .app-main{padding-bottom:88px}
+}
+
+/* ---- Home screen: pleasant balance with few module cards ---- */
+@media(max-width:900px){
+  /* fill the viewport (minus header ~58px and bottom nav ~72px) so the
+     background is even and the lone card doesn't float in a short page */
+  body.dash-home.pv2-app .app-main{min-height:calc(100vh - 58px - 72px)}
+}
+/* cap the grid width on tablets so a single card doesn't stretch oddly */
+@media(min-width:701px){ body.dash-home .dashboard-grid{max-width:920px} }
