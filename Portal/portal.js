@@ -101,6 +101,14 @@
 
   /* ---------------- site chrome ---------------- */
   function _logo() { return '<img src="header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';"><span class="fallback" style="display:none;"><i class="material-icons">school</i>' + esc(S.name) + '</span>'; }
+  /* Google/Microsoft-style avatar initials: "Srinivas Vallakati" -> "SV",
+     "Thirupathi" -> "T". Uses first + last word initials (max 2 letters). */
+  function _initials(name) {
+    var parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
   function renderChrome(opts) {
     opts = opts || {};
     // Tag app (portal) pages so the mobile CSS can hide the marketing topbar,
@@ -108,7 +116,7 @@
     // page (app:false) keeps the full marketing chrome.
     if (opts.app) document.body.classList.add("pv2-app");
     var right = opts.app
-      ? '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '"><i class="material-icons hicon">public</i><span class="hlabel">Website</span></a><span class="header-user profile-chip" title="' + esc(opts.userName || "") + '"><i class="material-icons">account_circle</i><strong>' + esc(opts.userName || "") + '</strong></span><button class="header-logout" id="pv2Logout"><i class="material-icons hicon">logout</i><span class="hlabel">Log Out</span></button></div>'
+      ? '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '"><i class="material-icons hicon">public</i><span class="hlabel">Website</span></a><span class="header-user profile-chip" title="' + esc(opts.userName || "") + '"><span class="avatar">' + esc(_initials(opts.userName)) + '</span><strong>' + esc(opts.userName || "") + '</strong></span><button class="header-logout" id="pv2Logout"><i class="material-icons hicon">logout</i><span class="hlabel">Log Out</span></button></div>'
       : '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '">← Back to Website</a></div>';
     var head = document.createElement("div");
     head.innerHTML =
