@@ -116,14 +116,42 @@
     var d = (profile.breakdown || {})[cat] || { assigned: 0, paid: 0, remaining: 0 };
     var hist = (profile.history || []).filter(function (h) { return h.feeType === cat; });
     var running = d.assigned;
-    var rows = '<tr><td data-label="Date">—</td><td data-label="Description" style="text-align:left;">Fee Assigned</td><td class="num" data-label="Assigned" style="color:var(--maroon);font-weight:700;">' + money(d.assigned) + '</td><td data-label="Paid">—</td><td class="num" data-label="Remaining" style="font-weight:700;">' + money(running) + "</td></tr>";
-    hist.forEach(function (h) {
-      running -= (Number(h.amountPaid) || 0);
-      rows += '<tr><td data-label="Date">' + esc(h.date) + '</td><td data-label="Description" style="text-align:left;">' + esc(h.paymentId || "") + '</td><td data-label="Assigned">—</td><td class="num" data-label="Paid" style="color:#047857;font-weight:700;">' + money(h.amountPaid) + '</td><td class="num" data-label="Remaining" style="font-weight:700;">' + money(running) + "</td></tr>";
-    });
-    $("feeDetail").innerHTML =
+
+    // Compact summary strip: what was assigned, collected and what's left.
+    var remCls = (Number(d.remaining) > 0) ? "due" : "clear";
+    var head =
       '<div class="group-head"><i class="material-icons" style="font-size:18px;">description</i> ' + esc(cat) + ' — Statement</div>' +
-      '<div class="friendly-wrap"><table class="friendly-table rtable"><thead><tr><th>Date</th><th>Description / Receipt</th><th style="text-align:center;">Assigned</th><th style="text-align:center;">Paid</th><th style="text-align:center;">Remaining</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<div class="fee-stmt-summary">' +
+        '<div class="fss-item"><span class="fss-l">Assigned</span><span class="fss-v">' + money(d.assigned) + '</span></div>' +
+        '<div class="fss-item"><span class="fss-l">Collected</span><span class="fss-v paid">' + money(d.paid) + '</span></div>' +
+        '<div class="fss-item"><span class="fss-l">Remaining</span><span class="fss-v ' + remCls + '">' + money(d.remaining) + '</span></div>' +
+      '</div>';
+
+    // Timeline: an opening "Fee Assigned" line, then one row per payment with a
+    // running balance. No empty Assigned/Paid dash cells, no blank titles.
+    var timeline = '<div class="fee-stmt">' +
+      '<div class="fst-row opening">' +
+        '<div class="fst-dot"><i class="material-icons">receipt_long</i></div>' +
+        '<div class="fst-main"><div class="fst-title">Fee Assigned</div><div class="fst-sub">Opening balance</div></div>' +
+        '<div class="fst-amt"><div class="fst-a">' + money(d.assigned) + '</div><div class="fst-bal">Balance ' + money(running) + '</div></div>' +
+      '</div>';
+
+    if (!hist.length) {
+      timeline += '<div class="fst-empty"><i class="material-icons">info</i>No payments recorded for this fee yet.</div>';
+    } else {
+      hist.forEach(function (h) {
+        running -= (Number(h.amountPaid) || 0);
+        var balCls = (running > 0) ? "" : " clear";
+        timeline += '<div class="fst-row pay">' +
+          '<div class="fst-dot pay"><i class="material-icons">payments</i></div>' +
+          '<div class="fst-main"><div class="fst-title">' + esc(h.date) + '</div><div class="fst-sub">Receipt ' + esc(h.paymentId || "—") + '</div></div>' +
+          '<div class="fst-amt"><div class="fst-a paid">+' + money(h.amountPaid) + '</div><div class="fst-bal' + balCls + '">Balance ' + money(running) + '</div></div>' +
+        '</div>';
+      });
+    }
+    timeline += '</div>';
+
+    $("feeDetail").innerHTML = head + timeline;
   }
 
   function errBox(e) { return '<div class="fee-empty"><i class="material-icons">error_outline</i>' + esc(e && e.message ? e.message : e) + "</div>"; }
@@ -134,18 +162,31 @@
       ".fee-empty{text-align:center;padding:40px 20px;color:var(--text-muted);font-weight:600;background:#fff;border:1px dashed var(--border);border-radius:14px}.fee-empty i{font-size:38px;color:var(--maroon);display:block;margin-bottom:8px}" +
       ".fee-studentbar{display:flex;align-items:center;gap:12px;background:var(--primary-light);border:1px solid var(--border);border-radius:14px;padding:14px 18px}" +
       ".fee-sname{font-weight:800;font-size:17px;color:var(--maroon);font-family:var(--head)}.fee-smeta{font-size:13px;color:var(--text-muted);margin-top:2px}" +
-      /* Responsive table -> stacked cards on phones (no horizontal scrolling) */
+      /* Category statement — clean timeline (works on mobile & desktop) */
+      ".fee-stmt-summary{display:flex;gap:8px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:14px;box-shadow:var(--shadow-sm)}" +
+      ".fss-item{flex:1;text-align:center;display:flex;flex-direction:column;gap:3px}.fss-item+.fss-item{border-left:1px solid var(--border)}" +
+      ".fss-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)}" +
+      ".fss-v{font-size:16px;font-weight:800;font-family:var(--head);color:var(--text-main)}.fss-v.paid,.fss-v.clear{color:#047857}.fss-v.due{color:#b91c1c}" +
+      ".fee-stmt{display:flex;flex-direction:column;gap:10px}" +
+      ".fst-row{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-sm)}" +
+      ".fst-row.opening{border-left:4px solid var(--maroon)}.fst-row.pay{border-left:4px solid var(--success)}" +
+      ".fst-dot{flex:0 0 auto;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--primary-light);color:var(--maroon)}" +
+      ".fst-dot.pay{background:var(--success-light);color:#047857}.fst-dot i{font-size:19px}" +
+      ".fst-main{flex:1;min-width:0}.fst-title{font-weight:800;font-size:14px;color:var(--text-main)}.fst-sub{font-size:11.5px;color:var(--text-muted);margin-top:1px;font-family:monospace}" +
+      ".fst-amt{flex:0 0 auto;text-align:right}.fst-a{font-weight:800;font-size:15px;color:var(--maroon);font-family:var(--head)}.fst-a.paid{color:#047857}" +
+      ".fst-bal{font-size:11px;color:var(--text-muted);font-weight:600;margin-top:1px}.fst-bal.clear{color:#047857}" +
+      ".fst-empty{display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--text-muted);font-size:13px;font-weight:600;padding:16px;background:#f8fafc;border:1px dashed var(--border);border-radius:12px}.fst-empty i{font-size:18px;color:var(--maroon)}" +
+      /* Responsive breakdown/history tables -> stacked cards on phones */
       "@media(max-width:640px){" +
         ".rtable{min-width:0 !important;width:100%}" +
         ".rtable thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}" +
         ".rtable,.rtable tbody,.rtable tr,.rtable td{display:block;width:100%}" +
         ".friendly-wrap:has(.rtable){border:none;background:transparent;box-shadow:none;overflow:visible}" +
         ".rtable tr{border:1px solid var(--border);border-radius:14px;margin:0 0 10px;padding:6px 14px;background:#fff;box-shadow:var(--shadow-sm)}" +
-        ".rtable tr.rt-due{border-left:4px solid var(--danger)}" +
-        ".rtable tr.rt-clear{border-left:4px solid var(--success)}" +
+        ".rtable tr.rt-due{border-left:4px solid var(--danger)}.rtable tr.rt-clear{border-left:4px solid var(--success)}" +
         ".rtable tr:hover td{background:transparent}" +
         ".rtable td{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border:none;border-top:1px solid #f1f2f6;text-align:right !important}" +
-        ".rtable td::before{content:attr(data-label);font-weight:600;color:var(--text-muted);text-align:left;font-size:12px;letter-spacing:.02em}" +
+        ".rtable td::before{content:attr(data-label);font-weight:600;color:var(--text-muted);text-align:left;font-size:12px}" +
         ".rtable tr td:first-child{border-top:none;padding-top:10px;font-size:15px;font-weight:800 !important;color:var(--maroon);text-align:left !important}" +
         ".rtable tr td:first-child::before{content:none}" +
         ".rtable td[colspan]{justify-content:center}.rtable td[colspan]::before{content:none}" +
