@@ -344,46 +344,120 @@
   }
 
   var _drillCache = {};
+  var mgmtFilter = "attention"; // "attention" (only classes behind schedule) | "all"
+
+  // A lesson is "behind schedule" when its target month has already passed in
+  // the academic year (June→May) and it is not yet completed. In-progress
+  // lessons still count as behind if their month has passed — the intent is to
+  // surface work that is late versus its target month, not the raw pending total.
+  function lessonOverdue(l) {
+    var done = l.completed === true || String(l.completed).toLowerCase() === "true";
+    if (done) return false;
+    var mk = normMonth(l.targetMonth);
+    if (!mk) return false;
+    var ti = MONTH_ORDER.indexOf(mk), ci = MONTH_ORDER.indexOf(curMonthKey());
+    return ti >= 0 && ci >= 0 && ti < ci;
+  }
+  function subjLagging(s) {
+    var arr = s.lessonsList || [], n = 0;
+    arr.forEach(function (l) { if (lessonOverdue(l)) n++; });
+    return n;
+  }
+
   function renderReport(rep) {
     var host = $("sylClassView");
     if (!rep.length) { host.innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No syllabus data found.</div>'; return; }
-    // group by grade
+
+    // annotate once
+    rep.forEach(function (s) {
+      s._lag = subjLagging(s);
+      s._done = s.completedLessonsCount || 0;
+      s._active = s.inProgressLessonsCount || 0;
+      s._total = s.totalLessonsCount || 0;
+    });
+
     var byGrade = {};
     rep.forEach(function (r) { (byGrade[r.grade] = byGrade[r.grade] || []).push(r); });
     var grades = Object.keys(byGrade).sort(function (a, b) { return gw(a) - gw(b); });
     _drillCache = {};
-    var html = "";
+
+    // system-wide "behind" summary
+    var totalLag = 0, subjLagCount = 0, classesAffected = 0;
+    grades.forEach(function (g) {
+      var gl = 0; byGrade[g].forEach(function (s) { if (s._lag > 0) { gl += s._lag; subjLagCount++; } });
+      if (gl > 0) classesAffected++; totalLag += gl;
+    });
+
+    var seg = '<div class="syl-viewseg syl-filterseg" id="sylFilterSeg">' +
+      '<button class="' + (mgmtFilter === "attention" ? "active" : "") + '" data-f="attention"><i class="material-icons">priority_high</i> Needs attention</button>' +
+      '<button class="' + (mgmtFilter === "all" ? "active" : "") + '" data-f="all"><i class="material-icons">apps</i> All classes</button></div>';
+
+    var summary = (totalLag > 0)
+      ? '<div class="syl-summary behind"><span class="syl-sum-ic"><i class="material-icons">running_with_errors</i></span>' +
+          '<span class="syl-sum-tx"><b>' + subjLagCount + ' subject' + (subjLagCount > 1 ? "s" : "") + ' behind schedule</b>' +
+          '<em>' + totalLag + ' lesson' + (totalLag > 1 ? "s" : "") + ' past their target month · ' + classesAffected + ' class' + (classesAffected > 1 ? "es" : "") + ' affected</em></span></div>'
+      : '<div class="syl-summary ok"><span class="syl-sum-ic"><i class="material-icons">verified</i></span>' +
+          '<span class="syl-sum-tx"><b>Everything is on track</b><em>No lessons are behind their target month.</em></span></div>';
+
+    var body = "";
     grades.forEach(function (g) {
       var subs = byGrade[g].slice().sort(function (a, b) { return String(a.subject).localeCompare(String(b.subject)); });
-      var done = 0, tot = 0;
-      subs.forEach(function (s) { done += s.completedLessonsCount || 0; tot += s.totalLessonsCount || 0; });
+      var gLag = 0; subs.forEach(function (s) { gLag += s._lag; });
+      var visSubs = (mgmtFilter === "attention") ? subs.filter(function (s) { return s._lag > 0; }) : subs;
+      if (mgmtFilter === "attention" && !visSubs.length) return;
+
+      var done = 0, tot = 0; subs.forEach(function (s) { done += s._done; tot += s._total; });
       var pct = tot > 0 ? Math.round(done / tot * 100) : 0;
-      html += '<div class="syl-gradehead"><span>' + esc(g) + '</span><span class="syl-gradepct">' + pct + '% covered</span></div><div class="syl-subgrid">';
-      subs.forEach(function (s) {
-        var d = s.completedLessonsCount || 0, a = s.inProgressLessonsCount || 0, t = s.totalLessonsCount || 0, pend = Math.max(0, t - d - a);
-        var col = s.statusColor === "red" ? "red" : (s.statusColor === "yellow" ? "amber" : "green");
+      var badge = gLag > 0
+        ? '<span class="syl-gbadge behind">' + gLag + ' behind</span>'
+        : '<span class="syl-gbadge ok"><i class="material-icons">check</i>On track</span>';
+      // open grades that need attention; collapse fully-on-track grades in "All"
+      var open = (gLag > 0) ? " open" : "";
+
+      body += '<details class="syl-gsec"' + open + '><summary class="syl-gsum">' +
+        '<span class="syl-gname">' + esc(g) + '</span>' + badge +
+        '<span class="syl-gpct">' + pct + '% covered</span><i class="material-icons syl-gchev">expand_more</i></summary>' +
+        '<div class="syl-subgrid">';
+
+      visSubs.forEach(function (s) {
         var pk = "d_" + gw(g) + "_" + esc(s.subject).replace(/\W+/g, "");
         _drillCache[pk] = s;
-        var counts = t > 0
-          ? '<span class="syl-cpill green">' + d + ' done</span>' + (a > 0 ? '<span class="syl-cpill amber">' + a + ' active</span>' : "") + (pend > 0 ? '<span class="syl-cpill red">' + pend + ' pending</span>' : "")
-          : '<span class="syl-cpill grey">No chapters mapped</span>';
-        html += '<div class="syl-subcard ' + col + '" data-pk="' + pk + '">' +
+        var col, pill;
+        if (s._total === 0) { col = "grey"; pill = '<span class="syl-cpill grey">No chapters mapped</span>'; }
+        else if (s._lag > 0) { col = "red"; pill = '<span class="syl-cpill red"><i class="material-icons">schedule</i>' + s._lag + ' behind schedule</span>'; }
+        else if (s._active > 0) { col = "amber"; pill = '<span class="syl-cpill amber">On track · in progress</span>'; }
+        else { col = "green"; pill = '<span class="syl-cpill green"><i class="material-icons">check</i>On track</span>'; }
+        var mini = s._total > 0 ? '<span class="syl-submini">' + s._done + '/' + s._total + ' done · ' + pct2(s._done, s._total) + '%</span>' : '';
+        body += '<div class="syl-subcard ' + col + '" data-pk="' + pk + '">' +
           '<div class="syl-subcard-top"><span class="syl-subname">' + esc(s.subject) + '</span><i class="material-icons syl-chev">chevron_right</i></div>' +
           '<div class="syl-subteacher">' + esc(s.teacherName || "No teacher assigned") + '</div>' +
-          '<div class="syl-cpillrow">' + counts + '</div></div>';
+          '<div class="syl-cpillrow">' + pill + mini + '</div></div>';
       });
-      html += '</div>';
+      body += '</div></details>';
     });
-    host.innerHTML = html;
+
+    if (!body) body = '<div class="syl-empty"><i class="material-icons">verified</i>No classes are behind schedule. Switch to <b>All classes</b> to see everyone.</div>';
+
+    host.innerHTML = seg + summary + body;
+
+    Array.prototype.forEach.call($("sylFilterSeg").querySelectorAll("button"), function (b) {
+      b.addEventListener("click", function () { mgmtFilter = b.getAttribute("data-f"); renderReport(mgmtReport); });
+    });
     Array.prototype.forEach.call(host.querySelectorAll(".syl-subcard[data-pk]"), function (c) { c.addEventListener("click", function () { openDrill(c.getAttribute("data-pk")); }); });
   }
+  function pct2(d, t) { return t > 0 ? Math.round(d / t * 100) : 0; }
 
   function openDrill(pk) {
     var r = _drillCache[pk]; if (!r) return;
     $("sylDrillTitle").textContent = r.grade + " · " + r.subject;
-    var d = r.completedLessonsCount || 0, a = r.inProgressLessonsCount || 0, t = r.totalLessonsCount || 0, pend = Math.max(0, t - d - a);
+    var d = r.completedLessonsCount || 0, a = r.inProgressLessonsCount || 0, t = r.totalLessonsCount || 0;
+    var lag = subjLagging(r);
     $("sylDrillMeta").innerHTML =
-      '<span class="syl-cpill green">' + d + ' done</span><span class="syl-cpill amber">' + a + ' active</span><span class="syl-cpill red">' + pend + ' pending</span><span class="syl-cpill grey">' + t + ' total</span>';
+      '<span class="syl-cpill green">' + d + ' done</span>' +
+      (a > 0 ? '<span class="syl-cpill amber">' + a + ' in progress</span>' : "") +
+      (lag > 0 ? '<span class="syl-cpill red"><i class="material-icons">schedule</i>' + lag + ' behind schedule</span>'
+               : '<span class="syl-cpill green"><i class="material-icons">check</i>On track</span>') +
+      '<span class="syl-cpill grey">' + t + ' total</span>';
     var lessons = r.lessonsList || [];
     var body = $("sylDrillBody");
     if (!lessons.length) { body.innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No lessons mapped.</div>'; P.openModal("sylDrillModal"); return; }
@@ -395,10 +469,14 @@
       return '<div class="syl-drillmonth"><i class="material-icons">event</i>' + esc(MONTH_LABEL[mk] || mk || "Not scheduled") + '</div>' + arr.map(function (l) {
         var done = l.completed === true || String(l.completed).toLowerCase() === "true";
         var active = !done && (l.inProgress === true || String(l.inProgress).toLowerCase() === "true");
-        var st = done ? "done" : (active ? "active" : "pending"), lbl = done ? "Done" : (active ? "In progress" : "Pending");
+        var overdue = lessonOverdue(l);
+        var st = done ? "done" : (overdue ? "behind" : (active ? "active" : "pending"));
+        var lbl = done ? "Done" : (overdue ? "Behind" : (active ? "In progress" : "Pending"));
         var dt = (done && l.completedOn && l.completedOn !== "-") ? '<span class="syl-dtag"><i class="material-icons">event_available</i>' + esc(l.completedOn) + '</span>' : "";
+        var behindTag = overdue ? '<span class="syl-dtag behind"><i class="material-icons">warning</i>Past ' + esc(MONTH_LABEL[normMonth(l.targetMonth)] || l.targetMonth || "target") + '</span>' : "";
+        var meta = (dt || behindTag) ? '<div class="syl-drmeta">' + dt + behindTag + '</div>' : "";
         return '<div class="syl-drillrow ' + st + '"><span class="syl-drno">' + esc(l.lessonNo || "-") + '</span>' +
-          '<div class="syl-drbody"><div class="syl-drname">' + esc(l.name || "") + '</div>' + (dt ? '<div class="syl-drmeta">' + dt + '</div>' : "") + '</div>' +
+          '<div class="syl-drbody"><div class="syl-drname">' + esc(l.name || "") + '</div>' + meta + '</div>' +
           '<span class="syl-dstatus ' + st + '">' + lbl + '</span></div>';
       }).join("");
     }
@@ -560,8 +638,27 @@
     ".syl-dstatus{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap}.syl-dstatus.done{background:rgba(16,185,129,.15);color:#047857}.syl-dstatus.active{background:rgba(245,158,11,.18);color:#b45309}.syl-dstatus.pending{background:rgba(239,68,68,.12);color:#b91c1c}" +
     ".syl-daybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.syl-dayname{font-weight:800;color:var(--maroon);font-size:16px}.syl-dayday{font-size:13px;color:var(--text-muted);font-weight:600}" +
     ".syl-drow{display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:12px;background:#fff;padding:12px 14px;margin-bottom:8px}.syl-per{flex:0 0 auto;min-width:40px;height:32px;padding:0 10px;border-radius:8px;background:var(--primary-light);color:var(--maroon);font-weight:800;font-size:13px;display:inline-flex;align-items:center;justify-content:center}.syl-clssub{flex:0 0 auto;min-width:140px;font-size:14px;color:var(--text-main)}.syl-clssub b{color:var(--maroon)}.syl-topic{flex:1;font-size:14px;color:var(--text-main);font-weight:600}" +
+    /* management: behind-schedule summary + filter + accordions */
+    ".syl-filterseg{display:flex;width:100%;margin:0 0 14px}.syl-filterseg button{flex:1;justify-content:center}" +
+    ".syl-summary{display:flex;align-items:center;gap:14px;border-radius:16px;padding:14px 16px;margin-bottom:16px;border:1px solid var(--border)}" +
+    ".syl-summary.behind{background:linear-gradient(135deg,#fef2f2,#fee2e2);border-color:#fecaca}.syl-summary.ok{background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#a7f3d0}" +
+    ".syl-sum-ic{flex:0 0 auto;width:46px;height:46px;border-radius:13px;display:grid;place-items:center}.syl-summary.behind .syl-sum-ic{background:#fff;color:#b91c1c}.syl-summary.ok .syl-sum-ic{background:#fff;color:#047857}.syl-sum-ic i{font-size:26px}" +
+    ".syl-sum-tx{display:flex;flex-direction:column;gap:2px;min-width:0}.syl-sum-tx b{font-family:var(--head);font-size:15.5px;color:var(--text-main)}.syl-sum-tx em{font-style:normal;font-size:12.5px;color:var(--text-muted)}" +
+    ".syl-gsec{border:1px solid var(--border);border-radius:14px;background:#fff;margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow-sm)}" +
+    ".syl-gsum{list-style:none;display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;user-select:none}.syl-gsum::-webkit-details-marker{display:none}" +
+    ".syl-gname{font-family:var(--head);font-weight:800;color:var(--maroon);font-size:16px}" +
+    ".syl-gbadge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;display:inline-flex;align-items:center;gap:3px}.syl-gbadge.behind{background:var(--danger-light);color:#b91c1c}.syl-gbadge.ok{background:var(--success-light);color:#047857}.syl-gbadge i{font-size:13px}" +
+    ".syl-gpct{margin-left:auto;font-size:12px;font-weight:700;color:var(--text-muted)}" +
+    ".syl-gchev{color:var(--text-muted);transition:transform .2s ease;font-size:22px}.syl-gsec[open] .syl-gchev{transform:rotate(180deg)}" +
+    ".syl-gsec .syl-subgrid{padding:0 14px 14px}" +
+    ".syl-submini{font-size:11px;font-weight:700;color:var(--text-muted);align-self:center}" +
+    ".syl-cpill i{font-size:13px;vertical-align:-2px;margin-right:2px}" +
+    /* drill: behind state */
+    ".syl-drillrow.behind{border-left-color:var(--danger);background:rgba(239,68,68,.05)}" +
+    ".syl-dstatus.behind{background:var(--danger);color:#fff}" +
+    ".syl-dtag.behind{color:#b91c1c;background:#fee2e2}.syl-dtag.behind i{font-size:13px}" +
     "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}" +
-    "@media(max-width:600px){.syl-grid{grid-template-columns:1fr}.syl-drow{flex-direction:column;align-items:flex-start;gap:6px}.syl-clssub{min-width:0}}";
+    "@media(max-width:600px){.syl-grid{grid-template-columns:1fr}.syl-subgrid{grid-template-columns:1fr}.syl-drow{flex-direction:column;align-items:flex-start;gap:6px}.syl-clssub{min-width:0}}";
     var st = document.createElement("style"); st.id = "syl-css"; st.textContent = css; document.head.appendChild(st);
   }
 })();
