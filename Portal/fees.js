@@ -98,31 +98,32 @@
     var brk = profile.breakdown || {};
     var rows = Object.keys(brk).map(function (k) {
       var d = brk[k];
-      return '<tr><td style="font-weight:700;text-align:left;">' + esc(k) + '</td><td class="num">' + money(d.assigned) + '</td><td class="num" style="color:#047857;">' + money(d.paid) + '</td><td class="num" style="color:#b91c1c;font-weight:700;">' + money(d.remaining) + "</td></tr>";
+      var dueCls = (Number(d.remaining) > 0) ? "due" : "clear";
+      return '<tr class="rt-' + dueCls + '"><td data-label="Fee Segment" style="font-weight:700;text-align:left;">' + esc(k) + '</td><td class="num" data-label="Assigned">' + money(d.assigned) + '</td><td class="num" data-label="Collected" style="color:#047857;">' + money(d.paid) + '</td><td class="num" data-label="Arrears" style="color:#b91c1c;font-weight:700;">' + money(d.remaining) + "</td></tr>";
     }).join("");
     var hist = (profile.history || []);
     var hrows = hist.length ? hist.map(function (h) {
-      return '<tr><td style="font-family:monospace;font-size:12px;">' + esc(h.paymentId || "—") + '</td><td><span class="pill grey">' + esc(h.feeType) + '</span></td><td class="num" style="color:#047857;font-weight:700;">' + money(h.amountPaid) + "</td><td>" + esc(h.date) + "</td></tr>";
+      return '<tr><td data-label="Receipt / ID" style="font-family:monospace;font-size:12px;">' + esc(h.paymentId || "—") + '</td><td data-label="Type"><span class="pill grey">' + esc(h.feeType) + '</span></td><td class="num" data-label="Paid" style="color:#047857;font-weight:700;">' + money(h.amountPaid) + '</td><td data-label="Date">' + esc(h.date) + "</td></tr>";
     }).join("") : '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No payments recorded.</td></tr>';
     $("feeDetail").innerHTML =
       '<div class="group-head"><i class="material-icons" style="font-size:18px;">receipt_long</i> Balance Breakdown</div>' +
-      '<div class="friendly-wrap"><table class="friendly-table"><thead><tr><th>Fee Segment</th><th style="text-align:center;">Assigned</th><th style="text-align:center;">Collected</th><th style="text-align:center;">Arrears</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div class="friendly-wrap"><table class="friendly-table rtable"><thead><tr><th>Fee Segment</th><th style="text-align:center;">Assigned</th><th style="text-align:center;">Collected</th><th style="text-align:center;">Arrears</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<div class="group-head" style="margin-top:22px;"><i class="material-icons" style="font-size:18px;">history</i> Payment History</div>' +
-      '<div class="friendly-wrap"><table class="friendly-table"><thead><tr><th>Receipt / ID</th><th>Type</th><th style="text-align:center;">Paid</th><th>Date</th></tr></thead><tbody>' + hrows + '</tbody></table></div>';
+      '<div class="friendly-wrap"><table class="friendly-table rtable"><thead><tr><th>Receipt / ID</th><th>Type</th><th style="text-align:center;">Paid</th><th>Date</th></tr></thead><tbody>' + hrows + '</tbody></table></div>';
   }
 
   function renderCategory(cat) {
     var d = (profile.breakdown || {})[cat] || { assigned: 0, paid: 0, remaining: 0 };
     var hist = (profile.history || []).filter(function (h) { return h.feeType === cat; });
     var running = d.assigned;
-    var rows = '<tr><td>—</td><td style="text-align:left;">Fee Assigned</td><td class="num" style="color:var(--maroon);font-weight:700;">' + money(d.assigned) + '</td><td>—</td><td class="num" style="font-weight:700;">' + money(running) + "</td></tr>";
+    var rows = '<tr><td data-label="Date">—</td><td data-label="Description" style="text-align:left;">Fee Assigned</td><td class="num" data-label="Assigned" style="color:var(--maroon);font-weight:700;">' + money(d.assigned) + '</td><td data-label="Paid">—</td><td class="num" data-label="Remaining" style="font-weight:700;">' + money(running) + "</td></tr>";
     hist.forEach(function (h) {
       running -= (Number(h.amountPaid) || 0);
-      rows += '<tr><td>' + esc(h.date) + '</td><td style="text-align:left;">' + esc(h.paymentId || "") + '</td><td>—</td><td class="num" style="color:#047857;font-weight:700;">' + money(h.amountPaid) + '</td><td class="num" style="font-weight:700;">' + money(running) + "</td></tr>";
+      rows += '<tr><td data-label="Date">' + esc(h.date) + '</td><td data-label="Description" style="text-align:left;">' + esc(h.paymentId || "") + '</td><td data-label="Assigned">—</td><td class="num" data-label="Paid" style="color:#047857;font-weight:700;">' + money(h.amountPaid) + '</td><td class="num" data-label="Remaining" style="font-weight:700;">' + money(running) + "</td></tr>";
     });
     $("feeDetail").innerHTML =
       '<div class="group-head"><i class="material-icons" style="font-size:18px;">description</i> ' + esc(cat) + ' — Statement</div>' +
-      '<div class="friendly-wrap"><table class="friendly-table"><thead><tr><th>Date</th><th>Description / Receipt</th><th style="text-align:center;">Assigned</th><th style="text-align:center;">Paid</th><th style="text-align:center;">Remaining</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<div class="friendly-wrap"><table class="friendly-table rtable"><thead><tr><th>Date</th><th>Description / Receipt</th><th style="text-align:center;">Assigned</th><th style="text-align:center;">Paid</th><th style="text-align:center;">Remaining</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
   function errBox(e) { return '<div class="fee-empty"><i class="material-icons">error_outline</i>' + esc(e && e.message ? e.message : e) + "</div>"; }
@@ -132,7 +133,23 @@
     var css =
       ".fee-empty{text-align:center;padding:40px 20px;color:var(--text-muted);font-weight:600;background:#fff;border:1px dashed var(--border);border-radius:14px}.fee-empty i{font-size:38px;color:var(--maroon);display:block;margin-bottom:8px}" +
       ".fee-studentbar{display:flex;align-items:center;gap:12px;background:var(--primary-light);border:1px solid var(--border);border-radius:14px;padding:14px 18px}" +
-      ".fee-sname{font-weight:800;font-size:17px;color:var(--maroon);font-family:var(--head)}.fee-smeta{font-size:13px;color:var(--text-muted);margin-top:2px}";
+      ".fee-sname{font-weight:800;font-size:17px;color:var(--maroon);font-family:var(--head)}.fee-smeta{font-size:13px;color:var(--text-muted);margin-top:2px}" +
+      /* Responsive table -> stacked cards on phones (no horizontal scrolling) */
+      "@media(max-width:640px){" +
+        ".rtable{min-width:0 !important;width:100%}" +
+        ".rtable thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}" +
+        ".rtable,.rtable tbody,.rtable tr,.rtable td{display:block;width:100%}" +
+        ".friendly-wrap:has(.rtable){border:none;background:transparent;box-shadow:none;overflow:visible}" +
+        ".rtable tr{border:1px solid var(--border);border-radius:14px;margin:0 0 10px;padding:6px 14px;background:#fff;box-shadow:var(--shadow-sm)}" +
+        ".rtable tr.rt-due{border-left:4px solid var(--danger)}" +
+        ".rtable tr.rt-clear{border-left:4px solid var(--success)}" +
+        ".rtable tr:hover td{background:transparent}" +
+        ".rtable td{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border:none;border-top:1px solid #f1f2f6;text-align:right !important}" +
+        ".rtable td::before{content:attr(data-label);font-weight:600;color:var(--text-muted);text-align:left;font-size:12px;letter-spacing:.02em}" +
+        ".rtable tr td:first-child{border-top:none;padding-top:10px;font-size:15px;font-weight:800 !important;color:var(--maroon);text-align:left !important}" +
+        ".rtable tr td:first-child::before{content:none}" +
+        ".rtable td[colspan]{justify-content:center}.rtable td[colspan]::before{content:none}" +
+      "}";
     var st = document.createElement("style"); st.id = "fee-css"; st.textContent = css; document.head.appendChild(st);
   }
 })();
