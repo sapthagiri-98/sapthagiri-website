@@ -8,6 +8,10 @@
    Sundays, full-day holidays and future dates are locked. Every past+today cell
    must be P/A/M/N before saving. Records are always live (never cached).
    Adding holidays now lives in the separate "Holidays Management" module.
+
+   VISIBILITY UPDATE: the grid's height is now scaling-proof (clamp on viewport)
+   and rows are more compact, so many more students are visible before scrolling
+   — even on PCs at 125%/150% Windows display scaling.
    ========================================================================= */
 (function () {
   "use strict";
@@ -156,6 +160,10 @@
     var d = (payload.days || []).filter(function (x) { return x.date === dateKey; })[0];
     if (!d || blocked(dateKey, d.label)) return;
     activeDate = dateKey; $("amActiveHint").textContent = "Active date: " + P.prettyDate(dateKey);
+    // Visually mark the active column header so it's obvious which one quick-fill targets.
+    Array.prototype.forEach.call(document.querySelectorAll(".am-table th[data-col]"), function (th) {
+      th.classList.toggle("col-active", th.getAttribute("data-col") === dateKey);
+    });
   }
   function quickFill(status) {
     if (!activeDate) { toast("Click a date column header first, then P/A/M/N.", "err"); return; }
@@ -240,31 +248,40 @@
       ".am-mini{border:1px solid var(--border);background:#fff;border-radius:10px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;color:var(--text-main)}.am-mini:hover{border-color:var(--maroon);color:var(--maroon)}" +
       ".am-lg{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:var(--text-muted)}.am-lg .sw{width:14px;height:14px;border-radius:4px;display:inline-block;border:1px solid rgba(0,0,0,.05)}" +
       ".am-validation{display:none;background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;padding:12px 14px;border-radius:12px;margin:10px 0;font-size:13px;font-weight:700}.am-validation ul{margin:6px 0 0 18px;padding:0;font-weight:600;font-size:12px}" +
-      ".am-wrap{overflow:auto;max-height:calc(100vh - 320px);border:1px solid var(--border);border-radius:14px;background:#fff;position:relative}" +
+      // ---- SCROLL AREA: scaling-proof height so many rows show on every PC ----
+      // Height grows with the viewport but never collapses: min 460px, target 68vh,
+      // cap 1200px. This is what fixes the "only 2 rows on another PC" problem.
+      ".am-wrap{overflow:auto;height:clamp(460px,68vh,1200px);border:1px solid var(--border);border-radius:14px;background:#fff;position:relative;overscroll-behavior:contain}" +
       ".am-table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px}" +
-      ".am-table th,.am-table td{border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;padding:7px;text-align:center;white-space:nowrap;background:#fff}" +
-      ".am-table thead th{position:sticky;top:0;z-index:5;background:#faf6f6;color:var(--maroon);font-weight:900}" +
-      ".am-table td.roll,.am-table th.roll{position:sticky;left:0;z-index:4;background:#fff;min-width:52px;font-weight:800;color:#64748b}" +
-      ".am-table td.nm,.am-table th.nm{position:sticky;left:52px;z-index:4;background:#fff;text-align:left;min-width:200px;max-width:240px}" +
-      ".am-table td.nm .id{font-size:10px;color:#94a3b8}" +
+      // ---- Compact rows: less padding => more students per screen ----
+      ".am-table th,.am-table td{border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;padding:3px 6px;text-align:center;white-space:nowrap;background:#fff}" +
+      ".am-table thead th{position:sticky;top:0;z-index:5;background:#faf6f6;color:var(--maroon);font-weight:900;line-height:1.15}" +
+      ".am-table td.roll,.am-table th.roll{position:sticky;left:0;z-index:4;background:#fff;min-width:46px;font-weight:800;color:#64748b}" +
+      ".am-table td.nm,.am-table th.nm{position:sticky;left:46px;z-index:4;background:#fff;text-align:left;min-width:190px;max-width:240px}" +
+      ".am-table td.nm b{font-size:12.5px;line-height:1.2}.am-table td.nm .id{font-size:10px;color:#94a3b8}" +
       ".am-table thead th.roll,.am-table thead th.nm{z-index:7;background:#faf6f6}" +
       ".am-table th.d-block{background:#fee2e2!important;color:#991b1b}.am-table th.d-part{background:#fff7ed!important;color:#9a3412}.am-table th.d-fut{background:#f1f5f9!important;color:#64748b}" +
       ".am-table td.d-block{background:#fff5f5!important}.am-table td.d-part{background:#fff7ed!important}.am-table td.d-fut{background:#f8fafc!important}" +
       ".am-table th .dl{font-size:10px;color:#94a3b8;font-weight:600}" +
-      ".am-table th[data-col]{cursor:pointer}" +
-      ".am-sel{width:58px;border:1px solid #d1d5db;border-radius:8px;padding:5px 4px;font-weight:900;text-align:center;outline:none;background:#fff}" +
+      ".am-table th[data-col]{cursor:pointer}.am-table th[data-col]:hover{background:#f3e9e9}" +
+      ".am-table th.col-active{background:#8a1d21!important;color:#fff!important}.am-table th.col-active .dl{color:#f3d6d8!important}" +
+      // ---- Compact select cells ----
+      ".am-sel{width:50px;border:1px solid #d1d5db;border-radius:8px;padding:4px 3px;font-weight:900;text-align:center;outline:none;background:#fff;appearance:auto}" +
       ".am-sel.s-p{background:#ecfdf5!important;color:#047857!important;border-color:#86efac!important}.am-sel.s-a{background:#fef2f2!important;color:#b91c1c!important;border-color:#fecaca!important}.am-sel.s-mn{background:#fffbeb!important;color:#92400e!important;border-color:#fde68a!important}.am-sel.s-blank{background:#f8fafc!important;color:#94a3b8!important}" +
       ".am-table td.invalid{box-shadow:inset 0 0 0 2px #ef4444}" +
-      ".am-table tfoot td{position:sticky;z-index:3;background:#faf6f6;font-weight:900;color:#0f172a}" +
-      ".am-table tfoot tr.ft-m td{bottom:68px}.am-table tfoot tr.ft-a td{bottom:34px}.am-table tfoot tr.ft-avg td{bottom:0;background:#eef2ff;color:#3730a3}" +
-      ".am-table tfoot td.roll{left:0;z-index:6}.am-table tfoot td.nm{left:52px;z-index:6}" +
+      // ---- Sticky totals footer (offsets tuned to the compact row height ~30px) ----
+      ".am-table tfoot td{position:sticky;z-index:3;background:#faf6f6;font-weight:900;color:#0f172a;padding:4px 6px}" +
+      ".am-table tfoot tr.ft-m td{bottom:60px}.am-table tfoot tr.ft-a td{bottom:30px}.am-table tfoot tr.ft-avg td{bottom:0;background:#eef2ff;color:#3730a3}" +
+      ".am-table tfoot td.roll{left:0;z-index:6}.am-table tfoot td.nm{left:46px;z-index:6}" +
       ".am-savebar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}" +
       ".am-postsave{margin:16px 0;padding:20px;border-radius:14px;background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:1px solid #86efac}.am-postsave h4{margin:0;color:#065f46;font-size:15px}" +
       ".am-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:4px}.am-summary .st{background:#fff;padding:12px 14px;border-radius:10px}.am-summary .st label{display:block;font-size:11px;text-transform:uppercase;color:#065f46;font-weight:800;letter-spacing:.4px;margin-bottom:4px}.am-summary .st span{font-size:20px;font-weight:900;color:#0f172a}" +
       ".am-empty{text-align:center;padding:24px;color:var(--text-muted);font-weight:600;background:#fff;border:1px dashed var(--border);border-radius:14px}" +
       ".ex-note{font-size:13px;color:var(--text-muted)}" +
       "#amToast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);z-index:99999;background:#14171f;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;max-width:88vw}#amToast.show{opacity:1;transform:translateX(-50%) translateY(0)}#amToast.ok{background:#065f46}#amToast.err{background:#991b1b}#amToast i{font-size:18px}" +
-      "@media(max-width:900px){.am-table td.nm,.am-table th.nm{min-width:150px}}";
+      // ---- Responsive: give short laptops even more of the screen ----
+      "@media(max-height:800px){.am-wrap{height:clamp(420px,74vh,900px)}}" +
+      "@media(max-width:900px){.am-table td.nm,.am-table th.nm{min-width:150px}.am-wrap{height:clamp(380px,66vh,900px)}}";
     var st = document.createElement("style"); st.id = "am-css"; st.textContent = css; document.head.appendChild(st);
   }
 })();
