@@ -1,317 +1,270 @@
 /* =========================================================================
-   attendance-report.js  —  A4 Monthly Attendance Report (Management)
-   Ports the VBA "GetClassData" printout + "GenerateAbsenteeMessages".
-   Print-perfect A4 landscape sheet matching Sample Attendance A4.
-   Backend: attMonthlyReport(class, month) · attAbsentees(class, date)
+   attendance-month.js — Monthly Sheet tab of the Student Attendance module
+   (Management only). Plain script; uses `Portal`. Backend (unchanged):
+     getClasses(campusFilter)
+     getMonthlyAttendanceMatrix(className, monthStr)
+     saveMonthlyAttendanceMatrix(records)
+   Codes: P = full present · A = full absent · M = morning only · N = afternoon only
+   Sundays, full-day holidays and future dates are locked. Every past+today cell
+   must be P/A/M/N before saving. Records are always live (never cached).
+   Adding holidays now lives in the separate "Holidays Management" module.
    ========================================================================= */
 (function () {
   "use strict";
   var P = window.Portal;
-  var session = P.bootPage("attreport");
+  var session = P.bootPage("attmonth");
   if (!session) return;
-  if (session.role !== "Management") { location.replace("attendance.html"); return; }
+  if (session.role !== "Management") { location.replace("attendance.html"); return; } // admin-only bulk editor
   injectCss();
   var esc = P.esc, $ = function (id) { return document.getElementById(id); };
-  var classes = [], DATA = null;
+  var me = session.name;
+
+  var payload = null, holidays = {}, snapshot = null, activeDate = "", classes = [];
 
   $("view").innerHTML = shell();
   bind();
   loadClasses();
 
   function shell() {
-    return '' +
-      '<div class="ar-head no-print">' +
-        '<span class="ex-chip">ERP Core</span>' +
-        '<h1 class="ar-title">Monthly Attendance Report</h1>' +
-        '<p class="ar-sub">Printable A4 sheet with cumulative present days, percentages and daily present-counts. Sundays &amp; holidays are handled automatically.</p>' +
+    return '<div class="card wide-card">' +
+      '<div class="mod-head"><div><span class="eyebrow">Management</span><h2 style="margin-bottom:4px;">Monthly Attendance Sheet</h2>' +
+      '<p class="view-description" style="margin:0;">Fill or fix a whole month for one class in a single grid. Sundays, holidays and future dates are locked automatically. Add holidays in the <b>Holidays Management</b> module.</p></div></div>' +
+      '<div class="mod-toolbar">' +
+        '<div class="smart-selector"><div class="ss-icon"><i class="material-icons">groups</i></div><div class="ss-body"><div class="ss-label">Class</div><select id="amClass"><option value="">Loading…</option></select></div></div>' +
+        '<div class="smart-selector"><div class="ss-icon"><i class="material-icons">calendar_month</i></div><div class="ss-body"><div class="ss-label">Month</div><input type="month" id="amMonth"></div></div>' +
+        '<button class="btn btn-maroon" id="amLoad" style="width:auto;padding:12px 18px;"><i class="material-icons" style="color:#fff;">table_view</i> Load Sheet</button>' +
       '</div>' +
-      '<div class="ar-bar no-print">' +
-        '<div class="ar-f"><label>Class</label><select id="arClass" class="ar-in"><option>Loading…</option></select></div>' +
-        '<div class="ar-f"><label>Month</label><input id="arMonth" type="month" class="ar-in"></div>' +
-        '<button id="arLoad" class="btn btn-maroon"><i class="material-icons">table_view</i> Generate</button>' +
-        '<button id="arPrint" class="btn btn-outline" disabled><i class="material-icons">print</i> Print / PDF</button>' +
-        '<button id="arMsg" class="btn btn-outline"><i class="material-icons">chat</i> Absentee WhatsApp…</button>' +
+      '<div class="am-legendbar" id="amLegend" style="display:none;">' +
+        '<span class="am-lbl">Quick-fill selected column:</span>' +
+        '<button class="am-mini" data-q="P">P</button><button class="am-mini" data-q="A">A</button><button class="am-mini" data-q="M">M</button><button class="am-mini" data-q="N">N</button>' +
+        '<span id="amActiveHint" class="am-lbl" style="margin-left:6px;"></span><span style="flex:1;"></span>' +
+        '<span class="am-lg"><span class="sw" style="background:#ecfdf5;"></span>Present (P)</span>' +
+        '<span class="am-lg"><span class="sw" style="background:#fef2f2;"></span>Absent (A)</span>' +
+        '<span class="am-lg"><span class="sw" style="background:#fffbeb;"></span>Half (M/N)</span>' +
+        '<span class="am-lg"><span class="sw" style="background:#fee2e2;"></span>Sunday / Holiday</span>' +
+        '<span class="am-lg"><span class="sw" style="background:#f1f5f9;"></span>Future / Locked</span>' +
       '</div>' +
-      '<div id="arLoader" class="ar-empty no-print" style="display:none"><i class="material-icons">sync</i> Building report…</div>' +
-      '<div id="arSheetWrap" class="ar-sheetwrap"></div>' +
-      msgModal();
+      '<div id="amValidation" class="am-validation"></div>' +
+      '<div id="amLoader" style="display:none;text-align:center;padding:24px;color:var(--text-muted);font-weight:700;"><i class="material-icons" style="animation:spin 1s linear infinite;color:var(--maroon);vertical-align:middle;">sync</i> Loading monthly grid…</div>' +
+      '<div id="amHost"></div>' +
+      '<div class="am-savebar" id="amSavebar" style="display:none;">' +
+        '<div class="ex-note" id="amHint">Totals update live. Every past + today cell must be P/A/M/N before saving. Future dates are locked.</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn btn-secondary" id="amReset" style="width:auto;padding:11px 16px;"><i class="material-icons" style="color:var(--maroon);">restart_alt</i> Reset</button>' +
+        '<button class="btn btn-success" id="amSave" style="width:auto;padding:11px 18px;"><i class="material-icons" style="color:#fff;">cloud_done</i> Save Monthly Attendance</button></div>' +
+      '</div>' +
+      '<div id="amPostSave" class="am-postsave" style="display:none;"></div>' +
+    '</div>';
   }
 
   function bind() {
-    $("arMonth").value = P.thisMonth ? P.thisMonth() : (new Date()).toISOString().slice(0, 7);
-    $("arLoad").addEventListener("click", loadReport);
-    $("arPrint").addEventListener("click", function () { window.print(); });
-    $("arMsg").addEventListener("click", openMsg);
-    $("mmX").addEventListener("click", function () { $("mm").classList.remove("show"); });
-    $("mm").addEventListener("click", function (e) { if (e.target === $("mm")) $("mm").classList.remove("show"); });
-    $("mmGo").addEventListener("click", runMsg);
+    $("amMonth").value = P.thisMonth();
+    $("amLoad").addEventListener("click", loadGrid);
+    $("amReset").addEventListener("click", askReset);
+    $("amSave").addEventListener("click", saveGrid);
+    Array.prototype.forEach.call(document.querySelectorAll("#amLegend .am-mini"), function (b) { b.addEventListener("click", function () { quickFill(b.getAttribute("data-q")); }); });
   }
 
   function loadClasses() {
     P.api("getClasses", [""], { text: "Loading classes…" }).then(function (cs) {
-      classes = cs || []; if (P.sortGrades) P.sortGrades(classes);
-      $("arClass").innerHTML = '<option value="">Select class…</option>' +
-        classes.map(function (c) { return '<option>' + esc(c) + "</option>"; }).join("");
-      var mm = $("mmClass"); if (mm) mm.innerHTML = '<option value="ALL">All classes</option>' +
-        classes.map(function (c) { return '<option>' + esc(c) + "</option>"; }).join("");
-    }).catch(function () { $("arClass").innerHTML = '<option>Failed to load</option>'; });
+      classes = cs || []; P.sortGrades(classes);
+      $("amClass").innerHTML = '<option value="">Select class…</option>' + classes.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + "</option>"; }).join("");
+    }).catch(function () { $("amClass").innerHTML = '<option value="">Failed to load</option>'; });
   }
 
-  /* ---------------- report ---------------- */
-  function loadReport() {
-    var cls = $("arClass").value, month = $("arMonth").value;
-    if (!cls || !month) { alert("Pick a class and month."); return; }
-    $("arLoader").style.display = "block"; $("arSheetWrap").innerHTML = ""; $("arPrint").disabled = true;
-    P.api("attMonthlyReport", [cls, month], { overlay: false }).then(function (d) {
-      $("arLoader").style.display = "none"; DATA = d; renderSheet(d); $("arPrint").disabled = false;
-    }).catch(function (e) {
-      $("arLoader").style.display = "none";
-      $("arSheetWrap").innerHTML = '<div class="ar-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>';
-    });
+  /* ---------------- load + render grid ---------------- */
+  function loadGrid() {
+    var cls = $("amClass").value, month = $("amMonth").value;
+    if (!cls || !month) { toast("Pick a class and month.", "err"); return; }
+    payload = null; snapshot = null; holidays = {}; activeDate = "";
+    $("amPostSave").style.display = "none"; $("amValidation").style.display = "none";
+    $("amHost").innerHTML = ""; $("amSavebar").style.display = "none"; $("amLegend").style.display = "none";
+    $("amLoader").style.display = "block";
+    P.api("getMonthlyAttendanceMatrix", [cls, month], { overlay: false }).then(function (pl) {
+      $("amLoader").style.display = "none";
+      payload = pl || null; holidays = (pl && pl.holidays) ? pl.holidays : {};
+      if (pl && pl.students) snapshot = JSON.stringify(pl.students);
+      render();
+    }).catch(function (e) { $("amLoader").style.display = "none"; $("amHost").innerHTML = '<div class="alert-warning" style="display:flex;"><i class="material-icons">warning</i><div>Failed to load: ' + esc(e.message || e) + "</div></div>"; });
   }
 
-  function cellClass(code) {
-    return code === "P" ? "c-p" : code === "A" ? "c-a" : (code === "M" || code === "N") ? "c-mn" : "";
+  function statusClass(v) { v = String(v || "").toUpperCase(); return v === "P" ? "s-p" : v === "A" ? "s-a" : (v === "M" || v === "N") ? "s-mn" : "s-blank"; }
+  function isFuture(iso) { return String(iso || "") > P.todayIso(); }
+  function blocked(dateKey, label) {
+    if (String(label || "").toLowerCase() === "sun") return true;
+    if (holidays[dateKey] && holidays[dateKey].full) return true;
+    if (isFuture(dateKey)) return true;
+    return false;
   }
-  function fmt(v) { if (v == null) return ""; return (Math.round(v * 10) / 10).toString(); }
-  function monthName(m) {
-    var p = String(m || "").split("-"); if (p.length !== 2) return m;
-    return ["January","February","March","April","May","June","July","August","September","October","November","December"][+p[1] - 1] || m;
-  }
 
-  function renderSheet(d) {
-    var days = d.days, n = d.students.length;
-    // A blocked column (Sunday / full-day holiday) becomes ONE merged cell that
-    // spans the weekday row + all n student rows + 3 summary rows => rowspan n+4.
-    var BLOCK_RS = n + 4;
-
-    // colgroup: fixed for known cols; the day columns have NO width -> they flex
-    // to fill the remaining page width (so the table always fills ~100% of A4).
-    var cols = '<col class="c-roll"><col class="c-id"><col class="c-nm">';
-    days.forEach(function () { cols += '<col class="c-d">'; });
-    cols += '<col class="c-pd"><col class="c-pd"><col class="c-pd"><col class="c-pc"><col class="c-pc">';
-
-    // ROW 1 — group header + day numbers
-    var numTh = '';
-    days.forEach(function (day) { numTh += '<th class="d' + (day.block ? " blk" : "") + '">' + day.day + '</th>'; });
-    var hrow1 =
-      '<tr class="hrow1">' +
-        '<th class="roll" rowspan="2">Roll No.</th>' +
-        '<th class="idc" rowspan="2">ID No.</th>' +
-        '<th class="nm" rowspan="2">Name of the Student</th>' +
-        numTh +
-        '<th class="grp" colspan="3">PRESENT DAYS</th>' +
-        '<th class="grp" colspan="2">PERCENTAGE</th>' +
-      '</tr>';
-
-    // ROW 2 — weekday labels; blocked day => merged cell that starts here
-    var wdTh = '';
-    days.forEach(function (day) {
-      if (day.block) {
-        wdTh += '<th class="d blk vmerge" rowspan="' + BLOCK_RS + '"><span class="rot">' + esc(day.reason || "SUNDAY") + '</span></th>';
-      } else if (day.half === "M" || day.half === "A") {
-        wdTh += '<th class="d half"><span class="rot">' + esc(day.label + "(" + day.half + ")") + '</span></th>';
-      } else {
-        wdTh += '<th class="d"><span class="rot">' + esc(day.label) + '</span></th>';
-      }
-    });
-    var hrow2 =
-      '<tr class="hrow2">' + wdTh +
-        '<th class="pd">Until Last</th><th class="pd">Current</th><th class="pd">Total</th>' +
-        '<th class="pc">Month</th><th class="pc">Year</th>' +
-      '</tr>';
-
-    // student rows (blocked columns skipped — covered by the merged cell)
-    var body = d.students.map(function (s) {
-      var tds = '';
-      days.forEach(function (day, ci) {
-        if (day.block) return;
-        tds += '<td class="d ' + cellClass(s.cells[ci]) + '">' + esc(s.cells[ci]) + '</td>';
+  function render() {
+    var host = $("amHost");
+    if (!payload || !payload.students || !payload.students.length) { host.innerHTML = '<div class="am-empty">No students found for this class.</div>'; return; }
+    var days = payload.days;
+    var html = '<div class="am-wrap"><table class="am-table"><thead><tr><th class="roll">Roll</th><th class="nm">Student</th>';
+    for (var i = 0; i < days.length; i++) {
+      var d = days[i], sun = String(d.label).toLowerCase() === "sun", h = holidays[d.date], fut = isFuture(d.date);
+      var thc = "", title = "";
+      if (sun) { thc = "d-block"; title = "Sunday"; }
+      else if (h && h.full) { thc = "d-block"; title = "Holiday: " + (h.reason || ""); }
+      else if (h) { thc = "d-part"; title = (h.session || "Partial") + " holiday: " + (h.reason || ""); }
+      else if (fut) { thc = "d-fut"; title = "Future date — locked"; }
+      html += '<th class="' + thc + '" title="' + esc(title) + '" data-col="' + d.date + '"><div>' + d.day + '</div><div class="dl">' + esc(d.label) + '</div></th>';
+    }
+    html += "</tr></thead><tbody>";
+    payload.students.forEach(function (s, r) {
+      html += '<tr><td class="roll">' + esc(s.rollNo || (r + 1)) + '</td><td class="nm"><b>' + esc(s.name) + '</b><div class="id">ID: ' + esc(s.id) + "</div></td>";
+      days.forEach(function (d) {
+        var dis = blocked(d.date, d.label), val = (s.attendance && s.attendance[d.date]) ? s.attendance[d.date] : "";
+        if (dis) val = "";
+        html += '<td class="' + (dis ? cellBlockClass(d) : "") + '"><select class="am-sel ' + statusClass(val) + '" data-r="' + r + '" data-date="' + d.date + '" ' + (dis ? "disabled tabindex=-1" : "") + ">" +
+          opt("", val) + opt("P", val) + opt("A", val) + opt("M", val) + opt("N", val) + "</select></td>";
       });
-      return '<tr>' +
-        '<td class="roll">' + s.rollNo + '</td>' +
-        '<td class="idc">' + esc(s.id) + '</td>' +
-        '<td class="nm">' + esc(s.name) + '</td>' +
-        tds +
-        '<td class="pd">' + fmt(s.untilLast) + '</td>' +
-        '<td class="pd">' + fmt(s.current) + '</td>' +
-        '<td class="pd tot">' + fmt(s.total) + '</td>' +
-        '<td class="pc">' + s.pctMonth + '%</td>' +
-        '<td class="pc">' + s.pctYear + '%</td>' +
-        '</tr>';
-    }).join("");
+      html += "</tr>";
+    });
+    html += "</tbody><tfoot>";
+    html += '<tr class="ft-m"><td class="roll"></td><td class="nm">Morning Present</td>' + days.map(function (d) { return '<td id="tm_' + d.date + '">0</td>'; }).join("") + "</tr>";
+    html += '<tr class="ft-a"><td class="roll"></td><td class="nm">Afternoon Present</td>' + days.map(function (d) { return '<td id="ta_' + d.date + '">0</td>'; }).join("") + "</tr>";
+    html += '<tr class="ft-avg"><td class="roll"></td><td class="nm">Day Average</td>' + days.map(function (d) { return '<td id="tv_' + d.date + '">0</td>'; }).join("") + "</tr>";
+    html += "</tfoot></table></div>";
+    host.innerHTML = html;
+    Array.prototype.forEach.call(host.querySelectorAll(".am-sel"), function (sel) { sel.addEventListener("change", function () { cellChanged(sel); }); });
+    Array.prototype.forEach.call(host.querySelectorAll("th[data-col]"), function (th) { th.addEventListener("click", function () { setActive(th.getAttribute("data-col")); }); });
+    $("amSavebar").style.display = "flex"; $("amLegend").style.display = "flex";
+    days.forEach(function (d) { recalc(d.date); });
+  }
+  function opt(v, cur) { return '<option value="' + v + '"' + (v === cur ? " selected" : "") + ">" + (v || "-") + "</option>"; }
+  function cellBlockClass(d) { var sun = String(d.label).toLowerCase() === "sun", h = holidays[d.date]; if (sun || (h && h.full)) return "d-block"; if (isFuture(d.date)) return "d-fut"; if (h) return "d-part"; return ""; }
 
-    // 3 summary rows (blocked cols skipped) + CLASS AVERAGE aligned under Month/Year
-    var sumMeta = [
-      ["Number of students present (Morning)", d.summary.morning],
-      ["Number of students present (Afternoon)", d.summary.afternoon],
-      ["Average Attendance", d.summary.avg]
-    ];
-    var sumRows = sumMeta.map(function (r, ri) {
-      var tds = '';
-      r[1].forEach(function (v, i) {
-        if (days[i].block) return;
-        tds += '<td class="d sum">' + (v == null ? "" : fmt(v)) + '</td>';
+  function cellChanged(sel) {
+    var v = String(sel.value || "").toUpperCase();
+    sel.className = "am-sel " + statusClass(v);
+    var td = sel.parentNode; if (td && td.classList) td.classList.remove("invalid");
+    var r = +sel.getAttribute("data-r"), dateKey = sel.getAttribute("data-date");
+    if (payload && payload.students[r]) payload.students[r].attendance[dateKey] = v;
+    recalc(dateKey);
+  }
+  function recalc(dateKey) {
+    if (!payload) return;
+    var m = 0, a = 0;
+    payload.students.forEach(function (s) { var v = String((s.attendance && s.attendance[dateKey]) || "").toUpperCase(); if (v === "P" || v === "M") m++; if (v === "P" || v === "N") a++; });
+    var avg = (m + a) / 2;
+    setT("tm_" + dateKey, m); setT("ta_" + dateKey, a); setT("tv_" + dateKey, Number.isInteger(avg) ? avg : avg.toFixed(1));
+  }
+  function setT(id, v) { var el = $(id); if (el) el.textContent = v; }
+
+  function setActive(dateKey) {
+    var d = (payload.days || []).filter(function (x) { return x.date === dateKey; })[0];
+    if (!d || blocked(dateKey, d.label)) return;
+    activeDate = dateKey; $("amActiveHint").textContent = "Active date: " + P.prettyDate(dateKey);
+  }
+  function quickFill(status) {
+    if (!activeDate) { toast("Click a date column header first, then P/A/M/N.", "err"); return; }
+    var nodes = document.querySelectorAll('.am-sel[data-date="' + activeDate + '"]:not([disabled])');
+    Array.prototype.forEach.call(nodes, function (n) { n.value = status; cellChanged(n); });
+  }
+
+  /* ---------------- save + validation ---------------- */
+  function saveGrid() {
+    if (!payload) return;
+    var cls = payload.className, days = payload.days, students = payload.students;
+    Array.prototype.forEach.call(document.querySelectorAll("td.invalid"), function (td) { td.classList.remove("invalid"); });
+    $("amValidation").style.display = "none";
+    var missing = {}, records = [];
+    students.forEach(function (s, i) {
+      days.forEach(function (d) {
+        if (blocked(d.date, d.label)) return;
+        var v = String((s.attendance && s.attendance[d.date]) || "").toUpperCase();
+        if (v !== "P" && v !== "A" && v !== "M" && v !== "N") {
+          (missing[d.date] = missing[d.date] || []).push(s.name);
+          var sel = document.querySelector('.am-sel[data-r="' + i + '"][data-date="' + d.date + '"]');
+          if (sel && sel.parentNode) sel.parentNode.classList.add("invalid");
+          return;
+        }
+        records.push({ date: d.date, "class": cls, id: s.id, name: s.name, status: v, teacher: me });
       });
-      var tail = ri === 0
-        ? '<td class="sumlbl" colspan="3" rowspan="3">CLASS AVERAGE</td>' +
-          '<td class="pc avg" rowspan="3">' + d.classAvg.month + '%</td>' +
-          '<td class="pc avg" rowspan="3">' + d.classAvg.year + '%</td>'
-        : '';
-      return '<tr class="sumrow' + (ri === 0 ? " sumtop" : "") + '">' +
-        '<td class="sumtitle" colspan="3">' + esc(r[0]) + '</td>' + tds + tail + '</tr>';
-    }).join("");
-
-    // ONE continuous table (NO thead/tfoot) so the merged column can span all rows
-    var sheet =
-      '<div class="a4">' +
-        // ---- letterhead: logo left, school details right (no crash / clean gap) ----
-        '<div class="a4-top">' +
-          '<img class="a4-logo" src="header-logo.png" alt="' + esc(d.school.name) + '" onerror="this.style.display=\'none\';">' +
-          '<div class="a4-idblock">' +
-            '<div class="a4-school">' + esc(d.school.name) + '</div>' +
-            '<div class="a4-line">' + esc(d.school.line1) + '</div>' +
-            '<div class="a4-line">Since 1998 · Day &amp; Residential · ' + esc(d.school.phone) + '</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="a4-report">MONTHLY ATTENDANCE REPORT</div>' +
-        // ---- ONE full-width meta band: Class/Month/Year + Working Days ----
-        '<table class="a4-meta">' +
-          '<tr>' +
-            '<td class="k" rowspan="2">CLASS</td><td class="v" rowspan="2">' + esc(d.className) + '</td>' +
-            '<td class="k" rowspan="2">MONTH</td><td class="v" rowspan="2">' + esc(monthName(d.month)) + '</td>' +
-            '<td class="k" rowspan="2">ACADEMIC YEAR</td><td class="v" rowspan="2">' + esc(d.academicYear) + '</td>' +
-            '<td class="hdr" colspan="6">WORKING DAYS</td>' +
-          '</tr>' +
-          '<tr>' +
-            '<td class="k sm">Until Last</td><td class="v">' + fmt(d.working.untilLast) + '</td>' +
-            '<td class="k sm">Current</td><td class="v">' + fmt(d.working.current) + '</td>' +
-            '<td class="k sm">Total</td><td class="v tot">' + fmt(d.working.total) + '</td>' +
-          '</tr>' +
-        '</table>' +
-        '<table class="a4-tbl"><colgroup>' + cols + '</colgroup>' +
-          hrow1 + hrow2 + body + sumRows +
-        '</table>' +
-      '</div>';
-    $("arSheetWrap").innerHTML = sheet;
+    });
+    var keys = Object.keys(missing);
+    if (keys.length) {
+      keys.sort();
+      var html = '<strong><i class="material-icons" style="vertical-align:middle;color:#b91c1c;font-size:18px;">error_outline</i> Please mark P/A/M/N for every past + today date before saving.</strong><ul>';
+      keys.forEach(function (dk) { var names = missing[dk], lbl = names.length > 4 ? (names.slice(0, 4).join(", ") + " (+" + (names.length - 4) + " more)") : names.join(", "); html += "<li>" + dmy(dk) + " — " + names.length + " student" + (names.length === 1 ? "" : "s") + ": " + esc(lbl) + "</li>"; });
+      html += "</ul>";
+      var b = $("amValidation"); b.innerHTML = html; b.style.display = "block";
+      var first = document.querySelector("td.invalid"); if (first && first.scrollIntoView) first.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (!records.length) { toast("No editable cells this month (only Sundays/holidays).", "err"); return; }
+    var sb = $("amSave"); sb.disabled = true; sb.innerHTML = '<i class="material-icons" style="color:#fff;">sync</i> Saving…';
+    P.api("saveMonthlyAttendanceMatrix", [records]).then(function (res) {
+      postSave(cls, payload.monthStr, records.length, (res && res.updated) || 0, (res && res.added) || 0);
+    }).catch(function (e) { toast("Save failed: " + (e.message || e), "err"); }).finally(function () { sb.disabled = false; sb.innerHTML = '<i class="material-icons" style="color:#fff;">cloud_done</i> Save Monthly Attendance'; });
+  }
+  function postSave(cls, month, cells, updated, added) {
+    $("amSavebar").style.display = "none"; $("amLegend").style.display = "none"; $("amValidation").style.display = "none";
+    $("amHost").innerHTML = ""; payload = null; snapshot = null;
+    $("amPostSave").innerHTML =
+      '<h4><i class="material-icons" style="color:#065f46;vertical-align:middle;">check_circle</i> Monthly attendance saved</h4>' +
+      '<p style="font-size:13px;color:#064e3b;font-weight:600;margin:6px 0 12px;">Saved for <b>' + esc(cls) + '</b> — <b>' + esc(P.monthLabel(month)) + '</b>.</p>' +
+      '<div class="am-summary"><div class="st"><label>Cells filled</label><span>' + cells + '</span></div><div class="st"><label>New rows added</label><span>' + added + '</span></div><div class="st"><label>Rows updated</label><span>' + updated + '</span></div></div>' +
+      '<div style="margin-top:14px;"><button class="btn btn-maroon" id="amNew" style="width:auto;padding:10px 16px;"><i class="material-icons" style="color:#fff;">refresh</i> Start New Entry</button></div>';
+    $("amPostSave").style.display = "block";
+    $("amNew").addEventListener("click", function () { $("amPostSave").style.display = "none"; });
+    toast("Saved " + (added + updated) + " session rows.", "ok");
   }
 
-  /* ---------------- absentee messaging ---------------- */
-  function openMsg() {
-    $("mmDate").value = (new Date()).toISOString().slice(0, 10);
-    $("mmResult").innerHTML = "";
-    $("mm").classList.add("show");
-  }
-  function runMsg() {
-    var cls = $("mmClass").value || "ALL", date = $("mmDate").value;
-    if (!date) { alert("Pick a date."); return; }
-    $("mmResult").innerHTML = '<div class="ar-empty"><i class="material-icons">sync</i> Checking…</div>';
-    P.api("attAbsentees", [cls, date], { overlay: false }).then(function (r) {
-      if (!r.anyMarked) { $("mmResult").innerHTML = '<div class="mm-note warn">Attendance has not been entered for this date.</div>'; return; }
-      if (!r.rows.length) { $("mmResult").innerHTML = '<div class="mm-note ok">Attendance entered · no absentees. 🎉</div>'; return; }
-      var rows = r.rows.map(function (x) {
-        var msg = "Dear Parent,\n" + x.name + " was absent for the " + x.session + " on " +
-          prettyDate(date) + ".\nPlease ensure regular attendance.\n\n  - SAPTHAGIRI SCHOOL";
-        var wa = "https://wa.me/91" + encodeURIComponent(x.phone) + "?text=" + encodeURIComponent(msg);
-        return '<tr><td>' + esc(x.class) + '</td><td>' + esc(x.name) + '</td><td>' + esc(x.session) + '</td>' +
-          '<td>' + esc(x.phone || "—") + '</td><td>' +
-          (x.phone ? '<a class="mm-send" target="_blank" href="' + wa + '">Send</a>' : '<span class="ar-muted">no phone</span>') +
-          '</td></tr>';
-      }).join("");
-      $("mmResult").innerHTML =
-        '<div class="mm-note">' + r.rows.length + ' absentee message(s) ready.</div>' +
-        '<div class="mm-tablewrap"><table class="mm-table"><thead><tr><th>Class</th><th>Student</th><th>Absence</th><th>Phone</th><th></th></tr></thead><tbody>' +
-        rows + '</tbody></table></div>';
-    }).catch(function (e) { $("mmResult").innerHTML = '<div class="mm-note warn">' + esc(e.message || e) + '</div>'; });
-  }
-  function prettyDate(iso) {
-    var p = iso.split("-"); if (p.length !== 3) return iso;
-    var mo = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+p[1] - 1];
-    return p[2] + " " + mo + " " + p[0];
+  function askReset() { if (!payload || !snapshot) return; if (!confirm("Discard all changes and restore the values loaded from the server? Nothing has been saved yet.")) return; doReset(); }
+  function doReset() {
+    try {
+      var orig = JSON.parse(snapshot), byId = {};
+      orig.forEach(function (s) { byId[s.id] = s; });
+      payload.students.forEach(function (s) { var o = byId[s.id]; if (o && o.attendance) { s.attendance = {}; for (var k in o.attendance) if (Object.prototype.hasOwnProperty.call(o.attendance, k)) s.attendance[k] = o.attendance[k]; } });
+      render(); toast("Restored to the loaded values.", "ok");
+    } catch (e) { toast("Reset failed: " + (e.message || e), "err"); }
   }
 
-  function msgModal() {
-    return '<div class="mm" id="mm"><div class="mm-box">' +
-      '<div class="mm-head"><span><i class="material-icons" style="vertical-align:-4px">chat</i> Absentee WhatsApp Messages</span><button id="mmX">&times;</button></div>' +
-      '<div class="mm-body">' +
-        '<div class="ar-bar" style="margin:0 0 10px">' +
-          '<div class="ar-f"><label>Class</label><select id="mmClass" class="ar-in"><option value="ALL">All classes</option></select></div>' +
-          '<div class="ar-f"><label>Date</label><input id="mmDate" type="date" class="ar-in"></div>' +
-          '<button id="mmGo" class="btn btn-maroon"><i class="material-icons">search</i> Find Absentees</button>' +
-        '</div>' +
-        '<div id="mmResult"></div>' +
-      '</div></div></div>';
+  /* ---------------- helpers ---------------- */
+  function dmy(iso) { var p = String(iso || "").split("-"); return p.length === 3 ? (p[2] + "/" + p[1]) : iso; }
+  function toast(msg, kind) {
+    var t = $("amToast"); if (!t) { t = document.createElement("div"); t.id = "amToast"; document.body.appendChild(t); }
+    var icon = kind === "err" ? "error" : (kind === "ok" ? "check_circle" : "info");
+    t.className = ""; if (kind) t.classList.add(kind);
+    t.innerHTML = '<i class="material-icons">' + icon + '</i><span>' + esc(msg) + "</span>";
+    void t.offsetWidth; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 2600);
   }
 
-  /* ---------------- css ---------------- */
   function injectCss() {
-    if (document.getElementById("ar-css")) return;
+    if (document.getElementById("am-css")) return;
     var css =
-    ".ar-head{margin-bottom:10px}.ar-title{font-size:22px;color:var(--maroon);margin:4px 0}.ar-sub{color:var(--text-muted);font-size:13px;max-width:720px}" +
-    ".ex-chip{font-size:11px;font-weight:700;color:var(--maroon);background:var(--primary-light);padding:3px 10px;border-radius:999px}" +
-    ".ar-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-sm);margin-bottom:14px}" +
-    ".ar-f{display:flex;flex-direction:column;gap:4px}.ar-f label{font-size:12px;font-weight:700;color:var(--text-muted)}" +
-    ".ar-in{padding:9px 11px;border:1px solid var(--border);border-radius:10px;font:inherit;min-width:170px;background:#fff}" +
-    ".btn{border:none;border-radius:10px;padding:10px 15px;font-weight:700;font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.btn-maroon{background:var(--maroon);color:#fff}.btn-outline{background:#fff;border:1px solid var(--border);color:var(--text-main)}.btn i{font-size:18px}.btn:disabled{opacity:.5;cursor:default}" +
-    ".ar-empty{text-align:center;padding:26px;color:var(--text-muted);font-weight:600;background:#fff;border:1px dashed var(--border);border-radius:14px}.ar-empty i{font-size:30px;color:var(--maroon);display:block;margin-bottom:6px}.ar-muted{color:#94a3b8}" +
-    // sheet shell  (monochrome / print-first: black lines, gray fills only)
-    ".ar-sheetwrap{overflow:auto}" +
-    ".a4{background:#fff;color:#000;width:100%;max-width:1180px;margin:0 auto;padding:10px 16px 14px;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-sm);-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
-    // letterhead — logo left, school block right, aligned so they never overlap
-    ".a4-top{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #000;padding-bottom:8px}" +
-    ".a4-logo{height:64px;width:auto;object-fit:contain;flex:0 0 auto}" +
-    ".a4-idblock{text-align:center}" +
-    ".a4-school{font-family:Poppins,sans-serif;font-weight:800;font-size:22px;color:#000;line-height:1.05}" +
-    ".a4-line{font-size:11px;color:#222;margin-top:2px;line-height:1.35}" +
-    ".a4-report{text-align:center;font-family:Poppins,sans-serif;font-weight:800;font-size:13.5px;letter-spacing:.6px;margin:7px 0;padding-bottom:2px;border-bottom:1px solid #000;display:inline-block;position:relative;left:50%;transform:translateX(-50%)}" +
-    // meta band — ONE full-width table, uniform cells, no dead space
-    ".a4-meta{border-collapse:collapse;width:100%;font-size:11px;margin:2px 0 8px;table-layout:fixed}" +
-    ".a4-meta td{border:1px solid #000;padding:5px 8px;text-align:center;vertical-align:middle;white-space:nowrap}" +
-    ".a4-meta .k{background:#ececec;font-weight:800;letter-spacing:.3px;font-size:10.5px}" +
-    ".a4-meta .k.sm{font-weight:700;letter-spacing:0}" +
-    ".a4-meta .v{font-weight:700;font-size:12px}" +
-    ".a4-meta .hdr{background:#ececec;font-weight:800;letter-spacing:.6px}" +
-    ".a4-meta .v.tot{background:#ececec}" +
-    // grid — uniform black hairlines, gray-only fills
-    ".a4-tbl{border-collapse:collapse;width:100%;font-size:10px;table-layout:fixed}" +
-    ".a4-tbl col.c-roll{width:30px}.a4-tbl col.c-id{width:74px}.a4-tbl col.c-nm{width:150px}" +
-    ".a4-tbl col.c-pd{width:38px}.a4-tbl col.c-pc{width:38px}" + // c-d flexes to fill
-    ".a4-tbl th,.a4-tbl td{border:.7px solid #000;text-align:center;padding:1.5px 1px;overflow:hidden}" +
-    ".a4-tbl th{background:#ececec;font-weight:700}" +
-    ".a4-tbl th.nm,.a4-tbl td.nm{text-align:left;padding-left:5px;white-space:nowrap;text-overflow:ellipsis}" +
-    ".a4-tbl td.idc{font-size:9px}" +
-    ".a4-tbl th.grp{font-weight:800;letter-spacing:.3px}" +
-    ".hrow2 th.d{height:64px;vertical-align:middle}" +
-    ".a4-tbl .rot{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-weight:700;font-size:9px;display:inline-block;line-height:1}" +
-    ".a4-tbl th.d.blk,.a4-tbl th.d.vmerge{background:#ececec;vertical-align:middle}.a4-tbl th.d.half{background:#d9d9d9}" +
-    // attendance codes: solid black & bold for clean B&W legibility
-    ".a4-tbl td.c-p,.a4-tbl td.c-a,.a4-tbl td.c-mn{color:#000;font-weight:700}" +
-    ".a4-tbl td.tot{font-weight:800;background:#f4f4f4}" +
-    // summary rows
-    ".a4-tbl tr.sumrow td{background:#f4f4f4;font-weight:700}" +
-    ".a4-tbl td.sumtitle{text-align:left;padding-left:5px}" +
-    ".a4-tbl td.sumlbl{font-weight:800;font-size:12px;background:#ececec;letter-spacing:.4px}" +
-    ".a4-tbl tr.sumtop td{border-top:1.6px solid #000}" +
-    ".a4-tbl td.pc.avg{font-size:13px;font-weight:800;background:#ececec}" +
-    // modal
-    ".mm{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px}.mm.show{display:flex}" +
-    ".mm-box{background:#fff;border-radius:16px;max-width:760px;width:100%;max-height:90vh;display:flex;flex-direction:column}" +
-    ".mm-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700}.mm-head button{border:none;background:none;font-size:24px;cursor:pointer}" +
-    ".mm-body{padding:16px;overflow:auto}.mm-note{font-size:13px;font-weight:600;padding:8px 12px;border-radius:10px;background:var(--primary-light);margin-bottom:8px}.mm-note.ok{background:#ecfdf5;color:#065f46}.mm-note.warn{background:#fef2f2;color:#991b1b}" +
-    ".mm-tablewrap{overflow:auto;border:1px solid var(--border);border-radius:12px}.mm-table{width:100%;border-collapse:collapse;font-size:13px}.mm-table th,.mm-table td{padding:8px 10px;border-bottom:1px solid #f1f2f6;text-align:left}.mm-table th{background:#faf5f5;color:var(--maroon);font-size:11.5px;text-transform:uppercase}" +
-    ".mm-send{display:inline-block;background:#25D366;color:#fff;font-weight:700;padding:5px 12px;border-radius:8px;text-decoration:none;font-size:12px}" +
-    // ---------- PRINT ----------
-    "@media print{" +
-      "*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}" +
-      "html,body{background:#fff!important;margin:0!important;padding:0!important}" +
-      ".no-print,.pv2-sidebar,.app-mobile-nav,.site-topbar,.site-header,.site-footer,.fab-wa,.pv2-subtabs,#pv2-overlay{display:none!important}" +
-      ".app-main,.app-body,#view{margin:0!important;padding:0!important;display:block!important}" +
-      ".ar-sheetwrap{overflow:visible}" +
-      ".a4{width:100%;max-width:none;border:none;box-shadow:none;border-radius:0;padding:0;margin:0}" +
-      "@page{size:A4 landscape;margin:6mm}" +
-      ".a4-tbl{font-size:8.6px}.hrow2 th.d{height:56px}.a4-tbl .rot{font-size:8.5px}" +
-      ".a4-logo{height:52px}.a4-report{margin:5px 0}.a4-top{gap:14px;padding-bottom:6px}" +
-    "}";
-    var st = document.createElement("style"); st.id = "ar-css"; st.textContent = css; document.head.appendChild(st);
+      ".am-legendbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 12px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:#f8fafc}" +
+      ".am-legendbar .am-lbl{font-size:12px;font-weight:800;color:var(--text-muted)}" +
+      ".am-mini{border:1px solid var(--border);background:#fff;border-radius:10px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;color:var(--text-main)}.am-mini:hover{border-color:var(--maroon);color:var(--maroon)}" +
+      ".am-lg{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:var(--text-muted)}.am-lg .sw{width:14px;height:14px;border-radius:4px;display:inline-block;border:1px solid rgba(0,0,0,.05)}" +
+      ".am-validation{display:none;background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;padding:12px 14px;border-radius:12px;margin:10px 0;font-size:13px;font-weight:700}.am-validation ul{margin:6px 0 0 18px;padding:0;font-weight:600;font-size:12px}" +
+      ".am-wrap{overflow:auto;max-height:calc(100vh - 320px);border:1px solid var(--border);border-radius:14px;background:#fff;position:relative}" +
+      ".am-table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px}" +
+      ".am-table th,.am-table td{border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;padding:7px;text-align:center;white-space:nowrap;background:#fff}" +
+      ".am-table thead th{position:sticky;top:0;z-index:5;background:#faf6f6;color:var(--maroon);font-weight:900}" +
+      ".am-table td.roll,.am-table th.roll{position:sticky;left:0;z-index:4;background:#fff;min-width:52px;font-weight:800;color:#64748b}" +
+      ".am-table td.nm,.am-table th.nm{position:sticky;left:52px;z-index:4;background:#fff;text-align:left;min-width:200px;max-width:240px}" +
+      ".am-table td.nm .id{font-size:10px;color:#94a3b8}" +
+      ".am-table thead th.roll,.am-table thead th.nm{z-index:7;background:#faf6f6}" +
+      ".am-table th.d-block{background:#fee2e2!important;color:#991b1b}.am-table th.d-part{background:#fff7ed!important;color:#9a3412}.am-table th.d-fut{background:#f1f5f9!important;color:#64748b}" +
+      ".am-table td.d-block{background:#fff5f5!important}.am-table td.d-part{background:#fff7ed!important}.am-table td.d-fut{background:#f8fafc!important}" +
+      ".am-table th .dl{font-size:10px;color:#94a3b8;font-weight:600}" +
+      ".am-table th[data-col]{cursor:pointer}" +
+      ".am-sel{width:58px;border:1px solid #d1d5db;border-radius:8px;padding:5px 4px;font-weight:900;text-align:center;outline:none;background:#fff}" +
+      ".am-sel.s-p{background:#ecfdf5!important;color:#047857!important;border-color:#86efac!important}.am-sel.s-a{background:#fef2f2!important;color:#b91c1c!important;border-color:#fecaca!important}.am-sel.s-mn{background:#fffbeb!important;color:#92400e!important;border-color:#fde68a!important}.am-sel.s-blank{background:#f8fafc!important;color:#94a3b8!important}" +
+      ".am-table td.invalid{box-shadow:inset 0 0 0 2px #ef4444}" +
+      ".am-table tfoot td{position:sticky;z-index:3;background:#faf6f6;font-weight:900;color:#0f172a}" +
+      ".am-table tfoot tr.ft-m td{bottom:68px}.am-table tfoot tr.ft-a td{bottom:34px}.am-table tfoot tr.ft-avg td{bottom:0;background:#eef2ff;color:#3730a3}" +
+      ".am-table tfoot td.roll{left:0;z-index:6}.am-table tfoot td.nm{left:52px;z-index:6}" +
+      ".am-savebar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}" +
+      ".am-postsave{margin:16px 0;padding:20px;border-radius:14px;background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:1px solid #86efac}.am-postsave h4{margin:0;color:#065f46;font-size:15px}" +
+      ".am-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:4px}.am-summary .st{background:#fff;padding:12px 14px;border-radius:10px}.am-summary .st label{display:block;font-size:11px;text-transform:uppercase;color:#065f46;font-weight:800;letter-spacing:.4px;margin-bottom:4px}.am-summary .st span{font-size:20px;font-weight:900;color:#0f172a}" +
+      ".am-empty{text-align:center;padding:24px;color:var(--text-muted);font-weight:600;background:#fff;border:1px dashed var(--border);border-radius:14px}" +
+      ".ex-note{font-size:13px;color:var(--text-muted)}" +
+      "#amToast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);z-index:99999;background:#14171f;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;max-width:88vw}#amToast.show{opacity:1;transform:translateX(-50%) translateY(0)}#amToast.ok{background:#065f46}#amToast.err{background:#991b1b}#amToast i{font-size:18px}" +
+      "@media(max-width:900px){.am-table td.nm,.am-table th.nm{min-width:150px}}";
+    var st = document.createElement("style"); st.id = "am-css"; st.textContent = css; document.head.appendChild(st);
   }
 })();
