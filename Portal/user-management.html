@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+  <title>User Management · Sapthagiri Portal</title>
+  <link rel="icon" href="../logo-mark.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Noto+Sans+Telugu:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- Regular icons (used by portal.js header/footer/sidebar) -->
+  <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
+  <!-- Round icons (used by this page's buttons and JS-rendered action icons) -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  <link rel="stylesheet" href="portal.css">
+  <style>
+    /* Page-local styling only; reuses portal.css tokens where possible. */
+    .um-wrap { max-width: 1180px; margin: 0 auto; padding: 4px 0 24px; }
+    .um-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .um-bar .um-search { flex:1 1 260px; position:relative; }
+    .um-bar .um-search input { width:100%; padding:10px 12px 10px 38px; border:1px solid #e2e8f0;
+      border-radius:10px; font-size:.95rem; background:#fff; }
+    .um-bar .um-search .material-icons-round { position:absolute; left:10px; top:9px; color:#94a3b8; }
+    .um-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e6e8ee;
+      border-radius:12px; overflow:hidden; }
+    .um-table th, .um-table td { padding:11px 12px; text-align:left; font-size:.9rem; border-bottom:1px solid #eef1f6; }
+    .um-table th { background:#f8fafc; color:#475569; font-weight:600; font-size:.78rem;
+      text-transform:uppercase; letter-spacing:.03em; }
+    .um-table tr:last-child td { border-bottom:0; }
+    .um-table tr:hover td { background:#fcfdff; }
+    .um-name { font-weight:600; color:#0f172a; }
+    .um-sub { color:#94a3b8; font-size:.78rem; }
+    .um-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:.72rem; font-weight:600; }
+    .um-pill.role { background:#eef2ff; color:#4338ca; }
+    .um-pill.dtp  { background:#fef3c7; color:#92400e; }
+    .um-pill.mgmt { background:#fae8ff; color:#86198f; }
+    .um-pill.on   { background:#dcfce7; color:#166534; }
+    .um-pill.off  { background:#fee2e2; color:#991b1b; }
+    .um-actions { display:flex; gap:6px; justify-content:flex-end; }
+    .um-ic { border:1px solid #e2e8f0; background:#fff; border-radius:8px; width:34px; height:34px;
+      display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:#475569; }
+    .um-ic:hover { background:#f1f5f9; color:#0f172a; }
+    .um-ic .material-icons-round { font-size:18px; }
+    /* Modal */
+    .um-tabs { display:flex; gap:6px; margin:6px 0 16px; border-bottom:1px solid #eef1f6; }
+    .um-tab { padding:9px 14px; cursor:pointer; font-weight:600; color:#64748b; border-bottom:2px solid transparent; }
+    .um-tab.active { color:#8a1d21; border-bottom-color:#8a1d21; }
+    .um-pane { display:none; } .um-pane.active { display:block; }
+    .um-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
+    .um-field label { display:block; font-size:.78rem; color:#64748b; font-weight:600; margin-bottom:4px; }
+    .um-field input, .um-field select { width:100%; padding:9px 11px; border:1px solid #e2e8f0;
+      border-radius:9px; font-size:.92rem; background:#fff; }
+    .um-full { grid-column:1 / -1; }
+    .um-dual { opacity:.45; pointer-events:none; transition:opacity .15s; }
+    .um-dual.show { opacity:1; pointer-events:auto; }
+    .um-mods { display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; }
+    .um-mod { display:flex; align-items:center; gap:9px; padding:7px 10px; border:1px solid #eef1f6;
+      border-radius:9px; font-size:.9rem; }
+    .um-mod small { color:#94a3b8; margin-left:auto; font-size:.68rem; text-transform:uppercase; }
+    .um-modhdr { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8;
+      font-weight:700; margin:14px 0 6px; grid-column:1 / -1; }
+    .um-empty { text-align:center; color:#94a3b8; padding:40px; }
+    /* Working days checkboxes */
+    .um-workdays { display:grid; grid-template-columns:repeat(4, minmax(110px,1fr)); gap:8px;
+      padding:10px; border:1px solid #e2e8f0; border-radius:9px; background:#f8fafc; }
+    .um-workdays label { display:flex; align-items:center; gap:7px; font-size:.84rem; color:#334155; cursor:pointer; }
+    .um-workdays input { width:auto; accent-color:#8a1d21; }
+    @media (max-width:620px) { .um-workdays { grid-template-columns:repeat(2,1fr); } }
+    /* Modal shell (matches portal look; shown via inline display:flex from JS) */
+    .modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000;
+      align-items:center; justify-content:center; padding:16px; }
+    .modal-card { background:#fff; width:100%; border-radius:14px; box-shadow:0 20px 50px rgba(0,0,0,.2);
+      display:flex; flex-direction:column; max-height:92vh; }
+    .modal-head { display:flex; align-items:center; justify-content:space-between;
+      padding:16px 20px; border-bottom:1px solid #eef1f6; }
+    .modal-head h3 { margin:0; font-size:1.05rem; color:#0f172a; }
+    .modal-x { border:0; background:none; font-size:1.5rem; line-height:1; cursor:pointer; color:#94a3b8; }
+    .modal-body { padding:16px 20px; overflow:auto; }
+    .modal-foot { display:flex; gap:10px; justify-content:flex-end; padding:14px 20px; border-top:1px solid #eef1f6; }
+  </style>
+</head>
+<body>
+  <!-- Portal shell: header/footer injected by portal.js; sidebar + mobile nav mount here -->
+  <nav class="app-mobile-nav" id="mobileNav"></nav>
+  <div class="app-body">
+    <nav class="pv2-sidebar" id="nav"></nav>
+    <main class="app-main">
+      <div id="view">
+        <div class="um-wrap">
+          <div class="um-bar">
+            <div class="um-search">
+              <span class="material-icons-round">search</span>
+              <input id="umSearch" type="text" placeholder="Search name, role, biometric code…" />
+            </div>
+            <button class="btn btn-primary" id="umAdd">
+              <span class="material-icons-round" style="font-size:18px;vertical-align:-4px;">person_add</span> Add User
+            </button>
+          </div>
+          <div id="umList"><div class="um-empty">Loading users…</div></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <!-- Add/Edit modal -->
+  <div class="modal-overlay" id="umModal" style="display:none;">
+    <div class="modal-card" style="max-width:640px;">
+      <div class="modal-head">
+        <h3 id="umModalTitle">Add User</h3>
+        <button class="modal-x" id="umClose">&times;</button>
+      </div>
+      <div class="um-tabs">
+        <div class="um-tab active" data-pane="account">Account</div>
+        <div class="um-tab" data-pane="shift">Shift</div>
+        <div class="um-tab" data-pane="modules">Module Access</div>
+      </div>
+      <div class="modal-body">
+        <!-- Account -->
+        <div class="um-pane active" data-pane="account">
+          <div class="um-grid">
+            <div class="um-field"><label>Full Name *</label><input id="fName" /></div>
+            <div class="um-field"><label>Role</label>
+              <select id="fRole">
+                <option>Management</option><option>Teacher</option>
+                <option>Tutor</option><option>DTP</option>
+              </select>
+            </div>
+            <div class="um-field"><label>Login Password</label>
+              <input id="fPass" placeholder="Set on create · leave blank to keep" /></div>
+            <div class="um-field"><label>Campus</label>
+              <select id="fCampus"><option>Both</option><option>Primary</option><option>High School</option></select>
+            </div>
+            <div class="um-field"><label>WhatsApp Number</label><input id="fWhats" inputmode="numeric" /></div>
+            <div class="um-field"><label>Biometric Emp Code</label>
+              <input id="fBio" placeholder="e.g. 0006 · blank = untracked" /></div>
+          </div>
+        </div>
+        <!-- Shift -->
+        <div class="um-pane" data-pane="shift">
+          <div class="um-grid">
+            <div class="um-field"><label>Shift Type</label>
+              <select id="fShift"><option value="SINGLE">Single</option><option value="DUAL">Dual</option></select>
+            </div>
+            <div class="um-field"><label>Sunday</label>
+              <select id="fSunday"><option value="Off">Off (weekly holiday)</option>
+                <option value="FLEXIBLE">Flexible (works Sundays)</option></select>
+            </div>
+            <div class="um-field"><label>Session 1 · In</label><input id="fS1in" type="time" /></div>
+            <div class="um-field"><label>Session 1 · Out</label><input id="fS1out" type="time" /></div>
+            <div class="um-field um-dual" id="dualIn"><label>Session 2 · In</label><input id="fS2in" type="time" /></div>
+            <div class="um-field um-dual" id="dualOut"><label>Session 2 · Out</label><input id="fS2out" type="time" /></div>
+            <div class="um-field"><label>Grace (minutes)</label><input id="fGrace" type="number" min="0" value="5" /></div>
+          </div>
+          <p class="um-sub" style="margin-top:12px;">
+            These times drive Late / Half-Day / Present classification against the biometric punches
+            (exactly like the Excel shift columns). Dual shift enables the second in/out pair.
+          </p>
+
+          <div class="um-field um-full" style="margin-top:14px;">
+            <label>Working Days</label>
+            <div class="um-workdays" id="fWorkDays">
+              <label><input type="checkbox" value="1"> Monday</label>
+              <label><input type="checkbox" value="2"> Tuesday</label>
+              <label><input type="checkbox" value="3"> Wednesday</label>
+              <label><input type="checkbox" value="4"> Thursday</label>
+              <label><input type="checkbox" value="5"> Friday</label>
+              <label><input type="checkbox" value="6"> Saturday</label>
+              <label><input type="checkbox" value="0"> Sunday</label>
+            </div>
+            <p class="um-sub" style="margin-top:8px;">
+              Only ticked days count towards Present/Late/Absent in Staff Attendance. Untick every day
+              this person doesn't come in (e.g. a part-time tutor who only teaches Monday &amp; Thursday) —
+              the other days will show as "Not Scheduled" instead of "Absent".
+            </p>
+          </div>
+        </div>
+        <!-- Modules -->
+        <div class="um-pane" data-pane="modules">
+          <p class="um-sub" style="margin-bottom:8px;">
+            Tick a module to force it on/off for this user. Untouched tiles follow the role default.
+          </p>
+          <div class="um-mods" id="fModules"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="umCancel">Cancel</button>
+        <button class="btn btn-primary" id="umSave">Save User</button>
+      </div>
+    </div>
+  </div>
+  <script src="config.js"></script>
+  <script src="portal.js"></script>
+  <script src="user-management.js"></script>
+</body>
+</html>

@@ -1,0 +1,535 @@
+/* portal.css — ONE stylesheet. Website palette + all screens. */
+:root{
+  --maroon:#8a1618;--maroon-dark:#6d1012;--orange:#f37021;--orange-dark:#d95c10;--gold:#f6b210;
+  --primary:#8a1618;--primary-dark:#6d1012;--primary-light:#fdf3f3;--accent:#f37021;--accent-dark:#d95c10;--accent-light:#fff3ea;
+  --success:#10b981;--success-light:#d1fae5;--warning:#f59e0b;--warning-light:#fef3c7;--danger:#ef4444;--danger-light:#fee2e2;
+  --bg-base:#f6f7fb;--surface:#fff;--text-main:#1b2030;--text-muted:#5b6472;--border:#e7e9ee;
+  --radius-sm:8px;--radius-md:12px;--radius-lg:18px;
+  --shadow-sm:0 6px 18px rgba(20,20,40,.06);--shadow-md:0 10px 24px rgba(20,20,40,.08);--shadow-lg:0 12px 34px rgba(20,20,40,.09);
+  --font:"Inter","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;--head:"Poppins","Segoe UI",system-ui,sans-serif;--te:"Noto Sans Telugu","Inter",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}html{-webkit-text-size-adjust:100%}
+html.pv2-locked,html.pv2-locked body{overflow:hidden}
+body{font-family:var(--font);background:var(--bg-base);color:var(--text-main);min-height:100vh;display:flex;flex-direction:column;line-height:1.6;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:var(--head);letter-spacing:-.01em}a{color:inherit;text-decoration:none}img{max-width:100%;display:block}
+
+/* chrome */
+.site-topbar{background:var(--maroon-dark);color:#fff;font-size:.84rem}
+.site-topbar .wrap{max-width:1240px;margin:0 auto;padding:0 18px;display:flex;align-items:center;gap:18px;min-height:40px}
+.site-topbar a,.site-topbar span{color:#fff;opacity:.95;display:inline-flex;align-items:center;gap:6px}
+.site-topbar a:hover{opacity:1}.site-topbar .tb-spacer{flex:1}.site-topbar .tb-wa{font-weight:600}
+.site-header{position:sticky;top:0;z-index:60;background:rgba(255,255,255,.97);backdrop-filter:saturate(180%) blur(8px);border-bottom:1px solid var(--border)}
+.site-header .wrap{max-width:1240px;margin:0 auto;padding:0 18px;min-height:66px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.site-brand{display:flex;align-items:center;gap:10px}.site-brand img{height:46px;width:auto}
+.site-brand .fallback{display:flex;align-items:center;gap:8px;color:var(--maroon);font-family:var(--head);font-weight:800;font-size:18px}.site-brand .fallback i{color:var(--maroon)}
+.header-actions{display:flex;align-items:center;gap:10px}
+.header-back{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;font-weight:600;font-size:.9rem;color:var(--maroon);border:1px solid var(--border);background:#fff}
+.header-back:hover{border-color:var(--maroon);background:var(--primary-light)}
+.header-user{font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:10px}.header-user strong{color:var(--text-main)}
+.header-logout{background:var(--maroon);color:#fff;border:none;padding:9px 15px;border-radius:999px;font-weight:600;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.header-logout:hover{background:var(--maroon-dark)}@media(max-width:640px){.header-user span{display:none}}
+.site-footer{background:#14171f;color:#c7ccd6;padding:28px 0 26px;margin-top:auto}
+.site-footer .wrap{max-width:1240px;margin:0 auto;padding:0 18px;display:flex;flex-wrap:wrap;gap:14px 30px;align-items:center;justify-content:space-between}
+.site-footer .f-brand{display:flex;align-items:center;gap:10px;font-family:var(--head);font-weight:700;color:#fff;font-size:15px}
+.site-footer a{color:#c7ccd6;font-size:.9rem}.site-footer a:hover{color:var(--orange)}
+.site-footer .f-links{display:flex;gap:16px;flex-wrap:wrap}.site-footer .f-copy{width:100%;border-top:1px solid #262b36;padding-top:14px;text-align:center;font-size:.82rem;opacity:.8}
+.fab-wa{position:fixed;right:18px;bottom:18px;z-index:70;width:54px;height:54px;border-radius:50%;background:#25d366;color:#fff;display:grid;place-items:center;font-size:1.5rem;box-shadow:0 8px 20px rgba(37,211,102,.45)}.fab-wa:hover{transform:scale(1.06)}
+@media(max-width:760px){.site-topbar .tb-hide-mobile{display:none}.site-brand img{height:38px}}
+
+/* layout */
+.app-mobile-nav{display:none}
+.app-body{display:grid;grid-template-columns:260px 1fr;gap:0;flex-grow:1;width:100%;max-width:1240px;margin:0 auto}
+.app-main{padding:24px 20px 40px;min-width:0}
+.pv2-sidebar{background:var(--surface);border-right:1px solid var(--border);min-height:100%}
+.pv2-sidebar-inner{padding:18px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:82px}
+.pv2-sidebar-title{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);padding:4px 12px 10px}
+.pv2-navitem{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:999px;color:var(--text-main);font-weight:600;font-size:14px;transition:all .15s ease}
+.pv2-navitem i{color:var(--text-muted);font-size:20px}.pv2-navitem:hover{background:var(--primary-light);color:var(--maroon)}.pv2-navitem:hover i{color:var(--maroon)}
+.pv2-navitem.active{background:var(--maroon);color:#fff}.pv2-navitem.active i{color:#fff}
+.pv2-navitem .pv2-soon{margin-left:auto;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--orange);background:var(--accent-light);border-radius:999px;padding:2px 8px;font-style:normal}
+.pv2-navitem.active .pv2-soon{color:#fff;background:rgba(255,255,255,.2)}
+@media(max-width:900px){.app-body{grid-template-columns:1fr}.pv2-sidebar{display:none}
+.app-mobile-nav{display:flex;gap:8px;overflow-x:auto;padding:12px 14px 0;max-width:1240px;margin:0 auto;width:100%}
+.app-mobile-nav a{flex:0 0 auto;padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:#fff;font-weight:600;font-size:13px;color:var(--text-main);white-space:nowrap}
+.app-mobile-nav a.active{background:var(--maroon);color:#fff;border-color:var(--maroon)}}
+
+/* cards/forms/buttons */
+.main-container{flex-grow:1;display:flex;justify-content:center;align-items:flex-start;padding:34px 20px;width:100%}
+.card{background:var(--surface);padding:32px;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);border:1px solid var(--border);width:100%;max-width:440px}
+.card.wide-card{max-width:1000px}.card h2{margin-bottom:22px;color:var(--maroon);font-size:22px;font-weight:800}
+.view-description{color:var(--text-muted);font-size:14px;margin-top:-14px;margin-bottom:22px}
+.eyebrow{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--orange);margin-bottom:6px}
+.te{font-family:var(--te);font-weight:500}
+.form-group{margin-bottom:18px}label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+select,input[type="text"],input[type="number"],input[type="password"],input[type="date"],input[type="month"],textarea{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:var(--radius-md);font-size:15px;font-family:inherit;outline:none;background:#fff;color:var(--text-main);transition:all .18s ease}
+select:focus,input:focus,textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(243,112,33,.14)}textarea{min-height:110px;resize:vertical}
+.btn{display:inline-flex;align-items:center;justify-content:center;width:100%;gap:8px;background:var(--orange);color:#fff;border:2px solid transparent;padding:13px 20px;border-radius:999px;font-size:15px;font-weight:600;font-family:var(--font);cursor:pointer;box-shadow:0 10px 22px rgba(243,112,33,.28);transition:all .18s ease;white-space:nowrap}
+.btn:hover{background:var(--orange-dark)}.btn:active{transform:translateY(1px) scale(.99)}.btn:disabled{opacity:.6;cursor:not-allowed}
+.btn-maroon{background:var(--maroon);box-shadow:none}.btn-maroon:hover{background:var(--maroon-dark)}
+.btn-secondary{background:#fff;color:var(--maroon);border-color:var(--border);box-shadow:none}.btn-secondary:hover{border-color:var(--maroon);background:var(--primary-light)}
+.btn-success{background:var(--success);box-shadow:none}.btn-success:hover{background:#0c9e6e}
+.btn-danger{background:var(--danger);box-shadow:none}.btn-danger:hover{background:#dc2626}
+.btn-whatsapp{background:#25d366;box-shadow:none}.btn-whatsapp:hover{background:#20ba5a}
+.btn-warning-action{background:var(--accent);box-shadow:none}.btn-warning-action:hover{background:var(--accent-dark)}
+
+/* smart selectors */
+.smart-selector-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px}
+.smart-selector{background:#fff;border:1px solid var(--border);border-radius:14px;padding:10px 14px;box-shadow:var(--shadow-sm);display:flex;align-items:center;gap:12px;transition:all .15s ease}
+.smart-selector:focus-within{border-color:var(--orange);box-shadow:0 0 0 3px rgba(243,112,33,.12)}
+.smart-selector .ss-icon{width:36px;height:36px;border-radius:10px;background:var(--primary-light);color:var(--maroon);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}.smart-selector .ss-icon i{font-size:18px;color:var(--maroon)}
+.smart-selector .ss-body{flex-grow:1;min-width:0}.smart-selector .ss-label{font-size:10px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.smart-selector .ss-value{font-size:14px;font-weight:700;color:var(--text-main);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smart-selector input,.smart-selector select{border:none;background:transparent;padding:0;margin:0;font-size:14px;font-weight:700;color:var(--text-main);width:100%;box-shadow:none;outline:none;cursor:pointer}
+.smart-selector input:focus,.smart-selector select:focus{box-shadow:none;border:none}
+.smart-selector.status-cell{background:var(--primary-light);border-color:var(--border)}
+
+/* student rows */
+.student-row-mobile{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #eef2f7;gap:10px}
+.student-row-mobile:last-child{border-bottom:none}.student-row-mobile .student-info{min-width:0;flex-grow:1}
+.student-row-mobile .student-name{font-weight:700;font-size:14px;color:var(--text-main);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.student-row-mobile .student-id{font-size:11px;color:var(--text-muted);font-weight:500}
+.pa-toggle{display:inline-flex;background:#f1f5f9;border:1px solid var(--border);border-radius:999px;padding:3px;flex-shrink:0}
+.pa-toggle button{border:none;background:transparent;color:var(--text-muted);font-weight:800;font-size:12px;padding:6px 14px;border-radius:999px;cursor:pointer;transition:all .15s ease}
+.pa-toggle button.on-p{background:var(--success);color:#fff}.pa-toggle button.on-a{background:var(--danger);color:#fff}
+.period-badge{background:#e2e8f0;color:var(--text-main);padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700}
+.alert-warning{background:var(--warning-light);color:#92400e;border:1px solid #fde68a;padding:14px 18px;border-radius:var(--radius-md);margin-bottom:20px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:500}
+
+/* sticky/modals/overlay */
+.sticky-footer{position:fixed;bottom:0;left:0;width:100%;background:var(--surface);padding:14px 20px;box-shadow:0 -4px 10px -1px rgba(0,0,0,.05);border-top:1px solid var(--border);display:none;z-index:100;text-align:center}
+.sticky-footer.show{display:block}.sticky-footer .btn{max-width:600px;margin:0 auto}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(2px);align-items:center;justify-content:center;z-index:1000;padding:20px}
+.modal-overlay.show{display:flex}
+.modal-content{background:var(--surface);border-radius:var(--radius-lg);padding:28px;width:100%;max-width:480px;box-shadow:var(--shadow-lg);border:1px solid var(--border);animation:modalFadeIn .2s cubic-bezier(.16,1,.3,1)}
+@keyframes modalFadeIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}
+.modal-header-container{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:14px}
+.modal-header-container h3{font-size:18px;font-weight:700;color:var(--maroon)}
+.modal-close-icon{background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted);line-height:1}.modal-close-icon:hover{color:var(--text-main)}
+#pv2-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);z-index:9998;display:none;align-items:center;justify-content:center}
+#pv2-overlay.show{display:flex}
+#pv2-overlay .pv2-overlay-card{background:#fff;color:var(--maroon);padding:20px 26px;border-radius:14px;display:flex;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-weight:700;font-size:14px}
+#pv2-overlay .pv2-overlay-card i{animation:spin 1s linear infinite;color:var(--maroon)}
+@keyframes spin{100%{transform:rotate(360deg)}}
+.inline-loader{text-align:center;color:var(--maroon);font-weight:600;padding:30px 0;font-size:15px}.inline-loader i{animation:spin 1s linear infinite;vertical-align:middle;margin-right:8px}
+
+/* login hero */
+.login-hero{flex-grow:1;display:flex;align-items:center;justify-content:center;padding:40px 20px;background:linear-gradient(135deg,rgba(109,16,18,.95),rgba(138,22,24,.88)),var(--maroon);position:relative;overflow:hidden}
+.login-hero::after{content:"";position:absolute;right:-120px;top:-120px;width:340px;height:340px;background:radial-gradient(circle,rgba(243,112,33,.35),transparent 70%);border-radius:50%}
+.login-shell{width:100%;max-width:940px;display:grid;grid-template-columns:1.05fr .95fr;gap:30px;align-items:center;position:relative;z-index:1}
+.login-pitch{color:#fff}.login-pitch .badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:7px 15px;border-radius:999px;font-size:.8rem;font-weight:600;margin-bottom:16px}
+.login-pitch h1{font-size:clamp(1.8rem,4vw,2.6rem);font-weight:800;line-height:1.15}.login-pitch h1 .accent{color:var(--gold)}
+.login-pitch .te-tag{display:block;font-family:var(--te);color:#ffd98a;margin-top:10px;font-size:1.05rem}
+.login-pitch p{opacity:.95;margin-top:14px;max-width:460px}.login-pitch ul{list-style:none;margin-top:16px;display:grid;gap:8px}
+.login-pitch li{display:flex;gap:8px;align-items:center;font-size:.95rem}.login-pitch li i{color:var(--gold)}
+.login-card-wrap{display:flex;justify-content:center}#login-view{box-shadow:0 24px 60px rgba(0,0,0,.28)}
+@media(max-width:860px){.login-shell{grid-template-columns:1fr}.login-pitch{text-align:center}.login-pitch ul{justify-items:center}}
+
+/* attendance module */
+.att-bulkbar{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 14px}.att-bulkbar .btn{width:auto;padding:9px 16px;font-size:13px}
+.att-bulkbar .btn.allp{background:var(--success);box-shadow:none}.att-bulkbar .btn.allp:hover{background:#0c9e6e}
+.att-bulkbar .btn.alla{background:var(--danger);box-shadow:none}.att-bulkbar .btn.alla:hover{background:#dc2626}
+.att-counts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.att-chip{flex:1;min-width:90px;text-align:center;padding:12px 8px;border-radius:14px;color:#fff}
+.att-chip .n{display:block;font-size:24px;font-weight:800;line-height:1;font-family:var(--head)}.att-chip .l{font-size:11px;font-weight:700;opacity:.92}
+.att-chip.total{background:var(--maroon)}.att-chip.present{background:var(--success)}.att-chip.absent{background:var(--danger)}
+.att-empty{text-align:center;padding:36px 20px;color:var(--text-muted);font-weight:600;border:1px dashed var(--border);border-radius:14px;background:#fafafa}.att-empty i{font-size:38px;color:var(--maroon);display:block;margin-bottom:8px}
+.att-block{display:none;margin:14px 0 20px;padding:20px;border-radius:14px;background:linear-gradient(135deg,#fef2f2,#fee2e2);border:1px solid #fecaca;color:#991b1b;gap:14px;align-items:center}
+.att-block.show{display:flex}.att-block i.material-icons{font-size:34px;color:#b91c1c}.att-block strong{display:block;font-size:15px;margin-bottom:2px}.att-block span{font-size:13px;color:#7f1d1d}
+.att-admin-split{display:none;grid-template-columns:340px 1fr;gap:20px;align-items:flex-start;margin-top:4px}.att-admin-split.show{display:grid}@media(max-width:900px){.att-admin-split.show{grid-template-columns:1fr}}
+#attClassListBox{border:1px solid var(--border);border-radius:14px;background:#fff;padding:14px}#attClassListBox h3{font-size:14px;font-weight:800;margin:0 0 12px;display:flex;align-items:center;gap:6px;color:var(--text-main)}#attClassListBox h3 i{color:var(--maroon);font-size:18px}
+.cls-card{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:12px;background:#fafafa;margin-bottom:8px;border:1px solid #eef2f7}.cls-card:hover{background:#f1f5f9}
+.cls-card .cls-name{font-weight:800;font-size:13px;color:#0f172a}.cls-card .cls-badges{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.cls-badges .mini-pill{border:none;border-radius:10px;padding:7px 8px;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px}
+.mini-pill.done{background:#ecfdf5;color:#047857}.mini-pill.pending{background:#fef2f2;color:#b91c1c}.mini-pill.holiday{background:#fff7ed;color:#9a3412;cursor:default}
+.cls-total-card{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:12px;background:linear-gradient(135deg,#fff1f2,#fee2e2);border:1px solid #fecaca;margin-top:6px;font-size:12px;font-weight:800;color:#7f1d1d}
+.cls-total-card .totals-pair{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cls-total-card .totals-pair span{padding:4px 8px;background:#fff;color:#0f172a;border-radius:8px}
+#attStudentCard{display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 18px}
+#attAdminInlineSave{display:none;justify-content:flex-end;padding-top:10px}#attAdminInlineSave button{width:auto;padding:11px 20px}
+#attAdminEmptyHint{text-align:center;padding:36px 20px;color:var(--text-muted);font-weight:600;border:1px dashed var(--border);border-radius:14px;background:#fafafa}#attAdminEmptyHint i{font-size:38px;color:var(--maroon);display:block;margin-bottom:8px}
+.att-confirm-totals{display:flex;justify-content:space-around;background:var(--primary-light);padding:18px;border-radius:var(--radius-lg);margin-bottom:24px;border:1px solid var(--border)}
+.att-confirm-totals .ct{text-align:center}.att-confirm-totals .ct .n{font-size:26px;font-weight:800;font-family:var(--head)}.att-confirm-totals .ct .l{font-size:11px;font-weight:600;color:var(--text-muted);margin-top:4px}
+.att-confirm-totals .ct.present .n{color:var(--success)}.att-confirm-totals .ct.absent .n{color:var(--danger)}.att-confirm-totals .ct.total .n{color:var(--maroon)}
+
+/* homework module */
+.hw-role{font-size:13px;color:var(--text-muted);margin-top:2px}.hw-role strong{color:var(--maroon)}
+.hw-holiday{text-align:center;padding:40px 20px;color:#1e3a8a;background:#dbeafe;border:1px solid #93c5fd;border-radius:14px;margin:10px 0}.hw-holiday i{font-size:42px;color:#2563eb}.hw-holiday .t{font-weight:700;font-size:17px;margin-top:8px}.hw-holiday .r{margin-top:6px;font-size:14px}.hw-holiday .s{margin-top:8px;font-size:13px;color:#1e40af}
+.hw-empty{text-align:center;padding:40px 20px;color:var(--text-muted);font-weight:600;border:1px dashed var(--border);border-radius:14px;background:#fafafa}.hw-empty i{font-size:38px;color:var(--maroon);display:block;margin-bottom:8px}
+.hw-teacher-card{background:#fff;border:1px solid var(--border);border-left:4px solid var(--maroon);border-radius:14px;padding:16px 18px;margin-bottom:12px;box-shadow:var(--shadow-sm);cursor:pointer;transition:all .18s ease}.hw-teacher-card:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}.hw-teacher-card.done{border-left-color:var(--success)}
+.hw-teacher-card .hw-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.hw-teacher-card .hw-cls{font-weight:800;font-size:16px;color:var(--text-main)}.hw-teacher-card .hw-sub{color:var(--text-muted);font-size:13px;margin:6px 0}
+.hw-display-box{background:#f8fafc;border:1px solid var(--border);border-left:4px solid var(--maroon);padding:12px;font-size:14px;margin-top:8px;border-radius:var(--radius-sm);line-height:1.4;color:var(--text-main)}
+.mgmt-class-row{border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:20px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow-md)}
+.mgmt-class-header{background:var(--primary-light);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-weight:700;color:var(--maroon);border-bottom:1px solid var(--border)}
+.mgmt-subject-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;padding:18px}
+.subject-status-card{padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;justify-content:space-between;min-height:140px;transition:all .2s ease}
+.subject-status-card.clickable{cursor:pointer}.subject-status-card.clickable:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--maroon)}
+.subject-status-card.status-complete{border-left:4px solid var(--success);background:#f8fafc}.subject-status-card.status-pending{border-left:4px solid var(--warning);background:#fffdfa}
+.subject-status-card .ssc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}.subject-status-card .ssc-name{font-weight:700;color:var(--text-main);font-size:15px}
+.subject-status-card .ssc-teacher{font-size:12px;color:var(--text-muted);margin-bottom:8px}.subject-status-card .ssc-hw{font-size:13px;color:var(--text-main);line-height:1.4}.subject-status-card .ssc-actions{margin-top:12px;text-align:right}
+.bulk-list-item{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--border);background:var(--surface);gap:12px;flex-wrap:wrap}.bulk-list-item:last-child{border-bottom:none}
+.ai-box{padding:12px;font-size:14px;border-radius:var(--radius-md);border:1px solid var(--border);white-space:pre-wrap}.ai-box.orig{background:#f1f5f9;color:var(--text-main)}.ai-box.sugg{background:var(--success-light);border-left:4px solid var(--success);color:#047857;font-weight:500}
+.btn-remind{background:var(--warning-light);color:#92400e;border:1px solid #fde68a;padding:8px 12px;font-size:13px;border-radius:var(--radius-sm);font-weight:600;width:auto;box-shadow:none}.btn-remind:hover{background:#fef08a}
+
+/* coming soon */
+.soon-wrap{max-width:520px;margin:0 auto;text-align:center}.soon-icon{width:72px;height:72px;border-radius:20px;background:var(--primary-light);color:var(--maroon);display:grid;place-items:center;margin:8px auto 16px}.soon-icon i{font-size:38px}
+
+/* ===== shared: toolbar, stat cards, calendar, tables (log screens) ===== */
+.mod-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.mod-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:8px}
+.mod-toolbar .smart-selector{flex:1 1 200px;max-width:280px}
+.refresh-btn{display:inline-flex;align-items:center;gap:6px;padding:11px 15px;border-radius:12px;border:1px solid var(--border);background:#fff;color:var(--maroon);font-weight:700;font-size:13px;cursor:pointer}
+.refresh-btn:hover{background:var(--primary-light);border-color:var(--maroon)}
+.timing-line{font-size:12px;color:var(--text-muted);font-weight:600;margin:2px 0 16px;min-height:16px}
+.timing-line b{color:var(--success)}
+
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:18px}
+.stat-box{border-radius:16px;padding:16px 14px;color:#fff;text-align:center;box-shadow:var(--shadow-sm)}
+.stat-box .n{font-size:28px;font-weight:800;font-family:var(--head);line-height:1}.stat-box .l{font-size:12px;font-weight:600;opacity:.95;margin-top:6px}
+.stat-box.green{background:var(--success)}.stat-box.orange{background:var(--accent)}.stat-box.red{background:var(--danger)}.stat-box.slate{background:#475569}.stat-box.maroon{background:var(--maroon)}.stat-box.purple{background:#9b59b6}
+
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:2px 0 16px;font-size:12.5px;color:var(--text-muted)}
+.legend .lg{display:inline-flex;align-items:center;gap:6px}.legend .dot{width:12px;height:12px;border-radius:50%}
+.d-green{background:var(--success)}.d-orange{background:var(--warning)}.d-red{background:var(--danger)}.d-purple{background:#9b59b6}.d-blue{background:#0ea5e9}.d-grey{background:#cbd3dd}
+
+.cal-head{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;text-align:center;font-size:12px;font-weight:700;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:10px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.cal-day{background:#fff;border:1px solid var(--border);border-radius:12px;min-height:74px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;cursor:pointer;box-shadow:var(--shadow-sm);transition:all .15s ease}
+.cal-day:hover:not(.empty){transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--maroon)}
+.cal-day.empty{background:#f8fafc;border-style:dashed;cursor:default;box-shadow:none}
+.cal-day .dnum{font-size:14px;font-weight:700;color:var(--text-main);align-self:flex-start}
+.cal-day .dot{width:13px;height:13px;border-radius:50%;margin-top:auto}
+.cal-day .mini{display:flex;flex-direction:column;gap:2px;width:100%;margin-top:6px;font-size:10px;font-weight:800}
+.cal-day .mini span{border-radius:4px;padding:1px 5px;text-align:left}
+.mini .m-p{background:#ecfdf5;color:#047857}.mini .m-l{background:#fef3c7;color:#92400e}.mini .m-h{background:#f3e8ff;color:#6b21a8}.mini .m-a{background:#fee2e2;color:#b91c1c}
+
+.friendly-wrap{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);overflow-x:auto;box-shadow:var(--shadow-sm);margin-top:6px}
+.friendly-table{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+.friendly-table th,.friendly-table td{padding:12px 14px;text-align:left}
+.friendly-table th{background:#faf6f6;font-weight:700;color:var(--maroon);border-bottom:1px solid var(--border);font-size:12.5px;text-transform:uppercase;letter-spacing:.03em}
+.friendly-table td{border-bottom:1px solid #f1f2f6}.friendly-table tr:last-child td{border-bottom:none}.friendly-table tr:hover td{background:#fafbfc}
+.friendly-table td.num{text-align:center;font-weight:700}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:700}
+.pill.green{background:var(--success-light);color:#047857}.pill.orange{background:var(--warning-light);color:#92400e}.pill.red{background:var(--danger-light);color:#b91c1c}.pill.purple{background:#f3e8ff;color:#6b21a8}.pill.blue{background:#e0f2fe;color:#075985}.pill.grey{background:#eef2f7;color:#475569}
+
+.list-row{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid #f1f2f6}
+.list-row:last-child{border-bottom:none}
+.list-row .idx{flex:0 0 auto;min-width:30px;height:30px;border-radius:8px;background:#f1f5f9;color:var(--text-muted);font-weight:800;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+.list-row .who{flex:1;min-width:0}.list-row .who .nm{font-weight:700;font-size:14px;color:var(--text-main)}.list-row .who .meta{font-size:12px;color:var(--text-muted)}
+.group-head{font-size:12.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--maroon);margin:16px 0 8px;display:flex;align-items:center;gap:6px}.group-head:first-child{margin-top:2px}
+
+.big-day{display:flex;align-items:center;gap:14px;background:var(--primary-light);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:14px}
+.big-day .bd-icon{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;color:#fff;flex:0 0 auto}
+.big-day .bd-body .bd-status{font-weight:800;font-size:16px;color:var(--text-main)}.big-day .bd-body .bd-sub{font-size:13px;color:var(--text-muted);margin-top:2px}
+
+.slip-card{background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow-sm);margin-top:22px}
+.slip-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.slip-head .st{display:flex;align-items:center;gap:10px}.slip-head .st i{color:var(--accent);font-size:22px}.slip-head h3{font-size:15px;font-weight:800;color:var(--text-main);margin:0}
+.slip-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;flex-wrap:wrap;margin-bottom:8px}
+.slip-row .m{font-weight:800;font-size:13px;color:var(--text-main);display:inline-flex;align-items:center;gap:8px}.slip-row .m i{color:var(--accent);font-size:18px}
+.slip-row .acts{display:flex;gap:8px;flex-shrink:0}
+.slip-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:13px;font-weight:700;text-decoration:none}.slip-btn.maroon{background:var(--maroon)}
+.slip-empty{padding:14px;text-align:center;color:var(--text-muted);font-size:13px;font-weight:600;background:#f8fafc;border:1px dashed var(--border);border-radius:10px}
+
+.day-drill-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.day-drill-tabs button{flex:1;min-width:70px;border:1px solid var(--border);background:#fff;border-radius:12px;padding:10px 8px;cursor:pointer;text-align:center}
+.day-drill-tabs button .n{display:block;font-size:20px;font-weight:800;line-height:1}.day-drill-tabs button .l{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:4px}
+.day-drill-tabs button.active{border-color:var(--maroon);box-shadow:0 0 0 2px rgba(138,22,24,.12)}
+.day-drill-tabs button.t-green .n{color:#047857}.day-drill-tabs button.t-orange .n{color:#92400e}.day-drill-tabs button.t-purple .n{color:#6b21a8}.day-drill-tabs button.t-red .n{color:#b91c1c}
+
+@media(max-width:480px){.card{padding:18px 14px!important}.main-container{padding:14px 10px!important}.cal-day{min-height:60px}.cal-day .mini{display:none}}
+
+/* =======================================================================
+   MOBILE + DESKTOP POLISH  (appended — refines responsiveness only)
+   Shared by every portal page via portal.css. Nothing above was removed.
+   ======================================================================= */
+/* Footer branding now uses the header logo instead of the school-name text */
+.site-footer .f-brand{min-height:40px}
+.site-footer .f-brand .f-logo{height:40px;width:auto;background:#fff;padding:5px 10px;border-radius:10px;display:block}
+.site-footer .f-brand .f-fallback{font-family:var(--head);font-weight:700;color:#fff;font-size:15px}
+
+/* A touch more breathing room on large screens */
+@media(min-width:901px){ .app-main{padding:26px 28px 48px} }
+
+/* ---------- tablet & below: elegant sticky module nav ---------- */
+@media(max-width:900px){
+  .app-mobile-nav{position:sticky;top:66px;z-index:40;padding:10px 12px;gap:8px;
+    background:rgba(255,255,255,.96);-webkit-backdrop-filter:saturate(180%) blur(8px);backdrop-filter:saturate(180%) blur(8px);
+    border-bottom:1px solid var(--border);scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .app-mobile-nav::-webkit-scrollbar{display:none}
+  .app-mobile-nav a{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;
+    border:1px solid var(--border);background:#fff;font-weight:600;font-size:13px;color:var(--text-main);
+    white-space:nowrap;box-shadow:var(--shadow-sm);transition:background .15s ease,color .15s ease,box-shadow .15s ease}
+  .app-mobile-nav a i{font-size:18px;color:var(--maroon)}
+  .app-mobile-nav a.active{background:var(--maroon);color:#fff;border-color:var(--maroon);box-shadow:0 6px 16px rgba(138,22,24,.28)}
+  .app-mobile-nav a.active i{color:#fff}
+  .app-main{padding:18px 14px 44px}
+}
+
+/* ---------- phones ---------- */
+@media(max-width:640px){
+  .site-header .wrap{min-height:58px}
+  .app-mobile-nav{top:58px}
+  .header-actions{gap:8px}
+  .header-back{padding:8px 12px;font-size:.85rem}
+  .header-logout{padding:8px 12px}
+  /* toolbars & selectors go full width and stack cleanly */
+  .mod-toolbar{gap:8px}
+  .mod-toolbar .smart-selector{max-width:none;flex:1 1 100%}
+  .smart-selector-row{grid-template-columns:1fr 1fr}
+  /* bulk / action bars become equal tappable targets */
+  .att-bulkbar .btn{flex:1 1 auto}
+  /* modals slide up as bottom sheets */
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal-content{max-width:none;width:100%;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-bottom-left-radius:0;border-bottom-right-radius:0}
+  /* comfortable tap targets */
+  .pa-toggle button{padding:8px 16px}
+}
+
+/* ---------- very small phones ---------- */
+@media(max-width:430px){
+  .smart-selector-row{grid-template-columns:1fr}
+  .stat-row{grid-template-columns:1fr 1fr}
+  .att-counts{gap:8px}
+}
+
+/* =======================================================================
+   MOBILE APP EXPERIENCE + DASHBOARD (HOME) LAUNCHER  (appended)
+   Adds: compact greeting, sidebar-less Home screen, module cards, app-style
+   bottom navigation, read-only admin (mobile) mode, bottom-sheet modals,
+   48px touch targets, table→card helpers, and no-horizontal-scroll guards.
+   Nothing above was removed. Desktop behaviour is preserved; most rules are
+   scoped to the Home screen (body.dash-home) or to <=900px / <=640px.
+   ======================================================================= */
+
+/* ---------- global: never allow sideways scrolling ---------- */
+html,body{overflow-x:hidden}
+.app-main{min-width:0}
+
+/* ---------- native-feeling tap targets ---------- */
+.btn{min-height:48px}
+select,input[type="text"],input[type="number"],input[type="password"],
+input[type="date"],input[type="month"]{min-height:48px}
+
+/* ---------- header profile chip (replaces "Welcome, X") ---------- */
+.header-user.profile-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 7px;
+  background:var(--primary-light);border:1px solid var(--border);border-radius:999px}
+.header-user.profile-chip i{font-size:20px;color:var(--maroon)}
+.header-user.profile-chip strong{color:var(--text-main);font-size:13.5px;font-weight:700;
+  max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:640px){.header-user.profile-chip strong{max-width:90px}}
+
+/* =======================================================================
+   DASHBOARD (HOME): the dashboard IS the navigation → hide the sidebar and
+   let the module grid use the full content width.
+   ======================================================================= */
+body.dash-home .app-body{grid-template-columns:1fr}
+body.dash-home .pv2-sidebar{display:none}
+
+/* compact greeting — no oversized hero */
+.dash-greet{margin:2px 0 4px}
+.dash-hello{font-family:var(--head);font-weight:800;font-size:clamp(22px,5vw,30px);line-height:1.2;color:var(--text-main);margin:0}
+.dash-sub{color:var(--text-muted);font-size:13.5px;font-weight:600;margin:4px 0 0}
+.dash-prompt{font-size:15px;font-weight:600;color:var(--text-main);margin:16px 0 14px}
+
+.dashboard-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+
+.module-card{display:flex;align-items:center;gap:16px;background:var(--surface);
+  border:1px solid var(--border);border-radius:20px;padding:16px 18px;min-height:88px;
+  box-shadow:var(--shadow-sm);transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease;color:var(--text-main)}
+.module-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--maroon)}
+.module-card:active{transform:translateY(0) scale(.995)}
+.module-card .mc-icon{flex:0 0 auto;width:54px;height:54px;border-radius:15px;display:grid;place-items:center;
+  background:var(--primary-light);color:var(--maroon)}
+.module-card .mc-icon i{font-size:27px;color:var(--maroon)}
+.module-card .mc-body{min-width:0;display:flex;flex-direction:column;gap:2px;flex-grow:1}
+.module-card .mc-title{font-family:var(--head);font-weight:700;font-size:16.5px;line-height:1.2}
+.module-card .mc-desc{font-size:12.5px;color:var(--text-muted);line-height:1.35}
+.module-card .mc-chevron{flex:0 0 auto;color:var(--text-muted);font-size:22px}
+
+/* rotating icon tints so the grid feels lively (repeats every 6) */
+.module-card:nth-child(6n+2) .mc-icon{background:var(--accent-light)}
+.module-card:nth-child(6n+2) .mc-icon i{color:var(--accent-dark)}
+.module-card:nth-child(6n+3) .mc-icon{background:var(--success-light)}
+.module-card:nth-child(6n+3) .mc-icon i{color:#047857}
+.module-card:nth-child(6n+4) .mc-icon{background:#e0f2fe}
+.module-card:nth-child(6n+4) .mc-icon i{color:#075985}
+.module-card:nth-child(6n+5) .mc-icon{background:#f3e8ff}
+.module-card:nth-child(6n+5) .mc-icon i{color:#6b21a8}
+.module-card:nth-child(6n+6) .mc-icon{background:var(--warning-light)}
+.module-card:nth-child(6n+6) .mc-icon i{color:#92400e}
+
+.dash-empty{text-align:center;padding:44px 20px;color:var(--text-muted);border:1px dashed var(--border);border-radius:18px;background:#fafafa}
+.dash-empty i{font-size:42px;color:var(--maroon);display:block;margin-bottom:10px}
+.dash-empty .t{font-weight:800;font-size:16px;color:var(--text-main)}
+.dash-empty .s{font-size:13px;margin-top:6px}
+
+.dash-readonly{display:flex;align-items:center;gap:12px;background:var(--primary-light);border:1px solid var(--border);
+  border-left:4px solid var(--maroon);border-radius:14px;padding:11px 16px;margin:6px 0 14px;font-size:13px;color:var(--text-main)}
+.dash-readonly i{color:var(--maroon)}
+
+@media(max-width:700px){.dashboard-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.dashboard-grid{grid-template-columns:1fr}}
+
+/* On phones the Home screen has no sidebar anyway; give a touch more room. */
+@media(max-width:900px){ body.dash-home .app-main{padding-top:16px} }
+
+/* =======================================================================
+   APP-STYLE BOTTOM NAVIGATION  (<=900px)
+   Fixed bottom tab bar like the Microsoft 365 / Google Workspace apps.
+   ======================================================================= */
+@media(max-width:900px){
+  .app-mobile-nav{
+    position:fixed;left:0;right:0;bottom:0;top:auto;
+    display:flex;gap:0;padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));
+    background:rgba(255,255,255,.98);-webkit-backdrop-filter:saturate(180%) blur(10px);backdrop-filter:saturate(180%) blur(10px);
+    border-top:1px solid var(--border);border-bottom:none;
+    box-shadow:0 -6px 20px rgba(20,20,40,.08);
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+    z-index:120;margin:0;max-width:none;width:100%}
+  .app-mobile-nav::-webkit-scrollbar{display:none}
+  .app-mobile-nav a{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    min-width:64px;padding:6px 10px;border:none;border-radius:14px;background:transparent;box-shadow:none;
+    font-weight:600;font-size:11px;color:var(--text-muted);white-space:nowrap}
+  .app-mobile-nav a i{font-size:23px;color:var(--text-muted)}
+  .app-mobile-nav a.active{background:transparent;color:var(--maroon);border:none}
+  .app-mobile-nav a.active i{color:var(--maroon)}
+  .app-mobile-nav a.active span{font-weight:800}
+  .app-main{padding-bottom:88px}
+  .site-footer{padding-bottom:calc(26px + 72px + env(safe-area-inset-bottom,0px))}
+  .sticky-footer{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  .fab-wa{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+}
+
+/* =======================================================================
+   READ-ONLY ADMIN (mobile Management) — hide every write control.
+   Presentation-layer only: the backend permission model is unchanged.
+   ======================================================================= */
+body.mobile-admin .sticky-footer,
+body.mobile-admin .att-bulkbar,
+body.mobile-admin .pa-toggle,
+body.mobile-admin #attAdminInlineSave,
+body.mobile-admin .btn-success,
+body.mobile-admin .btn-danger,
+body.mobile-admin .btn-warning-action,
+body.mobile-admin .btn-remind,
+body.mobile-admin .slip-btn,
+body.mobile-admin .edit-only,
+body.mobile-admin .readonly-hide,
+body.mobile-admin [data-action="save"],
+body.mobile-admin [data-action="edit"],
+body.mobile-admin [data-action="delete"],
+body.mobile-admin [data-action="add"],
+body.mobile-admin [data-role="edit"]{display:none !important}
+
+body.mobile-admin input:not([type="search"]):not([readonly]),
+body.mobile-admin select,
+body.mobile-admin textarea{pointer-events:none;background:#f8fafc}
+/* keep filter/selector dropdowns usable for VIEWING different dates/classes */
+body.mobile-admin .smart-selector select,
+body.mobile-admin .smart-selector input,
+body.mobile-admin .mod-toolbar select,
+body.mobile-admin .mod-toolbar input,
+body.mobile-admin input[type="date"],
+body.mobile-admin input[type="month"]{pointer-events:auto;background:#fff}
+
+/* =======================================================================
+   BOTTOM-SHEET MODALS on phones
+   ======================================================================= */
+@media(max-width:640px){
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal-content{max-width:none;width:100%;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border-radius:24px 24px 0 0;animation:sheetUp .26s cubic-bezier(.22,1,.36,1)}
+  .modal-content::before{content:"";display:block;width:44px;height:5px;border-radius:999px;background:#d7dbe3;margin:2px auto 14px}
+}
+@keyframes sheetUp{from{transform:translateY(28px);opacity:.6}to{transform:translateY(0);opacity:1}}
+
+/* =======================================================================
+   TABLE → CARD helper for small screens (opt-in via .stack-on-mobile).
+   ======================================================================= */
+.mobile-cards{display:none}
+.record-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow-sm)}
+.record-card .rc-title{font-weight:800;font-size:15px;color:var(--text-main);margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.record-card .rc-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:13.5px;border-top:1px solid #f1f2f6}
+.record-card .rc-row:first-of-type{border-top:none}
+.record-card .rc-k{color:var(--text-muted);font-weight:600}
+.record-card .rc-v{color:var(--text-main);font-weight:700;text-align:right}
+@media(max-width:700px){
+  .mobile-cards{display:block}
+  .stack-on-mobile .friendly-wrap,
+  .stack-on-mobile .friendly-table{display:none}
+}
+
+/* =======================================================================
+   TYPOGRAPHY & SPACING polish on phones
+   ======================================================================= */
+@media(max-width:640px){
+  .card h2{font-size:20px}
+  .mod-head{gap:10px}
+  .mod-toolbar{gap:8px}
+  .mod-toolbar .smart-selector{flex:1 1 100%;max-width:none}
+  .smart-selector-row{grid-template-columns:1fr}
+  .stat-row{grid-template-columns:1fr 1fr;gap:10px}
+  .att-bulkbar .btn{flex:1 1 auto;min-height:46px}
+}
+
+/* =======================================================================
+   NATIVE APP SHELL POLISH  (appended)
+   Fixes the cramped mobile header, removes the redundant marketing topbar /
+   footer / WhatsApp-FAB on portal pages on phones (the bottom tab bar +
+   header already cover navigation), and balances the Home screen when a user
+   has only a few modules. Scoped to portal pages (body.pv2-app) and phones,
+   so desktop and the marketing website are untouched.
+   ======================================================================= */
+
+/* ---- header: keep everything on ONE tidy line ---- */
+.header-back,.header-logout{white-space:nowrap}
+.header-back .hicon,.header-logout .hicon{font-size:18px;line-height:1}
+.header-back{display:inline-flex;align-items:center;gap:6px}
+
+@media(max-width:640px){
+  .site-header .wrap{gap:8px;padding:0 12px}
+  .header-actions{gap:7px}
+  .header-back{padding:8px 12px;font-size:.85rem}
+  .header-logout{padding:8px 12px;font-size:.85rem}
+  .header-user.profile-chip{padding:5px 10px 5px 6px}
+  .header-user.profile-chip strong{max-width:96px}
+}
+/* very small phones: collapse the back + logout to icon-only pills */
+@media(max-width:430px){
+  body.pv2-app .header-back .hlabel,
+  body.pv2-app .header-logout .hlabel{display:none}
+  body.pv2-app .header-back,
+  body.pv2-app .header-logout{padding:9px 11px}
+  body.pv2-app .header-back .hicon,
+  body.pv2-app .header-logout .hicon{font-size:20px}
+  .header-user.profile-chip strong{max-width:120px}
+}
+
+/* ---- remove redundant marketing chrome on portal pages on phones ---- */
+@media(max-width:900px){
+  body.pv2-app .site-topbar{display:none}      /* phone/WhatsApp strip */
+  body.pv2-app .site-footer{display:none}      /* dark footer block */
+  body.pv2-app .fab-wa{display:none}           /* floating WA (overlapped nav) */
+  /* footer gone → the bottom tab bar is the only bottom element */
+  body.pv2-app .app-main{padding-bottom:88px}
+}
+
+/* ---- Home screen: pleasant balance with few module cards ---- */
+@media(max-width:900px){
+  /* fill the viewport (minus header ~58px and bottom nav ~72px) so the
+     background is even and the lone card doesn't float in a short page */
+  body.dash-home.pv2-app .app-main{min-height:calc(100vh - 58px - 72px)}
+}
+/* cap the grid width on tablets so a single card doesn't stretch oddly */
+@media(min-width:701px){ body.dash-home .dashboard-grid{max-width:920px} }
+
+/* ---- profile chip avatar (Google/Microsoft-style initials) ---- */
+.header-user.profile-chip .avatar{flex:0 0 auto;width:26px;height:26px;border-radius:50%;
+  display:inline-grid;place-items:center;background:var(--maroon);color:#fff;
+  font-family:var(--head);font-weight:700;font-size:11.5px;letter-spacing:.3px;line-height:1}
+/* On very small phones show ONLY the avatar (name hides) — like Google/M365 */
+@media(max-width:430px){
+  body.pv2-app .header-user.profile-chip{padding:4px}
+  body.pv2-app .header-user.profile-chip strong{display:none}
+  body.pv2-app .header-user.profile-chip .avatar{width:30px;height:30px;font-size:12.5px}
+}

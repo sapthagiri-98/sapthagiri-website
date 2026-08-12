@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+  <title>Sign In · Sapthagiri Digital Portal</title>
+  <link rel="icon" href="../logo-mark.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Noto+Sans+Telugu:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="portal.css">
+  <style>
+    /* Segmented login-type switch (replaces the old dropdown) */
+    .seg-switch{position:relative;display:grid;grid-template-columns:repeat(3,1fr);background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-radius:14px;padding:4px}
+    .seg-thumb{position:absolute;top:4px;left:4px;width:calc((100% - 8px)/3);height:calc(100% - 8px);background:var(--maroon,#8a1618);border-radius:10px;transition:transform .28s cubic-bezier(.22,1,.36,1);box-shadow:0 6px 16px rgba(138,22,24,.28);z-index:0}
+    .seg-opt{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:11px 6px;border:none;background:transparent;cursor:pointer;font-weight:700;font-size:12.5px;color:#64748b;font-family:inherit;transition:color .2s;border-radius:10px}
+    .seg-opt i{font-size:21px}
+    .seg-opt.active{color:#fff}
+    .seg-opt:focus-visible{outline:2px solid var(--maroon,#8a1618);outline-offset:2px}
+  </style>
+</head>
+<body>
+  <div class="login-hero">
+    <div class="login-shell">
+      <div class="login-pitch">
+        <span class="badge">🔒 Staff &amp; Parent Portal</span>
+        <h1>Sapthagiri <span class="accent">Digital Portal</span></h1>
+        <p>Attendance, homework diary and more — for teachers, management and parents of Sapthagiri High School E/M, Karimnagar.</p>
+        <ul>
+          <li><i class="material-icons">check_circle</i> Daily student attendance</li>
+          <li><i class="material-icons">check_circle</i> Digital homework diary</li>
+          <li><i class="material-icons">check_circle</i> Secure, role-based access</li>
+        </ul>
+      </div>
+      <div class="login-card-wrap">
+        <div class="card" id="login-view">
+          <h2>Sign In</h2>
+          <p class="view-description">Secure identity authorization</p>
+          <div class="form-group"><label>I am signing in as</label>
+            <div class="seg-switch" id="loginSeg" role="tablist" aria-label="Login type">
+              <span class="seg-thumb" id="segThumb"></span>
+              <button type="button" class="seg-opt active" data-type="Admin" role="tab" aria-selected="true"><i class="material-icons">admin_panel_settings</i><span>Admin</span></button>
+              <button type="button" class="seg-opt" data-type="Employee" role="tab" aria-selected="false"><i class="material-icons">badge</i><span>Staff</span></button>
+              <button type="button" class="seg-opt" data-type="Student" role="tab" aria-selected="false"><i class="material-icons">school</i><span>Student</span></button>
+            </div>
+          </div>
+          <div class="form-group" id="employeeField" style="display:none;"><label>Select Account</label><select id="employee"><option value="">Loading accounts…</option></select></div>
+          <div class="form-group" id="studentField" style="display:none;"><label>User ID</label><input type="text" id="studentId" placeholder="Student ID"></div>
+          <div class="form-group"><label>Password</label><input type="password" id="password" placeholder="••••••••"></div>
+          <button class="btn" id="loginBtn"><i class="material-icons" style="color:#fff;">login</i> Sign In</button>
+          <p id="error-msg" style="color:var(--danger);font-size:14px;display:none;margin-top:12px;font-weight:600;text-align:center;"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="config.js"></script>
+  <script src="portal.js"></script>
+  <script>
+  (function () {
+    var P = window.Portal;
+    P.renderChrome({ app: false });
+    if (P.Session.get()) { location.replace("dashboard.html"); return; }
+    var seg = document.getElementById("loginSeg"), typeEl = { value: "Admin" }, empField = document.getElementById("employeeField"), empSel = document.getElementById("employee");
+    var stuField = document.getElementById("studentField"), pass = document.getElementById("password"), btn = document.getElementById("loginBtn"), err = document.getElementById("error-msg");
+    var employeesLoaded = false;
+    function showError(m){err.textContent=m;err.style.display="block";} function clearError(){err.style.display="none";}
+    function loadEmployees(){ if(employeesLoaded)return;
+      P.api("getUsers",[],{text:"Loading accounts…"}).then(function(users){
+        var admin=String(P.CONFIG.ADMIN_USER_NAME).trim().toLowerCase(); empSel.innerHTML="";
+        (users||[]).filter(function(u){return String(u.name).trim().toLowerCase()!==admin;}).forEach(function(u){var o=document.createElement("option");o.value=u.name;o.text=u.name+" ("+u.role+")";empSel.add(o);});
+        employeesLoaded=true;
+      }).catch(function(){empSel.innerHTML='<option value="">Failed to load</option>';});
+    }
+    function applyType(){clearError();var t=typeEl.value;empField.style.display=(t==="Employee")?"block":"none";stuField.style.display=(t==="Student")?"block":"none";if(t==="Employee")loadEmployees();}
+    Array.prototype.forEach.call(seg.querySelectorAll(".seg-opt"), function (b, i) {
+      b.addEventListener("click", function () {
+        typeEl.value = b.getAttribute("data-type");
+        Array.prototype.forEach.call(seg.querySelectorAll(".seg-opt"), function (o) { o.classList.remove("active"); o.setAttribute("aria-selected", "false"); });
+        b.classList.add("active"); b.setAttribute("aria-selected", "true");
+        var thumb = document.getElementById("segThumb"); if (thumb) thumb.style.transform = "translateX(" + (i * 100) + "%)";
+        applyType();
+      });
+    });
+    applyType();
+    function login(name,password,type){ return P.api("validateLogin",[name,password],{perf:"Login",text:"Authorizing…"}).then(function(r){ if(r&&r.success){P.Session.set({ type:type, name:r.name, role:r.role, shiftType:r.shiftType||"",campus:r.campus||"Both", permissions:r.permissions||{}, token:r.token, loginAt:Date.now() });return true;} return false; }); }
+    function doLogin(){clearError();var t=typeEl.value,pw=pass.value;if(!pw&&t!=="Student"){showError("Please enter your password.");return;}
+      btn.disabled=true;var original=btn.innerHTML;btn.innerHTML='<i class="material-icons" style="color:#fff;">sync</i> Authorizing…';var run;
+      if(t==="Admin")run=login(P.CONFIG.ADMIN_USER_NAME,pw,"Admin");
+      else if(t==="Employee"){var name=empSel.value;if(!name){showError("Please select an account.");btn.disabled=false;btn.innerHTML=original;return;}run=login(name,pw,"Employee");}
+      else{showError("Student / Parent login is not enabled yet.");btn.disabled=false;btn.innerHTML=original;return;}
+      run.then(function(ok){if(ok)location.href="dashboard.html";else showError("Invalid login details.");}).catch(function(e){showError(e&&e.message?e.message:"Login failed.");}).finally(function(){btn.disabled=false;btn.innerHTML=original;});
+    }
+    btn.addEventListener("click",doLogin);pass.addEventListener("keydown",function(e){if(e.key==="Enter")doLogin();});
+  })();
+  </script>
+</body>
+</html>
