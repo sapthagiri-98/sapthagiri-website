@@ -1,82 +1,366 @@
 /* =========================================================================
-   receipt-share.js (v2) — client-side PDF + native share (NO server storage)
-   Changes per request:
-     • Logo enlarged (it already contains the school name) — no text name.
-     • Address + Since/tagline + phone sit BELOW the logo.
-     • "FEE PAYMENT e-RECEIPT" bar sits at the TOP, right under the header.
-   Include AFTER fee-management.js. Loads html2canvas + jsPDF lazily.
-     ReceiptShare.print(r) .share(r) .download(r) .shareLedger(html, title)
+   receipt-share.js — Printable Module for e-Receipts & Unrolled Audit Ledgers
    ========================================================================= */
-(function () {
+(function (window) {
   "use strict";
-  var CDN = { h2c: "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
-              jspdf: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" };
-  var loaded = {};
-  function load(src) { if (loaded[src]) return loaded[src]; loaded[src] = new Promise(function (res, rej) { var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = function () { rej(new Error("load " + src)); }; document.head.appendChild(s); }); return loaded[src]; }
-  function libs() { return Promise.all([load(CDN.h2c), load(CDN.jspdf)]); }
-  function inr(n) { return (Number(n) || 0).toLocaleString("en-IN"); }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]; }); }
-  function pd(v) { var m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/); var M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; if (m) return m[3] + "-" + M[+m[2] - 1] + "-" + m[1]; var mm = String(v || "").match(/^(\d{2})-(\d{2})-(\d{4})$/); if (mm) return mm[1] + "-" + M[+mm[2] - 1] + "-" + mm[3]; return String(v || ""); }
 
-  // header: big logo on top, details below; then the e-RECEIPT bar
-  function headerBlock(s, barText) {
-    s = s || {};
-    return '<div class="rc-hd">' +
-      '<img class="rc-logo" src="header-logo.png" crossorigin="anonymous" onerror="this.style.display=\'none\'"/>' +
-      '<div class="rc-ad">' + esc(s.address || "Karimnagar, Telangana") + '</div>' +
-      '<div class="rc-meta">Since ' + esc(s.since || "1998") + ' &nbsp;|&nbsp; ' + esc(s.tagline || "Day &amp; Residential") + ' &nbsp;|&nbsp; ' + esc(s.phone || "9381118421") + '</div>' +
-      '</div>' +
-      '<div class="rc-bar">' + (barText || "FEE PAYMENT e-RECEIPT") + '</div>';
-  }
-
-  function receiptHtml(r) {
-    var hist = (r.history || []).map(function (h) { return '<tr' + (h.isThis ? ' style="font-weight:700;background:#f6efef"' : '') + '><td>' + esc(pd(h.date)) + '</td><td class="r">Rs. ' + inr(h.amount) + '</td><td>' + esc(h.mode) + '</td><td class="r">Rs. ' + inr(h.balance) + '</td></tr>'; }).join("");
-    return headerBlock(r.school, "FEE PAYMENT e-RECEIPT") +
-      '<table class="rc-t"><tr><td class="k">Class</td><td>' + esc(r.className) + '</td><td class="k">Academic Year</td><td>' + esc(r.academicYear) + '</td></tr>' +
-      '<tr><td class="k">Student Name</td><td>' + esc(r.studentName) + '</td><td class="k">Student ID</td><td>' + esc(r.studentId) + '</td></tr>' +
-      '<tr><td class="k">Father\'s Name</td><td>' + esc(r.fatherName) + '</td><td class="k">Contact No.</td><td>' + esc(r.contactNo) + '</td></tr></table>' +
-      '<table class="rc-t"><tr><td class="k">Fee Type</td><td colspan="3">' + esc(r.feeType) + '</td></tr>' +
-      '<tr><td class="k">Total Fee</td><td>Rs. ' + inr(r.totalFee) + '</td><td class="k">Current Due</td><td>Rs. ' + inr(r.currentDue) + '</td></tr>' +
-      '<tr><td class="k">Current Payment</td><td>Rs. ' + inr(r.currentPayment) + '</td><td class="k">Date</td><td>' + esc(pd(r.date)) + '</td></tr>' +
-      '<tr><td class="k">Amount in Words</td><td colspan="3">' + esc(r.amountInWords) + '</td></tr>' +
-      '<tr><td class="k">Payment Received By</td><td colspan="3">' + esc(r.receivedBy) + '</td></tr>' +
-      '<tr><td class="k">Balance</td><td colspan="3"><b>Rs. ' + inr(r.balance) + '</b></td></tr></table>' +
-      '<div class="rc-sub">PAYMENTS HISTORY</div>' +
-      '<table class="rc-h"><tr><th>Date</th><th class="r">Amount</th><th>Mode</th><th class="r">Balance</th></tr>' + hist + '</table>' +
-      '<div class="rc-note"><i>Note: This is a computer generated receipt and does not require a signature</i></div>';
-  }
-  // expose for ledger printing (school header + e-receipt bar reused)
-  window.ReceiptHeaderBlock = headerBlock;
-
-  var CSS = '.rc-wrap{font-family:Segoe UI,Arial,sans-serif;color:#111;width:720px;padding:18px;background:#fff}' +
-    '.rc-hd{text-align:center;border-bottom:2px solid #8a1618;padding-bottom:10px;margin-bottom:0}' +
-    '.rc-logo{height:96px;max-width:92%;object-fit:contain;display:block;margin:0 auto 6px}' +
-    '.rc-ad{font-size:13px;color:#333}.rc-meta{font-size:12px;color:#555;margin-top:2px}' +
-    '.rc-bar{background:#8a1618;color:#fff;text-align:center;font-weight:700;letter-spacing:2px;padding:8px;margin:0 0 12px}' +
-    '.rc-t,.rc-h{width:100%;border-collapse:collapse;margin-bottom:8px}.rc-t td,.rc-h td,.rc-h th{border:1px solid #000;padding:6px 10px;font-size:13px}' +
-    '.rc-t td.k{background:#f3eaea;font-weight:700;width:20%}.rc-h th{background:#f3eaea}.r{text-align:right}' +
-    '.rc-sub{background:#e9e9e9;text-align:center;font-weight:700;padding:5px;font-size:13px;margin-bottom:4px}' +
-    '.rc-note{font-size:11px;color:#444;margin-top:14px;text-align:center;border-top:1px dashed #999;padding-top:8px}';
-  window.ReceiptCSS = CSS;
-
-  function node(inner) { var w = document.createElement("div"); w.className = "rc-wrap"; w.style.cssText = "position:fixed;left:-10000px;top:0"; w.innerHTML = "<style>" + CSS + "</style>" + inner; document.body.appendChild(w); return w; }
-  function toBlob(el) {
-    return libs().then(function () { return window.html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#fff" }); }).then(function (canvas) {
-      var jsPDF = window.jspdf.jsPDF, pdf = new jsPDF("p", "mm", "a4"), pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight(), m = 8, iw = pw - m * 2, ih = canvas.height * iw / canvas.width, img = canvas.toDataURL("image/jpeg", 0.92);
-      if (ih <= ph - m * 2) pdf.addImage(img, "JPEG", m, m, iw, ih);
-      else { var pageH = ph - m * 2, sliceH = canvas.width * pageH / iw, y = 0, first = true; while (y < canvas.height) { var c2 = document.createElement("canvas"); c2.width = canvas.width; c2.height = Math.min(sliceH, canvas.height - y); c2.getContext("2d").drawImage(canvas, 0, y, canvas.width, c2.height, 0, 0, canvas.width, c2.height); if (!first) pdf.addPage(); pdf.addImage(c2.toDataURL("image/jpeg", 0.92), "JPEG", m, m, iw, c2.height * iw / canvas.width); first = false; y += c2.height; } }
-      return pdf.output("blob");
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function fname(r) { return (String(r.studentName || "Student").replace(/[^\w]+/g, "_")) + "_" + (r.receiptId || "receipt") + ".pdf"; }
-  function ov(on) { var e = document.getElementById("rcs-ov"); if (on) { if (!e) { e = document.createElement("div"); e.id = "rcs-ov"; e.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:100000;display:flex;align-items:center;justify-content:center"; e.innerHTML = '<div style="background:#fff;padding:16px 22px;border-radius:12px;font:600 14px Segoe UI;color:#8a1618">Preparing PDF…</div>'; document.body.appendChild(e); } } else if (e) e.remove(); }
-  function dl(blob, name) { var u = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = u; a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(u); a.remove(); }, 1500); }
 
-  window.ReceiptShare = {
-    print: function (r) { var w = window.open("", "_blank"); if (!w) return alert("Allow pop-ups to print."); w.document.write('<html><head><title>Receipt ' + esc(r.receiptId || "") + '</title><style>@page{size:A4;margin:12mm}' + CSS + '.rc-wrap{width:auto;padding:0}</style></head><body><div class="rc-wrap">' + receiptHtml(r) + '</div></body></html>'); w.document.close(); w.focus(); setTimeout(function () { w.print(); }, 350); },
-    share: function (r) { var el = node(receiptHtml(r)); ov(true); return toBlob(el).then(function (b) { el.remove(); ov(false); var f = new File([b], fname(r), { type: "application/pdf" }); if (navigator.canShare && navigator.canShare({ files: [f] })) return navigator.share({ files: [f], title: "Fee Receipt " + (r.receiptId || ""), text: "Fee receipt for " + (r.studentName || "") }).catch(function () {}); dl(b, fname(r)); var ph = String(r.contactNo || "").replace(/\D/g, ""); if (ph) { if (ph.length === 10) ph = "91" + ph; window.open("https://wa.me/" + ph + "?text=" + encodeURIComponent("Dear Parent, fee receipt for " + (r.studentName || "") + " (Receipt " + (r.receiptId || "") + "). PDF downloaded — please attach it."), "_blank"); } }).catch(function (e) { el.remove(); ov(false); alert("PDF error: " + (e.message || e)); }); },
-    download: function (r) { var el = node(receiptHtml(r)); ov(true); return toBlob(el).then(function (b) { el.remove(); ov(false); dl(b, fname(r)); }).catch(function (e) { el.remove(); ov(false); alert("PDF error: " + (e.message || e)); }); },
-    shareLedger: function (inner, title) { var el = node(inner); ov(true); return toBlob(el).then(function (b) { el.remove(); ov(false); var f = new File([b], (title || "Ledger").replace(/[^\w]+/g, "_") + ".pdf", { type: "application/pdf" }); if (navigator.canShare && navigator.canShare({ files: [f] })) return navigator.share({ files: [f], title: title || "Ledger" }).catch(function () {}); dl(b, f.name); }).catch(function (e) { el.remove(); ov(false); alert("PDF error: " + (e.message || e)); }); },
-    canShareFiles: function () { try { return !!(navigator.canShare && navigator.canShare({ files: [new File([new Blob(["x"])], "x.pdf", { type: "application/pdf" })] })); } catch (e) { return false; } },
+  function formatInr(n) {
+    return Number(n || 0).toLocaleString("en-IN");
+  }
+
+  function formatDate(d) {
+    if (!d) return "";
+    var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return m[3] + " " + months[parseInt(m[2], 10) - 1] + " " + m[1];
+    }
+    return d;
+  }
+
+  var ReceiptShare = {
+    // ---------------------------------------------------------------------
+    // A4 E-RECEIPT
+    // ---------------------------------------------------------------------
+    buildReceiptHtml: function (r) {
+      var historyRows = (r.history || []).map(function (h) {
+        return (
+          '<tr>' +
+          '<td>' + esc(formatDate(h.date)) + '</td>' +
+          '<td class="r">Rs. ' + esc(formatInr(h.amount)) + '</td>' +
+          '<td>' + esc(h.mode || "Cash") + '</td>' +
+          '<td class="r">Rs. ' + esc(formatInr(h.balance)) + '</td>' +
+          '</tr>'
+        );
+      }).join("");
+
+      return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Fee Receipt - ${esc(r.receiptId)}</title>
+  <style>
+    @page { size: A4; margin: 10mm; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; margin: 0; padding: 0; background: #fff; }
+    .receipt-card { border: 2px solid #8a1618; padding: 16px 20px; max-width: 780px; margin: 0 auto; box-sizing: border-box; }
+    
+    .hdr-logo-container { text-align: center; margin-bottom: 8px; border-bottom: 1.5px solid #8a1618; padding-bottom: 8px; }
+    .hdr-logo-img { width: 100%; max-height: 85px; object-fit: contain; display: block; margin: 0 auto; }
+    
+    .rc-title-bar { color: #808080; font-size: 13px; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 12px; }
+    
+    .grid-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    .grid-table td { border: 1px solid #b1b9c5; padding: 6px 10px; font-size: 12px; }
+    .grid-table td.lbl { background: #ffffff; font-weight: 700; color: #334155; width: 18%; }
+    .grid-table td.val { font-weight: 600; color: #0f172a; width: 32%; }
+    .grid-table td.highlight { font-weight: 800; color: #8a1618; font-size: 13px; }
+    
+    .words-box { border: 1px solid #fecdd3; padding: 8px 12px; font-size: 12px; font-weight: 700; color: #8a1618; margin-bottom: 12px; border-radius: 4px; background: #fff1f2; }
+    
+    .sec-hdr { font-size: 12px; font-weight: 800; color: #8a1618; text-transform: uppercase; margin: 14px 0 6px; letter-spacing: 0.5px; border-bottom: 1px solid #8a1618; padding-bottom: 3px; }
+    .hist-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .hist-table th, .hist-table td { border: 1px solid #b1b9c5; padding: 6px 10px; font-size: 11.5px; text-align: left; }
+    .hist-table th { background: #ffffff; color: #334155; font-weight: 700; }
+    .hist-table td.r, .hist-table th.r { text-align: right; }
+    
+    .ftr-note { font-size: 10px; color: #64748b; font-style: italic; text-align: center; margin-top: 16px; border-top: 1px dashed #cbd5e1; padding-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="receipt-card">
+    <div class="hdr-logo-container">
+      <img src="receipt-header-logo.png" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.style.display='none';"/>
+    </div>
+    <div class="rc-title-bar">FEE PAYMENT e-RECEIPT</div>
+
+    <table class="grid-table">
+      <tr>
+        <td class="lbl">Class</td>
+        <td class="val">${esc(r.className)}</td>
+        <td class="lbl">Academic Year</td>
+        <td class="val">${esc(r.academicYear)}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Student Name</td>
+        <td class="val">${esc(r.studentName)}</td>
+        <td class="lbl">Student ID</td>
+        <td class="val">${esc(r.studentId)}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Father's Name</td>
+        <td class="val">${esc(r.fatherName || "—")}</td>
+        <td class="lbl">Contact No.</td>
+        <td class="val">${esc(r.contactNo || "—")}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Fee Type</td>
+        <td class="val" colspan="3">${esc(r.feeType)}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Total Fee</td>
+        <td class="val">₹ ${formatInr(r.totalFee)}</td>
+        <td class="lbl">Current Due</td>
+        <td class="val highlight">₹ ${formatInr(r.currentDue)}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Current Payment</td>
+        <td class="val highlight">₹ ${formatInr(r.currentPayment || r.amount)}</td>
+        <td class="lbl">Date</td>
+        <td class="val">${esc(formatDate(r.date))}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Received By</td>
+        <td class="val">${esc(r.receivedBy)}</td>
+        <td class="lbl">Balance</td>
+        <td class="val highlight">₹ ${formatInr(r.balance)}</td>
+      </tr>
+    </table>
+
+    <div class="words-box">
+      Amount in Words: ${esc(r.amountInWords)}
+    </div>
+
+    ${historyRows ? `
+      <div class="sec-hdr">PAYMENTS HISTORY</div>
+      <table class="hist-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="r">Amount</th>
+            <th>Mode</th>
+            <th class="r">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${historyRows}
+        </tbody>
+      </table>
+    ` : ''}
+
+    <div class="ftr-note">
+      Note: This is a computer generated receipt and does not require a signature.
+    </div>
+  </div>
+</body>
+</html>`;
+    },
+
+    print: function (r) {
+      var win = window.open("", "_blank");
+      if (!win) return alert("Please allow pop-ups to print receipt.");
+      win.document.write(this.buildReceiptHtml(r));
+      win.document.close();
+      win.focus();
+      setTimeout(function () { win.print(); }, 300);
+    },
+
+    share: function (r) {
+      this.print(r);
+    },
+
+    // ---------------------------------------------------------------------
+    // A4 MULTI-PAGE FULL AUDIT LEDGER (Split Subtables & Fee Type Closing)
+    // ---------------------------------------------------------------------
+    buildFullAuditLedgerHtml: function (auditData) {
+      var s = auditData.student || {};
+
+      var yearSections = (auditData.perYear || []).map(function (y, idx) {
+        var chargeRows = (y.charges || []).map(function (c) {
+          return (
+            '<tr>' +
+            '<td>' + esc(c.label) + '</td>' +
+            '<td class="r">₹ ' + formatInr(c.assigned) + '</td>' +
+            '<td class="r">₹ ' + formatInr(c.paid) + '</td>' +
+            '<td class="r">₹ ' + formatInr(c.balance) + '</td>' +
+            '</tr>'
+          );
+        }).join("");
+
+        // Gather all allocations for this academic year
+        var yAllocs = [];
+        (auditData.receipts || []).forEach(function (p) {
+          (p.allocations || []).forEach(function (a) {
+            if (a.year === y.year) {
+              yAllocs.push({
+                receiptId: p.receiptId,
+                date: p.date,
+                mode: p.mode,
+                label: a.label,
+                amount: Number(a.amount) || 0
+              });
+            }
+          });
+        });
+
+        // Group allocations by Fee Head
+        var byFeeType = {};
+        yAllocs.forEach(function (al) {
+          (byFeeType[al.label] = byFeeType[al.label] || []).push(al);
+        });
+
+        var waterfallOrder = ["Study Materials Fee", "Old Due", "Misc Fee", "Tuition Fee", "Transport Fee"];
+        var sortedTypeNames = Object.keys(byFeeType).sort(function (a, b) {
+          var ia = waterfallOrder.indexOf(a), ib = waterfallOrder.indexOf(b);
+          if (ia !== -1 && ib !== -1) return ia - ib;
+          if (ia !== -1) return -1;
+          if (ib !== -1) return 1;
+          return a.localeCompare(b);
+        });
+
+        // Build a dedicated payment subtable for each fee head (Oldest to Newest)
+        var feeTypePaymentSubtables = sortedTypeNames.map(function (ftName) {
+          var list = byFeeType[ftName].slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+          var typeTotalPaid = list.reduce(function (sum, x) { return sum + x.amount; }, 0);
+
+          var matchingCharge = (y.charges || []).find(function (c) { return c.label === ftName || c.code === ftName; });
+          var headAssigned = matchingCharge ? matchingCharge.assigned : typeTotalPaid;
+          var headClosingBal = Math.max(0, headAssigned - typeTotalPaid);
+
+          var pTrs = list.map(function (p) {
+            return (
+              '<tr>' +
+              '<td><b>' + esc(p.receiptId) + '</b></td>' +
+              '<td>' + esc(formatDate(p.date)) + '</td>' +
+              '<td>' + esc(p.mode) + '</td>' +
+              '<td class="r">₹ ' + formatInr(p.amount) + '</td>' +
+              '</tr>'
+            );
+          }).join("");
+
+          return `
+            <div class="sec-subhdr" style="margin-top:10px;">${esc(ftName)} Payments (Collected: ₹ ${formatInr(typeTotalPaid)})</div>
+            <table class="ledger-tbl">
+              <thead>
+                <tr>
+                  <th>Receipt ID</th>
+                  <th>Date</th>
+                  <th>Mode</th>
+                  <th class="r">Amount Paid</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${pTrs}
+                <tr class="summary-row">
+                  <td colspan="3"><b>${esc(ftName)} Closing Pending Balance</b></td>
+                  <td class="r"><b>₹ ${formatInr(headClosingBal)}</b></td>
+                </tr>
+              </tbody>
+            </table>
+          `;
+        }).join("") || '<div style="font-size:11px;color:#64748b;margin:8px 0;font-style:italic;">No payments recorded in this academic year.</div>';
+
+        return `
+          <div class="year-block ${idx > 0 ? 'page-break' : ''}">
+            <div class="year-hdr">Academic Year: ${esc(y.year)} (${esc(y.className || "Grade")})</div>
+            
+            <div class="sec-subhdr">ASSIGNED FEE STRUCTURE</div>
+            <table class="ledger-tbl">
+              <thead>
+                <tr>
+                  <th>Fee Head</th>
+                  <th class="r">Assigned</th>
+                  <th class="r">Collected</th>
+                  <th class="r">Pending Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${chargeRows || '<tr><td colspan="4">No assigned charges.</td></tr>'}
+                <tr class="summary-row total">
+                  <td>Year Total / Closing Balance</td>
+                  <td class="r">₹ ${formatInr(y.charged)}</td>
+                  <td class="r">₹ ${formatInr(y.collected)}</td>
+                  <td class="r">₹ ${formatInr(y.balance)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="sec-subhdr" style="margin-top:12px;font-weight:800;color:#8a1618;">PAYMENTS RECEIVED IN ${esc(y.year)} BY CATEGORY</div>
+            ${feeTypePaymentSubtables}
+          </div>
+        `;
+      }).join("");
+
+      return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Full Audit Ledger - ${esc(s.name)}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 0; }
+    .ledger-card { border: 1px solid #cbd5e1; padding: 18px; max-width: 800px; margin: 0 auto; }
+    
+    .hdr-logo-container { text-align: center; margin-bottom: 8px; border-bottom: 1.5px solid #8a1618; padding-bottom: 8px; }
+    .hdr-logo-img { width: 100%; max-height: 85px; object-fit: contain; display: block; margin: 0 auto; }
+    .doc-title { font-size: 13px; font-weight: 800; color: #8a1618; text-transform: uppercase; text-align: center; letter-spacing: 1px; margin: 8px 0 12px; }
+    
+    .meta-tbl { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    .meta-tbl td { padding: 6px 10px; font-size: 12px; border: 1px solid #cbd5e1; }
+    .meta-tbl td.k { background: #f8fafc; font-weight: 700; color: #475569; width: 15%; }
+    
+    .year-block { margin-bottom: 22px; }
+    .page-break { page-break-before: always; margin-top: 14px; }
+    
+    .year-hdr { font-size: 13px; font-weight: 800; color: #8a1618; background: #fff1f2; padding: 6px 10px; border: 1px solid #fecdd3; margin-bottom: 8px; border-radius: 4px; }
+    .sec-subhdr { font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px; }
+    
+    .ledger-tbl { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    .ledger-tbl th, .ledger-tbl td { border: 1px solid #cbd5e1; padding: 6px 9px; font-size: 11.5px; text-align: left; }
+    .ledger-tbl th { background: #f1f5f9; font-weight: 700; color: #334155; }
+    .ledger-tbl td.r, .ledger-tbl th.r { text-align: right; }
+    .ledger-tbl tr.summary-row { background: #fafafa; font-weight: 600; }
+    .ledger-tbl tr.total { background: #fff1f2; font-weight: 800; color: #8a1618; }
+    
+    .ftr { font-size: 10px; color: #64748b; text-align: center; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="ledger-card">
+    <div class="hdr-logo-container">
+      <img src="receipt-header-logo.png" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.style.display='none';"/>
+    </div>
+    <div class="doc-title">OFFICIAL FULL STUDENT AUDIT LEDGER</div>
+
+    <table class="meta-tbl">
+      <tr>
+        <td class="k">Student Name</td>
+        <td><b>${esc(s.name)}</b></td>
+        <td class="k">Student ID</td>
+        <td><b>${esc(s.id)}</b></td>
+      </tr>
+      <tr>
+        <td class="k">Father's Name</td>
+        <td>${esc(s.father || "—")}</td>
+        <td class="k">Contact No.</td>
+        <td>${esc(s.phone || "—")}</td>
+      </tr>
+    </table>
+
+    ${yearSections}
+
+    <div class="ftr">
+      Printed on: ${esc(new Date().toLocaleString("en-IN"))} · Computer Generated Full Student Audit Ledger
+    </div>
+  </div>
+</body>
+</html>`;
+    },
+
+    shareAuditLedger: function (auditData) {
+      var win = window.open("", "_blank");
+      if (!win) return alert("Please allow pop-ups to print ledger.");
+      win.document.write(this.buildFullAuditLedgerHtml(auditData));
+      win.document.close();
+      win.focus();
+      setTimeout(function () { win.print(); }, 300);
+    }
   };
-})();
+
+  window.ReceiptShare = ReceiptShare;
+})(window);
