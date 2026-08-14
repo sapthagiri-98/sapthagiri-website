@@ -155,3 +155,27 @@
   .ex-actbar .btn{width:100%}
   .ex-kpis{grid-template-columns:repeat(2,1fr)}
 }
+
+/* =======================================================================
+   LOCKS tab (admin) — class x bucket toggle grid
+   ======================================================================= */
+#exLocksBody .ex-table th,#exLocksBody .ex-table td{text-align:center}
+#exLocksBody .lockcell{min-width:96px;justify-content:center}
+
+/* absent cell in the admin all-subjects grid ("Ab" typed into a cell) */
+.ex-table td.abscell{background:var(--danger-light);color:#b91c1c;font-weight:700}
+.ex-table td.abscell .ex-in{color:#b91c1c;font-weight:700}
+
+/* =======================================================================
+   PRINT — Reports > Tabulation. Clicking "Print" prints ONLY the loaded
+   tabulation table; the sidebar, tabs, toolbars and everything else in the
+   app shell is hidden for a clean printout.
+   ======================================================================= */
+@media print{
+  body *{visibility:hidden}
+  #repTab, #repTab *{visibility:visible}
+  #repTab{position:absolute;left:0;top:0;width:100%;display:block !important}
+  .rep-tablewrap{max-height:none !important;overflow:visible !important;border:none}
+  .rep-table thead th{position:static !important}
+  .ex-legend{display:none}
+}

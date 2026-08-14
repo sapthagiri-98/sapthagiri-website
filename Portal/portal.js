@@ -187,7 +187,7 @@
     { id: "holidays",    label: "Holidays Management",       icon: "event_busy",           href: "holidays.html",             perm: "Holidays Management", mgmt: true, desc: "Holiday calendar · Add & manage" },
     { id: "syllabus",    label: "Syllabus Tracker",         icon: "fact_check",           href: "syllabus.html",             perm: "Syllabus Tracker", desc: "Lesson progress · Completion tracking" },
     { id: "exams",       label: "Examinations Management",  icon: "emoji_events",         href: "examinations.html",         perm: "Examinations Management", mgmt: true, desc: "Schedule exams · Set syllabus" },
-    { id: "examstrack",  label: "Examinations Tracker",     icon: "event_available",      href: "examinations-tracker.html", perm: "Examinations Tracker", teacherOnly: true, desc: "Upcoming exams · Syllabus readiness" },
+    { id: "examstrack",  label: "Examinations Tracker",     icon: "event_available",      href: "examinations.html", perm: "Examinations Tracker", teacherOnly: true, desc: "Upcoming exams · Syllabus readiness" },
     { id: "feemgmt",     label: "Fee Management System",    icon: "account_balance_wallet", href: "fee-management.html",     perm: "Fee Management System", mgmt: true, desc: "Collect fees · Students · Reports" },
     { id: "studentmgmt", label: "Student Management",        icon: "badge",                  href: "student-management.html", perm: "Student Management", mgmt: true, desc: "Central student database · Admissions · Promotions" },
     { id: "usermgmt",    label: "User Management",           icon: "manage_accounts",        href: "user-management.html",    perm: "User Management", mgmt: true, desc: "Logins · Shift profiles · Campus & module access" },

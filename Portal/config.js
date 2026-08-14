@@ -60,7 +60,7 @@ window.PORTAL_CONFIG = {
     "saveHolisticMarks","getHolisticLockState","holisticSetLock","runHolisticAutoAttendance",
     "getTeacherUpcomingExamsSummary","getTeacherExamCalendarPayload",
     "getTeacherAssignedExamsForSyllabus","teacherAddExamSyllabus",
-    "progressGetClasses","progressGetBucketList","progressGetClassData"
+    "progressGetClasses","progressGetBucketList","locksGetMatrix", "locksSetBucket", "progressGetClassData"
   ],
   SUPABASE_FEE_BASE: "https://denmdonkbmcmqfxlunpy.functions.supabase.co/fees-api",
   SUPABASE_FEE_FNS: [
