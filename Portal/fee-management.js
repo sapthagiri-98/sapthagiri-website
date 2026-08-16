@@ -289,9 +289,93 @@
   }
 
   function withReceipt(rid, year, cb) { P.api("feeGetReceipt", [rid, year], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
+
+  // Shows the receipt preview modal with live Send WhatsApp button
+  function openReceiptSharePreviewModal(r) {
+    var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
+    var cleanPhone = String(phone || "").replace(/\D/g, "");
+
+    var receiptIframeHtml = ReceiptShare.buildReceiptHtml(r);
+
+    var modalHtml =
+      '<div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;padding:10px 14px;border-radius:10px;border:1px solid #e2e8f0;">' +
+        '<div>' +
+          '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Recipient Mobile</span>' +
+          '<div style="font-size:15px;font-weight:800;color:#1e293b;">📱 ' + (cleanPhone ? "+91 " + cleanPhone : '<span style="color:#b91c1c;">No Number Found</span>') + '</div>' +
+        '</div>' +
+        '<div>' +
+          '<button class="btn btn-sm" id="btnModalSendWA" style="background:#166534;color:#fff;" ' + (!cleanPhone ? 'disabled' : '') + '>' +
+            '<i class="material-icons">send</i> Send to WhatsApp' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
+        '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
+      '</div>';
+
+    openModal("Share Receipt · " + esc(r.receiptId), modalHtml);
+
+    setTimeout(function () {
+      var frame = $("receiptPreviewFrame");
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.document.open();
+        frame.contentWindow.document.write(receiptIframeHtml);
+        frame.contentWindow.document.close();
+      }
+
+      var btn = $("btnModalSendWA");
+      if (btn) {
+        btn.onclick = function () {
+          btn.disabled = true;
+          btn.innerHTML = '<i class="material-icons">sync</i> Sending…';
+
+          fetch("https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/whatsapp-api", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "sendReceiptWhatsApp",
+              phone: cleanPhone,
+              receipt: r
+            })
+          })
+          .then(function (res) { return res.json(); })
+          .then(function (resData) {
+            if (resData.ok) {
+              toast("Receipt sent to parent's WhatsApp!", "ok");
+              btn.innerHTML = '<i class="material-icons">done</i> Sent';
+              btn.style.background = "#059669";
+            } else {
+              toast("Failed: " + (resData.error || "Could not send"), "err");
+              btn.disabled = false;
+              btn.innerHTML = '<i class="material-icons">send</i> Retry WhatsApp';
+            }
+          })
+          .catch(function (err) {
+            toast("API Error: " + (err.message || err), "err");
+            btn.disabled = false;
+            btn.innerHTML = '<i class="material-icons">send</i> Retry WhatsApp';
+          });
+        };
+      }
+    }, 40);
+  }
+
   function wireReceiptButtons() {
-    Array.prototype.forEach.call($("lD").querySelectorAll(".rP"), function (b) { b.onclick = function () { withReceipt(b.getAttribute("data-r"), b.getAttribute("data-y"), function (r) { ReceiptShare.print(r); }); }; });
-    Array.prototype.forEach.call($("lD").querySelectorAll(".rS"), function (b) { b.onclick = function () { withReceipt(b.getAttribute("data-r"), b.getAttribute("data-y"), function (r) { ReceiptShare.share(r); }); }; });
+    Array.prototype.forEach.call($("lD").querySelectorAll(".rP"), function (b) {
+      b.onclick = function () {
+        withReceipt(b.getAttribute("data-r"), b.getAttribute("data-y"), function (r) {
+          ReceiptShare.print(r);
+        });
+      };
+    });
+
+    Array.prototype.forEach.call($("lD").querySelectorAll(".rS"), function (b) {
+      b.onclick = function () {
+        withReceipt(b.getAttribute("data-r"), b.getAttribute("data-y"), function (r) {
+          openReceiptSharePreviewModal(r);
+        });
+      };
+    });
     
     Array.prototype.forEach.call($("lD").querySelectorAll(".btn-void-alloc"), function (b) {
       b.onclick = function () {
@@ -422,65 +506,6 @@
     }, 30);
   }
 
-  // Direct WhatsApp API Messenger
-  function sendWhatsAppViaApi(r, btnElement) {
-    var phone = r.contactNo || (PAY.student ? PAY.student.phone : "");
-    if (!phone) {
-      toast("No parent phone number found for this student.", "err");
-      return;
-    }
-
-    var textMessage =
-      "Dear Parent,\n" +
-      "We have received a fee payment for your child.\n\n" +
-      "Student Name: " + (r.studentName || "Student") + "\n" +
-      "Student ID: " + (r.studentId || "—") + "\n" +
-      "Receipt No: " + (r.receiptId || "—") + "\n" +
-      "Date: " + (pretty(r.date) || r.date) + "\n" +
-      "Category: " + (r.feeType || "Fee Payment") + "\n" +
-      "Amount Paid: ₹" + Number(r.currentPayment || r.amount || 0).toLocaleString("en-IN") + "\n" +
-      "Remaining Balance: ₹" + Number(r.balance || 0).toLocaleString("en-IN") + "\n\n" +
-      "- PRINCIPAL,\nSAPTHAGIRI HIGH SCHOOL";
-
-    if (btnElement) {
-      btnElement.disabled = true;
-      btnElement.innerHTML = '<i class="material-icons">sync</i> Sending…';
-    }
-
-    fetch("https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/whatsapp-api", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "sendText",
-        phone: phone,
-        message: textMessage
-      })
-    })
-    .then(function (res) { return res.json(); })
-    .then(function (data) {
-      if (data.ok) {
-        toast("WhatsApp message sent successfully!", "ok");
-        if (btnElement) {
-          btnElement.innerHTML = '<i class="material-icons">done</i> Sent';
-          btnElement.style.background = "#059669";
-        }
-      } else {
-        toast("Failed: " + (data.error || "Could not send WhatsApp message"), "err");
-        if (btnElement) {
-          btnElement.disabled = false;
-          btnElement.innerHTML = '<i class="material-icons">send</i> Retry WhatsApp';
-        }
-      }
-    })
-    .catch(function (err) {
-      toast("API Error: " + (err.message || err), "err");
-      if (btnElement) {
-        btnElement.disabled = false;
-        btnElement.innerHTML = '<i class="material-icons">send</i> Retry WhatsApp';
-      }
-    });
-  }
-
   function multiReceiptsModal(receipts, sid) {
     window._multiReceiptCache = receipts;
 
@@ -504,22 +529,16 @@
 
     window.sendSingleApiReceipt = function (idx) {
       var rc = window._multiReceiptCache[idx];
-      var btn = document.getElementById("waBtn_" + idx);
-      if (rc) sendWhatsAppViaApi(rc, btn);
+      if (rc) openReceiptSharePreviewModal(rc);
     };
   }
 
   function receiptModal(r, sid) {
-    openModal("Receipt · " + esc(r.receiptId), '<div class="note ok"><i class="material-icons">check_circle</i>Saved ' + money(r.currentPayment || r.amount) + '. Balance after: <b>' + money(r.balance) + '</b>.</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;"><button class="btn btn-maroon btn-sm" id="rP"><i class="material-icons">print</i> Print Receipt</button><button class="btn btn-outline btn-sm" id="rS"><i class="material-icons">ios_share</i> Share PDF</button><button class="btn btn-sm" id="rWApi" style="background:#166534;color:#fff;"><i class="material-icons">send</i> Send WhatsApp (API)</button></div>');
+    openModal("Receipt · " + esc(r.receiptId), '<div class="note ok"><i class="material-icons">check_circle</i>Saved ' + money(r.currentPayment || r.amount) + '. Balance after: <b>' + money(r.balance) + '</b>.</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;"><button class="btn btn-maroon btn-sm" id="rP"><i class="material-icons">print</i> Print Receipt</button><button class="btn btn-outline btn-sm" id="rS"><i class="material-icons">ios_share</i> Share Receipt</button></div>');
     refreshAfterReceipt(sid);
     setTimeout(function () {
       if ($("rP")) $("rP").onclick = function () { ReceiptShare.print(r); };
-      if ($("rS")) $("rS").onclick = function () { ReceiptShare.share(r); };
-      if ($("rWApi")) {
-        $("rWApi").onclick = function () {
-          sendWhatsAppViaApi(r, $("rWApi"));
-        };
-      }
+      if ($("rS")) $("rS").onclick = function () { openReceiptSharePreviewModal(r); };
     }, 30);
   }
 
@@ -564,8 +583,6 @@
 
   function renderSheet() {
     var d = SHEET.data;
-    /* Preserve one canonical Fee Management order: active students by roll number,
-       then inactive/left/passed students without roll numbers. */
     d.rows = (d.rows || []).slice().sort(feeStudentSort);
     if (!d.rows.length) {
       $("fB").innerHTML = '<div class="empty"><i class="material-icons">group_off</i>No students in this class.</div>';
