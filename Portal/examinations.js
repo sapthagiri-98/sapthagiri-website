@@ -298,6 +298,23 @@
       var idx = $("mkHParam").value; if (idx === "") return;
       var pp = (st.holParams || [])[+idx]; if (!pp) return;
       loading("mkHHost", "Loading students…");
+      if (pp.parameter === "Height & Weight") {
+        P.api("progressGetClassData", [st.holCls, st.holBucket], { overlay: false }).then(function (data) {
+          var rows = ((data && data.students) || []).map(function (student, index) {
+            var height = student.heightCm || student.height || "", weight = student.weightKg || student.weight || "";
+            var bmi = height && weight ? (Number(weight) / Math.pow(Number(height) / 100, 2)).toFixed(1) : "&ndash;";
+            return '<div class="hw-entryrow" data-id="' + esc(student.id || student.studentId || '') + '" data-name="' + esc(student.name || '') + '"><div class="hw-student"><b>' + esc(student.roll || index + 1) + '</b><span>' + esc(student.name || '') + '</span></div><div class="hw-inputs"><label>Height (cm)<input class="ex-in hw-height" type="number" inputmode="decimal" min="50" max="220" step="0.1" value="' + esc(height) + '"></label><label>Weight (kg)<input class="ex-in hw-weight" type="number" inputmode="decimal" min="10" max="200" step="0.1" value="' + esc(weight) + '"></label><label>BMI<span class="hw-bmi">' + bmi + '</span></label></div></div>';
+          }).join('');
+          $("mkHHost").innerHTML = '<div class="hw-entrylist">' + rows + '</div><div class="ex-actbar"><button class="btn btn-success" id="hwSave"><i class="material-icons" style="color:#fff">save</i> Save Height & Weight</button></div>';
+          function calculate(row) { var h = Number(row.querySelector('.hw-height').value), w = Number(row.querySelector('.hw-weight').value); row.querySelector('.hw-bmi').textContent = h > 0 && w > 0 ? (w / Math.pow(h / 100, 2)).toFixed(1) : '–'; }
+          Array.prototype.forEach.call($("mkHHost").querySelectorAll('.hw-entryrow'), function (row) { row.querySelector('.hw-height').addEventListener('input', function () { calculate(row); }); row.querySelector('.hw-weight').addEventListener('input', function () { calculate(row); }); });
+          $("hwSave").addEventListener('click', function () {
+            var entries = Array.prototype.map.call($("mkHHost").querySelectorAll('.hw-entryrow'), function (row) { return { id: row.getAttribute('data-id'), name: row.getAttribute('data-name'), heightCm: row.querySelector('.hw-height').value, weightKg: row.querySelector('.hw-weight').value, bmi: row.querySelector('.hw-bmi').textContent }; });
+            P.api("saveHolisticHealthData", [{ className: st.holCls, bucket: st.holBucket, entries: entries, enteredBy: user }]).then(function (res) { toast((res && res.message) || "Height and weight saved.", res && res.success === false ? "err" : "ok"); }).catch(function (e) { toast("Error: " + (e.message || e), "err"); });
+          });
+        }).catch(function (e) { empty("mkHHost", esc(e.message || e), "error_outline"); });
+        return;
+      }
       P.api("getHolisticStudents", [st.holCls, st.holBucket, pp.parameter]).then(function (g) {
         renderHolistic(g, "mkHHost", user, false, function () { holParamChanged(); });
       }).catch(function (e) { empty("mkHHost", esc(e.message || e), "error_outline"); });
@@ -381,7 +398,7 @@
      ADMIN — Examinations Management
      ======================================================================= */
   function bootAdmin() {
-    var st = { tab: "overview", editingRow: null, pickLessons: [], presets: [], marksMounted: false, locksLoaded: false, reportData: null };
+    var st = { tab: "overview", editingRow: null, pickLessons: [], presets: [], marksMounted: false, locksLoaded: false, reportData: null, holisticMounted: false };
 
     $("view").innerHTML = shell();
     bindTabs();
@@ -399,13 +416,13 @@
           '<button data-t="schedule"><i class="material-icons">edit_calendar</i> Schedule</button>' +
           '<button data-t="marks"><i class="material-icons">edit_note</i> Marks Entry</button>' +
           '<button data-t="locks"><i class="material-icons">lock</i> Locks</button>' +
-          '<button data-t="reports"><i class="material-icons">description</i> Reports</button>' +
+          '<button data-t="reports"><i class="material-icons">description</i> Reports</button><button data-t="holistic"><i class="material-icons">emoji_people</i> Holistic</button>' +
         '</div>' +
         '<div id="exPaneOverview">' + overviewPane() + '</div>' +
         '<div id="exPaneSchedule" style="display:none;"></div>' +
         '<div id="exPaneMarks" style="display:none;"></div>' +
         '<div id="exPaneLocks" style="display:none;"></div>' +
-        '<div id="exPaneReports" style="display:none;"></div>' +
+        '<div id="exPaneReports" style="display:none;"></div><div id="exPaneHolistic" style="display:none;"></div>' +
         '</div>' + formModal() + dayModal() + pickModal();
     }
     function overviewPane() {
@@ -424,12 +441,13 @@
     }
     function switchTab(t) {
       st.tab = t;
-      ["overview", "schedule", "marks", "locks", "reports"].forEach(function (x) { $("exPane" + cap(x)).style.display = (x === t) ? "block" : "none"; });
+      ["overview", "schedule", "marks", "locks", "reports", "holistic"].forEach(function (x) { $("exPane" + cap(x)).style.display = (x === t) ? "block" : "none"; });
       Array.prototype.forEach.call($("exTabs").querySelectorAll("button"), function (b) { b.classList.toggle("active", b.getAttribute("data-t") === t); });
       if (t === "schedule") initSchedule();
       else if (t === "marks" && !st.marksMounted) { st.marksMounted = true; $("exPaneMarks").innerHTML = ""; mountAdminMarks("exPaneMarks", me); }
       else if (t === "locks") initLocks();
       else if (t === "reports" && !$("exPaneReports").innerHTML) initReports();
+      else if (t === "holistic" && !st.holisticMounted) { st.holisticMounted = true; initAdminHolistic(); }
     }
 
     /* ---------------- KPIs ---------------- */
@@ -694,10 +712,277 @@
       });
     }
 
-    /* ---------------- REPORTS tab (tabulation) ---------------- */
+    /* ---------------- HOLISTIC tab (management responsible entry) ---------------- */
+    function initAdminHolistic() {
+      var host = $("exPaneHolistic");
+      host.innerHTML = '<p class="view-description" style="margin-top:0;">Assign the responsible teacher for each holistic parameter across Classes 6–10.</p>' +
+        '<div class="ex-toolbar"><div class="ex-field"><label>Assessment</label><select id="haBucket">' +
+          BUCKET_SEQ.map(function (bucket) { return '<option value="' + bucket + '">' + bucket + '</option>'; }).join('') +
+        '</select></div></div>' +
+        '<div id="haBody"><div class="ex-loading"><i class="material-icons">sync</i><div>Loading responsibility matrix…</div></div></div>';
+      var classes = ["6", "7", "8", "9", "10"], teachers = [];
+      function normalizeClasses(list) {
+        var found = (list || []).filter(function (c) { var n = gradeNumFromClass(c); return n >= 6 && n <= 10; });
+        return found.length ? found : classes;
+      }
+      function teacherName(t) { return typeof t === "string" ? t : (t.name || t.teacher || t.fullName || t.email || ""); }
+      function normalizeTeachers(list) {
+        var rows = Array.isArray(list) ? list : ((list && (list.teachers || list.staff || list.users || list.rows)) || []);
+        return rows.filter(function (t) {
+          var role = String(typeof t === "string" ? "" : (t.role || t.designation || t.type || t.department || "")).toLowerCase();
+          return !role || /teacher|faculty|pet|physical/.test(role);
+        }).map(teacherName).filter(Boolean).filter(function (name, index, arr) { return arr.indexOf(name) === index; });
+      }
+      function getTeacherList() {
+        var calls = ["getTeachers", "getStaff", "getUsers"];
+        function next(i) {
+          if (i >= calls.length) return Promise.resolve([]);
+          return P.api(calls[i], [], { overlay: false }).then(function (res) { var list = normalizeTeachers(res); return list.length ? list : next(i + 1); }).catch(function () { return next(i + 1); });
+        }
+        return next(0);
+      }
+      Promise.all([
+        P.api("marksGetHighSchoolClasses", [], { overlay: false }).catch(function () { return []; }),
+        getTeacherList()
+      ]).then(function (result) {
+        classes = normalizeClasses(result[0]); teachers = result[1] || [];
+        renderMatrix();
+      });
+      $("haBucket").addEventListener("change", renderMatrix);
+      function renderMatrix() {
+        var bucket = $("haBucket").value;
+        loading("haBody", "Loading " + bucket + " responsibilities…");
+        Promise.all(classes.map(function (cls) {
+          return P.api("progressGetClassData", [cls, bucket], { overlay: false }).then(function (data) {
+            return P.api("getHolisticResponsibilityMatrix", [cls, bucket], { overlay: false }).catch(function () { return { assignments: [] }; }).then(function (matrix) {
+              var assignments = (matrix && matrix.assignments) || [];
+              return Promise.all(teachers.map(function (teacher) {
+                return P.api("getHolisticAssignments", [teacher, cls, bucket], { overlay: false }).then(function (res) {
+                  return ((res && res.parameters) || []).map(function (p) { return { parameter: p.parameter, teacher: teacher }; });
+                }).catch(function () { return []; });
+              })).then(function (visible) {
+                var merged = {}, all = assignments.concat([].concat.apply([], visible));
+                all.forEach(function (a) { var teacher = a.teacher || a.teacherName || a.assignedTo || ""; if (a.parameter && teacher) merged[a.parameter] = { parameter: a.parameter, teacher: teacher }; });
+                return { cls: cls, params: (data && data.holisticParams) || [], assignments: Object.keys(merged).map(function (key) { return merged[key]; }) };
+              });
+            });
+          }).catch(function () { return { cls: cls, params: [], assignments: [] }; });
+        })).then(function (sets) {
+          var parameterNames = [];
+          sets.forEach(function (set) { set.params.forEach(function (p) { if (parameterNames.indexOf(p.parameter) < 0) parameterNames.push(p.parameter); }); });
+          if (bucket === "SA-1" && parameterNames.indexOf("Height & Weight") < 0) {
+            parameterNames.push("Height & Weight");
+            sets.forEach(function (set) { if (!set.params.some(function (p) { return p.parameter === "Height & Weight"; })) set.params.push({ parameter: "Height & Weight" }); });
+          }
+          if (!parameterNames.length) { empty("haBody", "No holistic parameters found for " + bucket + ".", "assignment_ind"); return; }
+          sets.forEach(function (set) {
+            (set.assignments || []).forEach(function (a) {
+              var existing = a.teacher || a.teacherName || a.assignedTo || "";
+              if (existing && teachers.indexOf(existing) < 0) teachers.push(existing);
+            });
+          });
+          teachers.sort(function (a, b) { return String(a).localeCompare(String(b)); });
+          var options = '<option value="">Unassigned</option>' + teachers.map(function (name) { return '<option value="' + esc(name) + '">' + esc(name) + '</option>'; }).join('');
+          var head = '<tr><th class="name">Class</th>' + parameterNames.map(function (parameter) { return '<th>' + esc(parameter) + '</th>'; }).join('') + '</tr>';
+          var body = sets.map(function (set) {
+            var current = {}; set.assignments.forEach(function (a) { current[a.parameter] = a.teacher || a.teacherName || a.assignedTo || ""; });
+            var available = set.params.map(function (p) { return p.parameter; });
+            return '<tr data-class="' + esc(set.cls) + '"><td class="name">' + esc(set.cls) + '</td>' + parameterNames.map(function (parameter) {
+              if (available.indexOf(parameter) < 0) return '<td class="ha-na">—</td>';
+              return '<td data-parameter="' + esc(parameter) + '"><select class="ha-teacher">' + options + '</select></td>';
+            }).join('') + '</tr>';
+          }).join('');
+          $("haBody").innerHTML = '<div class="ha-assign"><div class="ex-tablewrap ha-matrix-wrap"><table class="ex-table ha-matrix"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div><div class="ex-actbar"><button class="btn btn-success" id="haSave" style="width:auto"><i class="material-icons" style="color:#fff">save</i> Save Responsibilities</button></div></div>';
+          sets.forEach(function (set) {
+            var current = {}; set.assignments.forEach(function (a) { current[a.parameter] = a.teacher || a.teacherName || a.assignedTo || ""; });
+            var tr = Array.prototype.filter.call($("haBody").querySelectorAll('tbody tr'), function (row) { return row.getAttribute('data-class') === String(set.cls); })[0];
+            if (tr) Array.prototype.forEach.call(tr.querySelectorAll('td[data-parameter]'), function (td) { td.querySelector('select').value = current[td.getAttribute('data-parameter')] || ""; });
+          });
+          $("haSave").addEventListener('click', function () {
+            var jobs = Array.prototype.map.call($("haBody").querySelectorAll('tbody tr'), function (tr) {
+              var assignments = Array.prototype.map.call(tr.querySelectorAll('td[data-parameter]'), function (td) { return { parameter: td.getAttribute('data-parameter'), teacher: td.querySelector('select').value }; });
+              return P.api("saveHolisticResponsibilityMatrix", [{ className: tr.getAttribute('data-class'), bucket: bucket, assignments: assignments, updatedBy: me }]);
+            });
+            Promise.all(jobs).then(function () { toast('Holistic responsibilities saved.', 'ok'); }).catch(function (e) { toast('Error: ' + (e.message || e), 'err'); });
+          });
+        });
+      }
+    }
+
+    /* =====================================================================
+       REPORTS tab (tabulation + progress reports)
+       ===================================================================== */
+
+    /* ---- subject allowlist (front-end only correction):
+       6th/7th -> Telugu, Hindi, English, Maths, Science, Social
+       8th-10th -> Telugu, Hindi, English, Maths, Physics, Biology, Social
+       Anything else the backend happens to surface (e.g. stray "Chemistry")
+       is dropped from BOTH the tabulation and the progress reports. ---- */
+    var SUBJECTS_6_7 = ["Telugu", "Hindi", "English", "Maths", "Science", "Social"];
+    var SUBJECTS_8_10 = ["Telugu", "Hindi", "English", "Maths", "Physics", "Biology", "Social"];
+    function gradeNumFromClass(clsStr) {
+      var m = String(clsStr || "").match(/(\d+)/);
+      return m ? parseInt(m[1], 10) : null;
+    }
+    function allowedSubjectsFor(clsStr) {
+      var n = gradeNumFromClass(clsStr);
+      if (n === 6 || n === 7) return SUBJECTS_6_7;
+      if (n >= 8 && n <= 10) return SUBJECTS_8_10;
+      return null; // unknown grade band — don't filter, show whatever backend returned
+    }
+    function filterSubjects(d) {
+      var allow = allowedSubjectsFor(d.class);
+      if (!allow) return d.subjects || [];
+      var have = d.subjects || [];
+      return allow.filter(function (s) { return have.indexOf(s) >= 0; });
+    }
+
+    /* ---- academic year string, e.g. "2026-27" (India: June-May cycle) ---- */
+    function academicYearStr() {
+      var d = new Date(), y = d.getFullYear(), m = d.getMonth() + 1; // 1-12
+      var startY = (m >= 6) ? y : (y - 1);
+      return startY + "-" + String((startY + 1) % 100).padStart(2, "0");
+    }
+
+    /* ---- bucket -> human title, e.g. "FORMATIVE ASSESSMENT - 3" ---- */
+    function bucketTitleWords(bucket) {
+      var p = String(bucket || "").split("-"), kind = p[0], n = p[1] || "";
+      var word = kind === "SA" ? "SUMMATIVE ASSESSMENT" : "FORMATIVE ASSESSMENT";
+      return word + " - " + n;
+    }
+
+    /* ---- grade letter -> 10-point GPA (standard CBSE-style scale). Used
+       for the Progress Report's GPA column, computed from the SAME
+       percent/grade already shown in the tabulation for that student. ---- */
+    function gradeToGPA(grade) {
+      var map = { A1: 10, A2: 9, B1: 8, B2: 7, C1: 6, C2: 5, D: 4, E: 0 };
+      return (grade in map) ? map[grade] : 0;
+    }
+
+    /* ---- simple, single-bucket "Overall Impression" remark ---- */
+    function overallImpression(pct) {
+      if (pct >= 91) return "Excellent performance! Keep up the outstanding work.";
+      if (pct >= 81) return "Very good performance. Continue working hard to reach the top.";
+      if (pct >= 71) return "Good performance. Focus on the weaker subjects to improve further.";
+      if (pct >= 61) return "Satisfactory performance. Consistent effort will improve the results.";
+      if (pct >= 51) return "Average performance. Needs focused effort on weak areas.";
+      if (pct >= 41) return "Below average. Needs significant improvement and support.";
+      if (pct >= 33) return "Needs improvement. Please seek extra academic support.";
+      return "Requires immediate attention and support to improve performance.";
+    }
+    function studentIdText(s) {
+      return s.studentId || s.studentID || s.idNumber || s.admissionNo || s.admissionNumber || s.admNo || s.id || "—";
+    }
+    function subjectTotalValue(s, subject) {
+      var c = (s.subjects || {})[subject] || {}, t = c.Tot;
+      if (!t || !t.has || t.value === "" || t.value == null || isNaN(Number(t.value))) return null;
+      return Number(t.value);
+    }
+    function intelligentImpression(s, subjects, maxPerSubject, attendancePct, hadAssessmentAbsence) {
+      var scored = subjects.map(function (subject) { return { subject: subject, value: subjectTotalValue(s, subject) }; })
+        .filter(function (x) { return x.value != null; });
+      var pct = s.hasAny ? Number(s.percent) : 0;
+      var text;
+      if (!scored.length) text = "Assessment marks are incomplete. Please work regularly and seek support where needed.";
+      else {
+        scored.sort(function (a, b) { return b.value - a.value; });
+        var strongest = scored[0], focus = scored[scored.length - 1];
+        var opening = pct >= 80 ? "A very good effort overall." : pct >= 60 ? "A good effort overall." : pct >= 40 ? "A satisfactory effort with scope for improvement." : "More consistent effort and support are required.";
+        var strength = "The work in " + strongest.subject + " is encouraging.";
+        var next = focus.subject === strongest.subject ? "Continue the same regular effort." : "Please give extra attention to " + focus.subject + " through daily revision and correction of mistakes.";
+        var closing = pct >= 60 ? "Keep up the effort." : "Regular practice will help improve the next result.";
+        text = [opening, strength, next, closing].join(" ");
+      }
+      if (hadAssessmentAbsence) text += " Regular attendance during assessments is important and should be improved.";
+      else if (attendancePct != null && Number(attendancePct) < 90) text += " Attendance is below 90%; more regular attendance will support better progress.";
+      return text;
+    }
+    function isAbsentCell(cell) {
+      if (!cell) return false;
+      if (cell.absent === true || cell.isAbsent === true || cell.status === "A" || cell.status === "ABSENT") return true;
+      var raw = String(cell.value == null ? (cell.scored == null ? "" : cell.scored) : cell.value).trim().toLowerCase();
+      return raw === "ab" || raw === "abs" || raw === "absent" || raw === "a";
+    }
+    function progressCellText(cell, value) {
+      if (isAbsentCell(cell)) return "Ab";
+      return value == null ? "&ndash;" : esc(roundHalfValue(value));
+    }
+    function studentHasAssessmentAbsence(student, subjects, keys) {
+      return subjects.some(function (subject) {
+        var cells = (student.subjects || {})[subject] || {};
+        return keys.some(function (key) { return isAbsentCell(cells[key]); });
+      });
+    }
+
+    function attendanceMonthsForBucket(bucket) {
+      var periods = {
+        "FA-1": [6, 7],
+        "FA-2": [8, 9],
+        "SA-1": [6, 7, 8, 9, 10],
+        "FA-3": [11, 12],
+        "FA-4": [1, 2],
+        "SA-2": [6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4]
+      };
+      var startYear = parseInt(academicYearStr().split("-")[0], 10);
+      return (periods[bucket] || []).map(function (month) {
+        var year = month >= 6 ? startYear : startYear + 1;
+        return year + "-" + String(month).padStart(2, "0");
+      });
+    }
+    function attendanceMonthName(iso) {
+      var month = parseInt(String(iso || "").split("-")[1], 10);
+      return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][month - 1] || iso;
+    }
+    function loadAssessmentAttendance(className, bucket) {
+      var months = attendanceMonthsForBucket(bucket);
+      return Promise.all(months.map(function (month) {
+        return P.api("attMonthlyReport", [className, month], { overlay: false })
+          .then(function (data) { return { month: month, data: data || null }; })
+          .catch(function () { return { month: month, data: null }; });
+      }));
+    }
+    function findAttendanceStudent(report, student) {
+      if (!report || !report.students) return null;
+      var sid = String(studentIdText(student));
+      var roll = String(student.roll == null ? "" : student.roll);
+      var name = String(student.name || "").trim().toLowerCase();
+      return report.students.filter(function (row) {
+        if (row.id != null && String(row.id) === sid) return true;
+        if (row.rollNo != null && String(row.rollNo) === roll) return true;
+        return String(row.name || "").trim().toLowerCase() === name;
+      })[0] || null;
+    }
+    function attendanceRowsForStudent(d, student) {
+      var reports = d.attendanceReports || [], rows = [], lastStudent = null, lastReport = null;
+      reports.forEach(function (entry) {
+        var report = entry.data, row = findAttendanceStudent(report, student);
+        if (row && report) { lastStudent = row; lastReport = report; }
+        rows.push({
+          month: attendanceMonthName(entry.month),
+          present: row && row.current != null ? row.current : null,
+          working: report && report.working && report.working.current != null ? report.working.current : null,
+          percentage: row && row.pctMonth != null ? row.pctMonth : null
+        });
+      });
+      return {
+        rows: rows,
+        cumulativePresent: lastStudent && lastStudent.total != null ? lastStudent.total : null,
+        cumulativeWorking: lastReport && lastReport.working && lastReport.working.total != null ? lastReport.working.total : null,
+        overallPercentage: lastStudent && lastStudent.pctYear != null ? lastStudent.pctYear : null
+      };
+    }
+    function classRankMap(students) {
+      var rows = students.map(function (student, index) { return { index: index, score: student.hasAny ? Number(student.totalScored) : null }; })
+        .filter(function (r) { return r.score != null && !isNaN(r.score); }).sort(function (a, b) { return b.score - a.score; });
+      var out = {}, previous = null, rank = 0;
+      rows.forEach(function (r, position) { if (previous === null || Math.abs(r.score - previous) > 0.000001) rank = position + 1; out[r.index] = rank; previous = r.score; });
+      return out;
+    }
+    function passFailWord(pct) { return pct >= 33 ? "PASSED" : "NOT PASSED"; }
+
     function initReports() {
       $("exPaneReports").innerHTML =
-        '<p class="view-description" style="margin-top:0;">Pick a class and assessment, load the tabulation to review totals, %, grade and spot missing marks. Print or export as needed.</p>' +
+        '<p class="view-description" style="margin-top:0;">Pick a class and assessment, load the tabulation to review totals, %, grade and spot missing marks. Print, export, or print individual progress reports.</p>' +
         '<div class="ex-toolbar">' +
           '<div class="ex-field"><label>Class</label><select id="repClass"><option value="">Loading…</option></select></div>' +
           '<div class="ex-field"><label>Assessment</label><select id="repBucket"><option value="">Loading…</option></select></div>' +
@@ -706,72 +991,195 @@
         '<div class="ex-actbar" style="margin-top:0;"><button class="ex-abtn" id="repPrint" disabled><i class="material-icons">print</i> Print</button>' +
         '<button class="ex-abtn" id="repCsv" disabled><i class="material-icons">download</i> Export CSV</button></div>' +
         '<div id="repHint" class="ex-note" style="margin-top:10px;">Choose a class + assessment, then Load Tabulation.</div>' +
-        '<div id="repTab" style="display:none;"><div class="ex-legend"><span><span class="sw" style="background:#fdecec;"></span>Missing marks</span></div><div class="rep-tablewrap" id="repTabWrap"><table class="rep-table" id="repTable"></table></div></div>';
+        '<div id="repTab" style="display:none;">' +
+          '<div id="repTabScaler">' +
+            '<div class="rep-print-head">' +
+              '<img src="receipt-header-logo.png" alt="' + esc((P.CONFIG.SCHOOL || {}).name || "School") + '" onerror="this.style.display=\'none\'">' +
+            '</div>' +
+            '<div class="rep-doc-title" id="repDocTitle"></div>' +
+            '<div class="rep-doc-legend" id="repDocLegend"></div>' +
+            '<div class="ex-legend"><span><span class="sw" style="background:#fdecec;"></span>Missing marks</span></div>' +
+            '<div class="rep-tablewrap" id="repTabWrap"><table class="rep-table" id="repTable"></table></div>' +
+            '<div class="rep-print-gen" id="repPrintGen"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div id="prPanel"></div>' +
+        '<div id="progRepPrintArea"></div>';
       P.api("progressGetClasses", [], { overlay: false }).then(function (cs) { $("repClass").innerHTML = '<option value="">Select class…</option>' + (cs || []).map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + "</option>"; }).join(""); });
-      P.api("progressGetBucketList", [], { overlay: false }).then(function (bs) { $("repBucket").innerHTML = '<option value="">Select assessment…</option>' + (bs || []).map(function (b) { return '<option value="' + esc(b.bucket) + '">' + esc(b.label) + "</option>"; }).join(""); });
+      P.api("progressGetBucketList", [], { overlay: false }).then(function (bs) {
+        var labels = {};
+        (bs || []).forEach(function (b) { if (b && b.bucket) labels[b.bucket] = b.label || b.bucket; });
+        $("repBucket").innerHTML = '<option value="">Select assessment…</option>' + BUCKET_SEQ.map(function (bucket) {
+          return '<option value="' + esc(bucket) + '">' + esc(labels[bucket] || bucket) + '</option>';
+        }).join("");
+      });
       $("repClass").addEventListener("change", clearReport); $("repBucket").addEventListener("change", clearReport);
       $("repLoad").addEventListener("click", loadTab);
-      $("repPrint").addEventListener("click", function () { window.print(); });
+      $("repPrint").addEventListener("click", function () { printContainer("repTab", "landscape"); });
       $("repCsv").addEventListener("click", exportCsv);
     }
-    function clearReport() { st.reportData = null; $("repTab").style.display = "none"; $("repHint").style.display = "block"; $("repHint").textContent = "Choose a class + assessment, then Load Tabulation."; $("repPrint").disabled = true; $("repCsv").disabled = true; }
+    function clearReport() {
+      st.reportData = null; $("repTab").style.display = "none"; $("repHint").style.display = "block";
+      $("repHint").textContent = "Choose a class + assessment, then Load Tabulation.";
+      $("repPrint").disabled = true; $("repCsv").disabled = true;
+      $("prPanel").innerHTML = "";
+    }
     function loadTab() {
       var cls = $("repClass").value, bk = $("repBucket").value;
       if (!cls || !bk) { toast("Choose a class and an assessment.", "err"); return; }
       $("repHint").style.display = "block"; $("repHint").textContent = "Loading tabulation…";
-      P.api("progressGetClassData", [cls, bk], { overlay: false }).then(function (data) { st.reportData = data || { students: [] }; renderTab(); }).catch(function (e) { $("repHint").textContent = "Error: " + (e.message || e); });
+      P.api("progressGetClassData", [cls, bk], { overlay: false }).then(function (data) {
+        st.reportData = data || { students: [] };
+        return loadAssessmentAttendance(cls, bk);
+      }).then(function (reports) {
+        st.reportData.attendanceReports = reports || [];
+        renderTab(); renderProgressPanel();
+      }).catch(function (e) { $("repHint").textContent = "Error: " + (e.message || e); });
+    }
+    function roundHalfValue(v) {
+      if (v === "" || v == null || isNaN(Number(v))) return v;
+      var n = Math.round((Number(v) + Number.EPSILON) * 2) / 2;
+      return Number.isInteger(n) ? String(n) : n.toFixed(1);
     }
     function cell(c) {
       if (!c) return '<td class="miss">&ndash;</td>';
-      var show = (c.value === "" || c.value == null) ? "&ndash;" : c.value;
+      var show = (c.value === "" || c.value == null) ? "&ndash;" : roundHalfValue(c.value);
       return '<td class="' + (c.has ? "" : "miss") + '">' + show + "</td>";
+    }
+    /* Short column-header abbreviations (CT1/CT2/UT/HA/Tot or Exam/Int/Tot).
+       Where the backend's full label carries the bucket-specific Class
+       Test number (e.g. "Class Test 5 (20)" for FA-3), we keep that number
+       so admins still see the right running count, just compacted. */
+    function shortColLabel(key, fullLabel) {
+      var full = String(fullLabel || "");
+      if (key === "CT1" || key === "CT2") { var m = full.match(/Test\s*(\d+)/i); return m ? "CT" + m[1] : (key === "CT1" ? "CT1" : "CT2"); }
+      if (key === "UT") return "UT";
+      if (key === "HA") return "HA";
+      if (key === "Tot") return "Tot";
+      if (key === "Exam") return "Exam";
+      if (key === "Int") return "Int";
+      return key;
+    }
+    function maxFromLabel(fullLabel) { var m = String(fullLabel || "").match(/\((\d+(?:\.\d+)?)\)/); return m ? m[1] : ""; }
+    function reportCell(c, extraClass) {
+      if (!c) return '<td class="miss ' + (extraClass || "") + '">&ndash;</td>';
+      var show = (c.value === "" || c.value == null) ? "&ndash;" : roundHalfValue(c.value);
+      return '<td class="' + (c.has ? "" : "miss ") + (extraClass || "") + '">' + show + '</td>';
     }
     function renderTab() {
       var d = st.reportData;
       if (!d || !d.students || !d.students.length) { $("repHint").textContent = "No students found for this class."; $("repTab").style.display = "none"; return; }
-      var isSABucket = d.isSA, subCols = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "UT", "HA", "Tot"], perSub = subCols.length;
-      var colLabels = d.colLabels || {};
-      var h1 = '<tr><th class="stick" rowspan="2" style="width:34px;">Roll</th><th class="stick2" rowspan="2" style="left:34px;min-width:150px;">Student</th>';
+
+      var subjects = filterSubjects(d);
+      var isSABucket = !!d.isSA;
+      var hol = (d.holisticParams || []).slice(0, 3);
+      var subjectKeys = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "HA", "UT", "Tot"];
+      var subjectLabels = isSABucket ? ["1", "2", "T"] : ["1", "2", "3", "4", "T"];
+      var subjectMax = isSABucket ? ["80", "20", "100"] : ["20", "20", "5", "25", "50"];
+      var perSub = subjectKeys.length;
+      var overallMax = subjects.length * (isSABucket ? 100 : 50);
+
+      $("repDocTitle").textContent = bucketTitleWords(d.bucket) + " MARKS SHEET (" + academicYearStr() + ")";
+      $("repDocLegend").innerHTML = buildLegendHtml(d, isSABucket);
+
+      /* Exact old-sheet proportions: narrow numbered component columns,
+         wider student-name column, four holistic columns, then only
+         Total / % / P-F. */
+      var colHtml = '<colgroup><col class="c-sl"><col class="c-name">';
+      subjects.forEach(function () {
+        for (var i = 0; i < perSub; i++) colHtml += '<col class="c-mark">';
+      });
+      for (var h = 0; h < 4; h++) colHtml += '<col class="c-hol">';
+      colHtml += '<col class="c-total"><col class="c-percent"><col class="c-pf"><col class="c-rank"></colgroup>';
+
+      var h1 = '<tr class="top"><th rowspan="2">Sl<br>No</th><th rowspan="2">Student Name</th>';
       var h2 = '<tr class="sub">';
-      d.subjects.forEach(function (subj) {
-        h1 += '<th class="grp" colspan="' + perSub + '">' + esc(subj) + "</th>";
-        subCols.forEach(function (c, ci) { h2 += "<th" + (ci === 0 ? ' class="grp"' : "") + ">" + esc(colLabels[c] || c) + "</th>"; });
-      });
-      (d.holisticParams || []).forEach(function (p, i) { if (i === 0) h1 += '<th class="grp" colspan="' + d.holisticParams.length + '">Holistic (info only)</th>'; h2 += "<th" + (i === 0 ? ' class="grp"' : "") + ">" + esc(p.parameter) + "</th>"; });
-      h1 += '<th class="grp" rowspan="2">Total</th><th rowspan="2">%</th><th rowspan="2">Grade</th></tr>'; h2 += "</tr>";
-      var body = "";
-      d.students.forEach(function (s) {
-        var no = !s.hasAny, cells = "";
-        d.subjects.forEach(function (subj) {
-          var c = s.subjects[subj] || {};
-          if (isSABucket) cells += cell(c.Exam) + cell(c.Int) + cell(c.Tot);
-          else cells += cell(c.CT1) + cell(c.CT2) + cell(c.UT) + cell(c.HA) + cell(c.Tot);
+      subjects.forEach(function (subj) {
+        h1 += '<th class="grp" colspan="' + perSub + '">' + esc(subj) + '</th>';
+        subjectLabels.forEach(function (label, i) {
+          h2 += '<th class="' + (i === 0 ? 'grp ' : '') + (i === subjectLabels.length - 1 ? 'sumhead' : '') + '">' + label + '<span class="mx">(' + subjectMax[i] + ')</span></th>';
         });
-        (d.holisticParams || []).forEach(function (p) { cells += cell(s.holistic ? s.holistic[p.parameter] : null); });
-        body += '<tr class="' + (no ? "norow" : "") + '"><td class="stick">' + esc(s.roll) + '</td><td class="stick2 name">' + esc(s.name) + (no ? ' <em style="font-size:10px;color:#b3261e;">(no marks)</em>' : "") + "</td>" + cells +
-          '<td class="tot grp">' + (s.hasAny ? s.totalScored : "&ndash;") + '/' + s.totalMax + '</td><td class="pct">' + (s.hasAny ? s.percent + "%" : "&ndash;") + '</td><td style="font-weight:800;">' + esc(s.grade) + "</td></tr>";
       });
-      $("repTable").innerHTML = "<thead>" + h1 + h2 + "</thead><tbody>" + body + "</tbody>";
+      h1 += '<th class="grp" colspan="4">Holistic Indicators</th>';
+      h2 += '<th class="grp">1<span class="mx">(10)</span></th><th>2<span class="mx">(10)</span></th><th>3<span class="mx">(10)</span></th><th class="sumhead">T<span class="mx">(30)</span></th>';
+      h1 += '<th class="grp total-head" colspan="4">TOTAL</th></tr>';
+      h2 += '<th class="grp total-head">' + esc(d.bucket) + '<span class="mx">(' + overallMax + ')</span></th><th class="total-head">%</th><th class="total-head">P/F</th><th class="total-head">Rank</th></tr>';
+
+      var rankRows = d.students.map(function (student, index) {
+        return { index: index, score: student.hasAny ? Number(student.totalScored) : null };
+      }).filter(function (r) { return r.score != null && !isNaN(r.score); })
+        .sort(function (a, b) { return b.score - a.score; });
+      var rankByIndex = {}, lastScore = null, lastRank = 0;
+      rankRows.forEach(function (r, position) {
+        if (lastScore === null || Math.abs(r.score - lastScore) > 0.000001) lastRank = position + 1;
+        rankByIndex[r.index] = lastRank;
+        lastScore = r.score;
+      });
+
+      var body = "";
+      d.students.forEach(function (s, idx) {
+        var cells = "";
+        subjects.forEach(function (subj) {
+          var c = s.subjects[subj] || {};
+          subjectKeys.forEach(function (key, ci) {
+            cells += reportCell(c[key], (ci === 0 ? "grp " : "") + (ci === subjectKeys.length - 1 ? "sub-total" : ""));
+          });
+        });
+
+        var holTotal = 0, holHas = false;
+        for (var hi = 0; hi < 3; hi++) {
+          var p = hol[hi], hv = p && s.holistic ? s.holistic[p.parameter] : null;
+          if (hv && hv.has && hv.value !== "" && hv.value != null) { holTotal += Number(hv.value); holHas = true; }
+          cells += reportCell(hv, hi === 0 ? "grp" : "");
+        }
+        cells += '<td class="sub-total">' + (holHas ? roundHalfValue(holTotal) : '&ndash;') + '</td>';
+
+        var pct = s.hasAny ? Number(s.percent) : 0;
+        body += '<tr class="' + (!s.hasAny ? 'norow' : '') + '">' +
+          '<td>' + esc(s.roll != null && s.roll !== "" ? s.roll : (idx + 1)) + '</td>' +
+          '<td class="student-name">' + esc(s.name) + '</td>' + cells +
+          '<td class="grp grand-total">' + (s.hasAny ? roundHalfValue(s.totalScored) : '&ndash;') + '</td>' +
+          '<td class="grand-total">' + (s.hasAny ? s.percent : '&ndash;') + '</td>' +
+          '<td class="grand-total">' + (s.hasAny ? (pct >= 33 ? 'P' : 'F') : '&ndash;') + '</td>' +
+          '<td class="grand-total">' + (rankByIndex[idx] || '&ndash;') + '</td></tr>';
+      });
+
+      $("repTable").innerHTML = colHtml + '<thead>' + h1 + h2 + '</thead><tbody>' + body + '</tbody>';
+      $("repPrintGen").textContent = "";
       $("repHint").style.display = "none"; $("repTab").style.display = "block";
       $("repPrint").disabled = false; $("repCsv").disabled = false;
     }
+    function buildLegendHtml(d, isSABucket) {
+      if (isSABucket) {
+        return '<b>Academic :</b> 1 - Summative Exam, 2 - Internal Marks, T - Total; <b>Holistic :</b> 1 - ' +
+          esc(((d.holisticParams || [])[0] || {}).parameter || 'Attendance & Punctuality') + ', 2 - ' +
+          esc(((d.holisticParams || [])[1] || {}).parameter || 'Extra & Co-curriculars') + ', 3 - ' +
+          esc(((d.holisticParams || [])[2] || {}).parameter || 'Assembly & Spoken Skills');
+      }
+      var hp = d.holisticParams || [];
+      return '<b>Academic :</b> 1 - Class Test 1, 2 - Class Test 2, 3 - Home Assignment, 4 - Unit Test; ' +
+        '<b>Holistic :</b> 1 - ' + esc((hp[0] || {}).parameter || 'Attendance & Punctuality') +
+        ', 2 - ' + esc((hp[1] || {}).parameter || 'Extra & Co-curriculars') +
+        ', 3 - ' + esc((hp[2] || {}).parameter || 'Assembly & Spoken Skills');
+    }
     function exportCsv() {
       var d = st.reportData; if (!d || !d.students || !d.students.length) return;
-      var isSABucket = d.isSA, subCols = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "UT", "HA", "Tot"];
+      var subjects = filterSubjects(d);
+      var isSABucket = d.isSA, subCols = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "HA", "UT", "Tot"];
       var colLabels = d.colLabels || {};
       var header = ["Roll", "Student"];
-      d.subjects.forEach(function (subj) { subCols.forEach(function (c) { header.push(subj + " " + (colLabels[c] || c)); }); });
+      subjects.forEach(function (subj) { subCols.forEach(function (c) { header.push(subj + " " + (colLabels[c] || c)); }); });
       (d.holisticParams || []).forEach(function (p) { header.push("Holistic: " + p.parameter); });
-      header.push("Total", "Max", "%", "Grade");
+      header.push("Total", "Max", "%", "P/F");
       var lines = [header.map(csvEsc).join(",")];
       d.students.forEach(function (s) {
         var row = [s.roll, s.name];
-        d.subjects.forEach(function (subj) {
+        subjects.forEach(function (subj) {
           var c = s.subjects[subj] || {};
           subCols.forEach(function (k) { var v = c[k]; row.push(v && v.value !== "" && v.value != null ? v.value : ""); });
         });
         (d.holisticParams || []).forEach(function (p) { var v = s.holistic ? s.holistic[p.parameter] : null; row.push(v && v.value !== "" ? v.value : ""); });
-        row.push(s.hasAny ? s.totalScored : "", s.totalMax, s.hasAny ? s.percent : "", s.grade);
+        row.push(s.hasAny ? s.totalScored : "", s.totalMax, s.hasAny ? s.percent : "", s.hasAny ? (Number(s.percent) >= 33 ? "P" : "F") : "");
         lines.push(row.map(csvEsc).join(","));
       });
       var blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -779,6 +1187,268 @@
       a.download = "Tabulation_" + d.class + "_" + d.bucket + ".csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     }
     function csvEsc(v) { v = (v == null ? "" : String(v)); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+
+    /* ---------------- PROGRESS REPORTS panel (checkbox picker) ---------------- */
+    function renderProgressPanel() {
+      var d = st.reportData;
+      var host = $("prPanel");
+      if (!d || !d.students || !d.students.length) { host.innerHTML = ""; return; }
+      host.innerHTML =
+        '<div class="pr-panel">' +
+          '<div class="pr-panel-head"><div><h4><i class="material-icons" style="font-size:16px;vertical-align:middle;">description</i> Print Progress Reports</h4>' +
+          '<div class="pr-panel-sub">One printable report per selected student — ' + esc(bucketTitleWords(d.bucket)) + '.</div></div>' +
+          '<label class="pr-selectall"><input type="checkbox" id="prSelectAll" checked> Select all</label></div>' +
+          '<div class="pr-studentlist" id="prStudentList"></div>' +
+          '<div class="pr-panel-foot"><span class="pr-count" id="prCount"></span>' +
+          '<button class="ex-abtn primary" id="prPrintBtn"><i class="material-icons">print</i> Print Selected Progress Reports</button></div>' +
+        '</div>';
+      var list = $("prStudentList");
+      list.innerHTML = d.students.map(function (s, i) {
+        return '<label class="pr-srow"><input type="checkbox" class="pr-sc" data-idx="' + i + '" checked><span class="roll">' + esc(s.roll) + '</span><span class="nm">' + esc(s.name) + "</span></label>";
+      }).join("");
+      function updateCount() {
+        var n = list.querySelectorAll(".pr-sc:checked").length;
+        $("prCount").textContent = n + " of " + d.students.length + " student" + (d.students.length > 1 ? "s" : "") + " selected";
+      }
+      updateCount();
+      Array.prototype.forEach.call(list.querySelectorAll(".pr-sc"), function (cb) { cb.addEventListener("change", function () {
+        updateCount();
+        var all = list.querySelectorAll(".pr-sc"), checked = list.querySelectorAll(".pr-sc:checked");
+        $("prSelectAll").checked = all.length === checked.length;
+      }); });
+      $("prSelectAll").addEventListener("change", function () {
+        var on = this.checked;
+        Array.prototype.forEach.call(list.querySelectorAll(".pr-sc"), function (cb) { cb.checked = on; });
+        updateCount();
+      });
+      $("prPrintBtn").addEventListener("click", function () {
+        var idxs = [];
+        Array.prototype.forEach.call(list.querySelectorAll(".pr-sc:checked"), function (cb) { idxs.push(+cb.getAttribute("data-idx")); });
+        if (!idxs.length) { toast("Select at least one student.", "err"); return; }
+        buildProgressReports(idxs);
+      });
+    }
+
+    /* ---- simple CSS-only bar chart (no external chart library needed) ---- */
+    function buildChartHtml(subjects, values, maxVal, averages) {
+      var ticks = [], step = maxVal / 5;
+      for (var i = 5; i >= 0; i--) ticks.push(Math.round(step * i));
+      var axis = '<div class="pr-chart-axis">' + ticks.map(function (t) { return "<span>" + t + "</span>"; }).join("") + '</div>';
+      var bars = subjects.map(function (subj, i) {
+        var v = Math.max(0, Math.min(maxVal, Number(values[i] || 0)));
+        var h = Math.max(1, Math.round((v / maxVal) * 100));
+        return '<div class="pr-bar-wrap"><div class="pr-bar" style="height:' + h + '%;" title="' + esc(subj) + ': ' + v + '"></div></div>';
+      }).join('');
+      var points = (averages || []).map(function (v, i) {
+        var x = ((i + 0.5) / Math.max(subjects.length, 1)) * 1000;
+        var y = 100 - Math.max(0, Math.min(100, (Number(v || 0) / maxVal) * 100));
+        return Math.round(x * 10) / 10 + ',' + Math.round(y * 10) / 10;
+      }).join(' ');
+      var averageLine = points ? '<svg class="pr-average-line" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + points + '"></polyline></svg>' : '';
+      var labels = '<div class="pr-chart-labels" style="--subject-count:' + Math.max(subjects.length, 1) + '">' + subjects.map(function (subj) { return '<span>' + esc(subj) + '</span>'; }).join('') + '</div>';
+      return '<div class="pr-graphbox"><div class="pr-graphtitle">SUBJECT PERFORMANCE COMPARISON</div><div class="pr-chart-legend"><span class="pr-average-key"></span> Dotted line: class average by subject</div><div class="pr-chart">' + axis + '<div class="pr-chart-main"><div class="pr-chart-plot">' + averageLine + bars + '</div>' + labels + '</div></div></div>';
+    }
+
+    /* Column layout (kept consistent across every row via rowspan/colspan
+       so the grid lines up exactly, matching the sample):
+         FA: [Subject][CT1][CT2][UT][HA][Total] = 6 left cols + [Parameter][Value] = 2 holistic cols -> 8 total
+         SA: [Subject][Exam][Int][Total]        = 4 left cols + [Parameter][Value] = 2 holistic cols -> 6 total
+       "Total" gets its own rowspan-2 header (like "Subject"), separate
+       from the "Academic Parameters" super-header, matching the sample. */
+    function buildProgressReports(idxs) {
+      var d = st.reportData;
+      var subjects = filterSubjects(d);
+      var isSABucket = !!d.isSA;
+      var maxPerSubject = d.maxPerSubject || (isSABucket ? 100 : 50);
+      var title = bucketTitleWords(d.bucket) + " PROGRESS REPORT (" + academicYearStr() + ")";
+      var holP = (d.holisticParams || []).slice();
+      var colLabels = d.colLabels || {};
+      var academicKeys = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "CTAvg", "HA", "UT", "Tot"];
+      var ctNumbers = { "FA-1": [1, 2], "FA-2": [3, 4], "FA-3": [5, 6], "FA-4": [7, 8] }[d.bucket] || [1, 2];
+      var internalSource = d.bucket === "SA-2" ? "Internal (FA-1 to FA-4)" : "Internal (FA-1 & FA-2)";
+      var academicHeads = isSABucket ? ["Summative Exam", internalSource, "Total"] : ["Class Test " + ctNumbers[0], "Class Test " + ctNumbers[1], "Average of Class Tests " + ctNumbers[0] + " & " + ctNumbers[1], "Home Assignment", "Unit Test", "Total"];
+      var academicMax = isSABucket
+        ? [maxFromLabel(colLabels.Exam) || "80", maxFromLabel(colLabels.Int) || "20", String(maxPerSubject)]
+        : [maxFromLabel(colLabels.CT1) || "20", maxFromLabel(colLabels.CT2) || "20", "20", maxFromLabel(colLabels.HA) || "5", maxFromLabel(colLabels.UT) || "25", String(maxPerSubject)];
+      var componentMaximums = academicMax.map(function (max) { return Number(max) * subjects.length; });
+      var ranks = classRankMap(d.students || []);
+
+      function componentValue(student, subject, key) {
+        var cells = (student.subjects || {})[subject] || {};
+        if (key === "CTAvg") {
+          var c1 = cells.CT1, c2 = cells.CT2;
+          if (!c1 || !c2 || !c1.has || !c2.has || c1.value === "" || c2.value === "" || c1.value == null || c2.value == null || isNaN(Number(c1.value)) || isNaN(Number(c2.value))) return null;
+          return (Number(c1.value) + Number(c2.value)) / 2;
+        }
+        var v = cells[key];
+        return v && v.has && v.value !== "" && v.value != null && !isNaN(Number(v.value)) ? Number(v.value) : null;
+      }
+      function hasCompleteFASubject(student, subject) {
+        return ["CT1", "CT2", "HA", "UT", "Tot"].every(function (key) { return componentValue(student, subject, key) != null; });
+      }
+      var classAverages = subjects.map(function (subject) {
+        var vals = (d.students || []).filter(function (student) {
+          return isSABucket ? subjectTotalValue(student, subject) != null : hasCompleteFASubject(student, subject);
+        }).map(function (student) { return subjectTotalValue(student, subject); });
+        return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : 0;
+      });
+
+      var pages = idxs.map(function (idx) {
+        var s = d.students[idx]; if (!s) return "";
+        var pct = s.hasAny ? Number(s.percent) : 0;
+        var componentTotals = academicKeys.map(function (key) {
+          if (key === "Tot") return s.hasAny ? Number(s.totalScored) : null;
+          var vals = subjects.map(function (subject) { return componentValue(s, subject, key); }).filter(function (v) { return v != null; });
+          return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) : null;
+        });
+        var academicRows = subjects.map(function (subject) {
+          var cells = (s.subjects || {})[subject] || {};
+          return '<tr><td class="pr-subjectname">' + esc(subject) + '</td>' + academicKeys.map(function (key, i) {
+            var value = componentValue(s, subject, key), sourceCell = key === "CTAvg" ? null : cells[key];
+            var shown = key === "CTAvg" && (isAbsentCell(cells.CT1) || isAbsentCell(cells.CT2)) ? "Ab" : progressCellText(sourceCell, value);
+            return '<td class="' + (shown === "Ab" ? 'pr-absent ' : '') + (i === academicKeys.length - 1 ? 'pr-tot' : '') + '">' + shown + '</td>';
+          }).join("") + '</tr>';
+        }).join("");
+
+        var holTotal = 0, holHas = false, holMaximum = 0;
+        var holisticRows = holP.map(function (parameter, i) {
+          var v = s.holistic ? s.holistic[parameter.parameter] : null, shown = "&ndash;";
+          var maximum = Number(parameter.max == null ? (parameter.maximum == null ? 10 : parameter.maximum) : parameter.max) || 10;
+          holMaximum += maximum;
+          if (v && v.has && v.value !== "" && v.value != null) { holTotal += Number(v.value); holHas = true; shown = esc(roundHalfValue(v.value)); }
+          return '<tr><td class="pr-hol-no">' + (i + 1) + '</td><td class="pr-hol-name">' + esc(parameter.parameter) + '</td><td>' + esc(roundHalfValue(maximum)) + '</td><td>' + shown + '</td></tr>';
+        }).join("");
+        holisticRows += '<tr class="pr-holistic-total"><td colspan="2" class="pr-scorelabel">Total</td><td class="pr-scorelabel">' + esc(roundHalfValue(holMaximum)) + '</td><td class="pr-scoreval">' + (holHas ? esc(roundHalfValue(holTotal)) : "&ndash;") + '</td></tr>';
+
+        var headCells = academicHeads.map(function (label, i) { return '<th>' + esc(label) + '<span class="mx">Maximum ' + academicMax[i] + '</span></th>'; }).join("");
+        var totalRow = '<tr class="pr-component-total"><td>Component Total</td>' + componentTotals.map(function (value, i) {
+          return '<td>' + (value == null ? '&ndash;' : esc(roundHalfValue(value)) + ' / ' + esc(roundHalfValue(componentMaximums[i]))) + '</td>';
+        }).join('') + '</tr>';
+        var resultStrip = '<div class="pr-result-strip">' +
+          '<div class="pr-result-card"><span>Percentage</span><b>' + (s.hasAny ? esc(s.percent) + '%' : '&ndash;') + '</b></div>' +
+          '<div class="pr-result-card"><span>Rank</span><b>' + (ranks[idx] || '&ndash;') + '</b></div>' +
+          '<div class="pr-result-card"><span>Overall Result</span><b>' + esc(passFailWord(pct)) + '</b></div>' +
+        '</div>';
+        var chartVals = subjects.map(function (subject) { var value = subjectTotalValue(s, subject); return value == null ? 0 : value; });
+        var attendance = attendanceRowsForStudent(d, s);
+        var assessmentAbsent = studentHasAssessmentAbsence(s, subjects, academicKeys.filter(function (k) { return k !== "CTAvg" && k !== "Tot"; }));
+        var impression = intelligentImpression(s, subjects, maxPerSubject, attendance.overallPercentage, assessmentAbsent);
+        function attendanceTableHtml(rows) {
+          var head = rows.map(function (row) { return '<th>' + esc(row.month) + '</th>'; }).join('');
+          var present = rows.map(function (row) { return '<td>' + (row.present == null ? '&ndash;' : esc(roundHalfValue(row.present))) + '</td>'; }).join('');
+          var working = rows.map(function (row) { return '<td>' + (row.working == null ? '&ndash;' : esc(roundHalfValue(row.working))) + '</td>'; }).join('');
+          var pct = rows.map(function (row) { return '<td>' + (row.percentage == null ? '&ndash;' : esc(row.percentage) + '%') + '</td>'; }).join('');
+          return '<table class="pr-table pr-attendance-table' + (d.bucket === "SA-2" ? ' pr-attendance-sa2' : '') + '"><thead><tr><th>Metric</th>' + head + '<th>Cumulative</th></tr></thead><tbody>' +
+            '<tr><th>Present Days</th>' + present + '<td class="pr-att-cum">' + (attendance.cumulativePresent == null ? '&ndash;' : esc(roundHalfValue(attendance.cumulativePresent))) + '</td></tr>' +
+            '<tr><th>Working Days</th>' + working + '<td class="pr-att-cum">' + (attendance.cumulativeWorking == null ? '&ndash;' : esc(roundHalfValue(attendance.cumulativeWorking))) + '</td></tr>' +
+            '<tr><th>Attendance %</th>' + pct + '<td class="pr-att-cum">' + (attendance.overallPercentage == null ? '&ndash;' : esc(attendance.overallPercentage) + '%') + '</td></tr></tbody></table>';
+        }
+        var attendanceHtml = attendanceTableHtml(attendance.rows);
+        var height = s.heightCm || s.height || '', weight = s.weightKg || s.weight || '', bmi = height && weight ? (Number(weight) / Math.pow(Number(height) / 100, 2)).toFixed(1) : '&ndash;';
+        var healthHtml = /^SA-[12]$/.test(d.bucket) ? '<div class="pr-section-title">Health Measurements</div><table class="pr-table pr-health-table"><thead><tr><th>Height</th><th>Weight</th><th>BMI</th></tr></thead><tbody><tr><td>' + (height || '&ndash;') + (height ? ' cm' : '') + '</td><td>' + (weight || '&ndash;') + (weight ? ' kg' : '') + '</td><td>' + bmi + '</td></tr></tbody></table>' : '';
+
+        return '<div class="pr-page ' + (isSABucket ? 'pr-sa' : 'pr-fa') + '"><div class="pr-scale-inner">' +
+          '<div class="pr-header"><img src="receipt-header-logo.png" alt="School" onerror="this.style.display=\'none\'"></div>' +
+          '<div class="pr-title">' + esc(title) + '</div>' +
+          '<table class="pr-student-table"><tr><th>Name of the Student</th><td>' + esc(s.name) + '</td><th>ID No.</th><td>' + esc(studentIdText(s)) + '</td></tr>' +
+          '<tr><th>Class</th><td>' + esc(d.class) + '</td><th>Assessment</th><td>' + esc(d.bucket) + '</td></tr></table>' +
+          '<div class="pr-section-title">Academic Assessment</div>' +
+          '<table class="pr-table pr-academic-table"><thead><tr><th>Subject</th>' + headCells + '</tr></thead><tbody>' + academicRows + totalRow + '</tbody></table>' +
+          resultStrip +
+          '<div class="pr-section-title">Holistic Assessment</div>' +
+          '<table class="pr-table pr-holistic-table"><thead><tr><th>Sl No.</th><th>Indicator</th><th>Maximum</th><th>Score</th></tr></thead><tbody>' + holisticRows + '</tbody></table>' +
+          '<div class="pr-section-title">Attendance</div>' +
+          attendanceHtml +
+          healthHtml +
+          '<div class="pr-impression-box"><div class="pr-impression-title">Overall Impression</div><div class="pr-impression-text">' + esc(impression) + '</div></div>' +
+          buildChartHtml(subjects, chartVals, maxPerSubject, classAverages) + '<div class="pr-signature-space"></div>' +
+          '<div class="pr-footer"><span>Principal\'s Signature</span><span>Parent\'s Signature</span></div></div></div>';
+      }).join("");
+      $("progRepPrintArea").innerHTML = pages;
+      printContainer("progRepPrintArea", "portrait");
+    }
+
+
+    /* ---- print helper: shows exactly one of #repTab / #progRepPrintArea,
+       computes a single uniform scale factor so the whole (correctly laid
+       out, un-modified) block fits on one page, prints, then restores.
+       Using a whole-block transform:scale — instead of shrinking individual
+       cell fonts/padding or forcing table-layout:fixed — guarantees nothing
+       can ever visually overlap: every cell keeps exactly the size it
+       needs; the entire thing is just uniformly shrunk like a real
+       "fit to page" print. ---- */
+    function mmToPx(mm) { return mm * 96 / 25.4; }
+    function scaleBlockToPage(scalerEl, wrapEl, orientation, restoreFns) {
+      if (!scalerEl || !wrapEl) return;
+      scalerEl.style.transform = "none";
+      scalerEl.style.width = "auto";
+      wrapEl.style.height = "auto";
+      wrapEl.style.overflow = "visible";
+      void scalerEl.offsetWidth; // force reflow before measuring
+      var natW = scalerEl.scrollWidth, natH = scalerEl.scrollHeight;
+      if (!natW || !natH) return;
+      var marginMM = 10;
+      var pageWmm = orientation === "landscape" ? 297 : 210;
+      var pageHmm = orientation === "landscape" ? 210 : 297;
+      var usableW = mmToPx(pageWmm - marginMM * 2);
+      var usableH = mmToPx(pageHmm - marginMM * 2);
+      var scale = usableW / natW;
+      if (natH * scale > usableH) scale = usableH / natH;
+      scale = Math.max(0.15, Math.min(scale, 1.35));
+      scalerEl.style.transformOrigin = "top left";
+      scalerEl.style.width = natW + "px";
+      scalerEl.style.transform = "scale(" + scale + ")";
+      wrapEl.style.height = (natH * scale) + "px";
+      wrapEl.style.overflow = "hidden";
+      restoreFns.push(function () {
+        scalerEl.style.transform = ""; scalerEl.style.width = "";
+        wrapEl.style.height = ""; wrapEl.style.overflow = "";
+      });
+    }
+    /* Print in an isolated iframe so @page orientation is applied to the
+       actual print document. Tabulation is always A4 landscape; progress
+       reports are always A4 portrait. */
+    function printContainer(id, orientation) {
+      var source = $(id);
+      if (!source) return;
+      var wanted = id === "repTab" ? "landscape" : "portrait";
+      var oldDisplay = source.style.display;
+      source.style.display = "block";
+
+      var cssNodes = Array.prototype.slice.call(document.querySelectorAll('link[rel="stylesheet"],style'));
+      var headCss = cssNodes.map(function (n) { return n.outerHTML; }).join("");
+      var baseHref = String(document.baseURI || location.href).replace(/"/g, "&quot;");
+      var pageCss = '<style>' +
+        (id === 'progRepPrintArea' ? '@page{size:A4 portrait;margin:10mm 8mm 10mm 22mm;}' : '@page{size:A4 landscape;margin:10mm;}') +
+        'html,body{margin:0!important;padding:0!important;background:#fff!important;}' +
+        'body *{visibility:visible!important;}' +
+        '#repTab{display:block!important;width:277mm!important;}' +
+        '#repTab .rep-tablewrap{width:277mm!important;max-height:none!important;overflow:visible!important;}' +
+        '#repTab .rep-table{width:277mm!important;table-layout:fixed!important;}' +
+        '#progRepPrintArea{display:block!important;width:180mm!important;}' +
+        '#progRepPrintArea .pr-page{width:180mm!important;min-height:277mm!important;page-break-after:always;}' +
+        '#progRepPrintArea .pr-page:last-child{page-break-after:auto;}' +
+        '</style>';
+
+      var frame = document.createElement("iframe");
+      frame.setAttribute("aria-hidden", "true");
+      frame.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+      document.body.appendChild(frame);
+      var doc = frame.contentDocument;
+      doc.open();
+      doc.write('<!doctype html><html><head><base href="' + baseHref + '">' + headCss + pageCss + '</head><body>' + source.outerHTML + '</body></html>');
+      doc.close();
+      source.style.display = oldDisplay;
+
+      function doPrint() {
+        try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+        finally { setTimeout(function () { if (frame.parentNode) frame.parentNode.removeChild(frame); }, 800); }
+      }
+      var imgs = Array.prototype.slice.call(doc.images || []);
+      var waits = imgs.map(function (img) { return img.complete ? Promise.resolve() : new Promise(function (resolve) { img.onload = img.onerror = resolve; }); });
+      if (doc.fonts && doc.fonts.ready) waits.push(doc.fonts.ready.catch(function () {}));
+      Promise.all(waits).then(function () { setTimeout(doPrint, 250); });
+    }
 
     /* ---------------- modals + form helpers ---------------- */
     function formModal() {

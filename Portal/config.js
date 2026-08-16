@@ -57,7 +57,7 @@ window.PORTAL_CONFIG = {
     "marksGetTeacherExamOptions","marksGetGrid","marksSaveBulk","marksSetLock",
     "marksGetHighSchoolClasses","marksGetAdminExamOptions","marksGetClassGrid",
     "getHolisticBuckets","getHolisticAssignments","getHolisticStudents",
-    "saveHolisticMarks","getHolisticLockState","holisticSetLock","runHolisticAutoAttendance",
+    "saveHolisticMarks","getHolisticLockState","holisticSetLock","runHolisticAutoAttendance", "saveHolisticResponsibilityMatrix", "saveHolisticHealthData",
     "getTeacherUpcomingExamsSummary","getTeacherExamCalendarPayload",
     "getTeacherAssignedExamsForSyllabus","teacherAddExamSyllabus",
     "progressGetClasses","progressGetBucketList","locksGetMatrix", "locksSetBucket", "progressGetClassData"

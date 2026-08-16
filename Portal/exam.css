@@ -117,24 +117,114 @@
 .ex-empty i{font-size:34px;color:var(--maroon);display:block;margin-bottom:8px}
 .ex-loading{text-align:center;padding:34px;color:var(--text-muted)}.ex-loading i{animation:spin 1s linear infinite;font-size:28px;color:var(--maroon)}
 
-/* reports */
+/* =======================================================================
+   REPORTS — Tabulation sheet, styled to match the school's existing
+   printed Marks-Sheet exactly (black/white/grey — no maroon shading, no
+   zebra striping, no colour bands).
+   ======================================================================= */
 .ex-legend{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:10px 0;font-size:12px;color:var(--text-muted)}
 .ex-legend .sw{width:14px;height:14px;border-radius:3px;border:1px solid #cbd0d6;display:inline-block;margin-right:6px;vertical-align:middle}
-.rep-tablewrap{overflow:auto;border:1px solid var(--border);border-radius:12px;background:#fff;max-height:60vh;margin-top:8px}
-.rep-table{border-collapse:collapse;font-size:12px;width:100%}
-.rep-table th,.rep-table td{border:1px solid #d0d5db;padding:5px 7px;text-align:center;white-space:nowrap}
-.rep-table thead th{position:sticky;top:0;z-index:6;background:var(--maroon);color:#fff;font-weight:700}
-.rep-table thead tr.sub th{top:29px;background:#a83236;font-weight:600;font-size:11px}
+
+/* branded header (logo only — centered, no big colour heading beside it) */
+.rep-print-head{display:none;justify-content:center;padding-bottom:8px;margin-bottom:6px;border-bottom:1.5px solid #000}
+.rep-print-head img{height:74px;width:auto;object-fit:contain;display:block;margin:0 auto}
+
+/* document title + legend — same font family as the rest of the sheet,
+   bold+underlined title, italic legend line, both centered, both ALWAYS
+   visible (on screen and in print) so what you see is what prints. */
+.rep-doc-title{font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:16px;font-weight:700;text-decoration:underline;text-align:center;color:#000;margin:6px 0 4px}
+.rep-doc-legend{font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:11.5px;font-style:italic;text-align:center;color:#000;margin:0 0 10px;line-height:1.45}
+
+.rep-tablewrap{overflow:auto;border:none;background:#fff;max-height:60vh;margin-top:8px}
+.rep-table{border-collapse:collapse;font-size:12px;width:100%;font-family:Calibri,"Segoe UI",Arial,sans-serif;color:#000;border:2px solid #000}
+.rep-table th,.rep-table td{border:1px solid #000;padding:5px 7px;text-align:center;white-space:nowrap;color:#000}
+.rep-table thead th{position:sticky;top:0;z-index:6;background:#f2f2f2;color:#000;font-weight:700}
+.rep-table thead tr.sub th{top:29px;background:#f2f2f2;font-weight:700;font-size:11px;color:#000}
 .rep-table th.stick,.rep-table td.stick{position:sticky;left:0;z-index:5;background:#fff}
 .rep-table th.stick2,.rep-table td.stick2{position:sticky;z-index:5;background:#fff;text-align:left}
-.rep-table thead th.stick,.rep-table thead th.stick2{z-index:8;background:var(--maroon)}
+.rep-table thead th.stick,.rep-table thead th.stick2{z-index:8;background:#f2f2f2}
 .rep-table td.name{text-align:left;font-weight:600}
-.rep-table tbody tr:hover td{background:#fbf6f6}
-.rep-table td.miss{background:#fdecec;color:#b3261e}
-.rep-table td.tot,.rep-table td.pct{font-weight:800}
+.rep-table tbody tr:hover td{background:#fbfbfb}
+.rep-table td.miss{color:#b3261e;font-weight:700}
+.rep-table td.tot{font-weight:700;background:#f2f2f2}
+.rep-table td.pct,.rep-table td.grade{font-weight:700}
 .rep-table tr.norow td{color:#9aa3af}
 .rep-chk{width:16px;height:16px;cursor:pointer;accent-color:var(--success)}
-.rep-table td.grp,.rep-table th.grp{border-left:2px solid #b9bfc6}
+.rep-table td.grp,.rep-table th.grp{border-left:2px solid #000}
+.rep-table thead th .mx,.pr-table th .mx{display:block;font-weight:600;font-size:9px;color:#333;margin-top:1px}
+
+.rep-print-gen{display:block;margin-top:6px;font-size:9.5px;color:#555;text-align:right}
+
+/* -----------------------------------------------------------------------
+   PRINT SCALING — the block that gets uniformly shrunk (transform:scale)
+   to fit one page. Using scale on a fully, correctly laid-out block (same
+   DOM/CSS as the working on-screen version) instead of forcing tiny fonts
+   or table-layout:fixed is what prevents any text overlap: nothing is
+   ever squeezed into a column narrower than its content needs — the
+   WHOLE thing is just visually shrunk, like a real "fit to page" print.
+   transform is applied/removed via JS only around the print call, so
+   normal on-screen viewing (full size, scrollable) is completely
+   unaffected.
+   ----------------------------------------------------------------------- */
+#repTabScaler,.pr-scale-inner{transform-origin:top left}
+
+/* =======================================================================
+   PROGRESS REPORTS — per-student printable report, styled to match the
+   school's existing Progress Report exactly (same table borders/shading/
+   font/graph style as the Tabulation sheet). One bucket per report (this
+   year's pattern: one report per Formative/Summative Assessment).
+   ======================================================================= */
+.pr-panel{margin-top:16px;border:1px solid var(--border);border-radius:12px;background:#fff;overflow:hidden}
+.pr-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border);background:#faf6f6}
+.pr-panel-head h4{margin:0;font-size:14px;font-weight:800;color:var(--maroon)}
+.pr-panel-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+.pr-selectall{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--text-main);cursor:pointer}
+.pr-selectall input{width:16px;height:16px;accent-color:var(--maroon)}
+.pr-studentlist{max-height:280px;overflow-y:auto;padding:6px 10px}
+.pr-srow{display:flex;align-items:center;gap:10px;padding:7px 6px;border-bottom:1px solid #f1f2f6;font-size:13px}
+.pr-srow:last-child{border-bottom:none}
+.pr-srow input{width:16px;height:16px;accent-color:var(--maroon);flex:0 0 auto}
+.pr-srow .roll{flex:0 0 auto;min-width:26px;height:22px;border-radius:6px;background:var(--primary-light);color:var(--maroon);font-weight:800;font-size:11.5px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+.pr-srow .nm{flex:1;font-weight:600;color:var(--text-main)}
+.pr-panel-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--border)}
+.pr-count{font-size:12px;color:var(--text-muted);font-weight:700}
+
+/* ---- the printable report pages themselves (hidden on screen) ---- */
+#progRepPrintArea{display:none}
+.pr-page{background:#fff;padding:14px 18px;font-family:Calibri,"Segoe UI",Arial,sans-serif;color:#000}
+.pr-page + .pr-page{page-break-before:always}
+.pr-header{display:flex;justify-content:center;padding-bottom:6px;margin-bottom:4px;border-bottom:1.5px solid #000}
+.pr-header img{height:70px;width:auto;object-fit:contain}
+.pr-title{font-size:15px;font-weight:700;text-decoration:underline;text-align:center;margin:6px 0 8px;color:#000}
+.pr-table{width:100%;border-collapse:collapse;border:2px solid #000;font-size:11.5px;color:#000}
+.pr-table td,.pr-table th{border:1px solid #000;padding:5px 7px;color:#000}
+.pr-table td.pr-label{font-weight:700;background:#f2f2f2;text-align:left;width:16%}
+.pr-table td.pr-value{font-weight:600;text-align:left}
+.pr-table td.pr-legend-cell{font-size:10.5px;font-style:italic;text-align:left;background:#fff}
+.pr-table td.pr-subhead,.pr-table th.pr-subhead{font-weight:700;background:#f2f2f2;text-align:center}
+.pr-table td.pr-holhead{font-weight:700;background:#f2f2f2;text-align:center;vertical-align:middle}
+.pr-table td.pr-subjectname{font-weight:700;text-align:left}
+.pr-table td.pr-tot{font-weight:700;background:#f2f2f2}
+.pr-table td.pr-impression{text-align:left;font-size:10.5px;vertical-align:top;padding:8px}
+.pr-table td.pr-impression b{display:block;text-align:center;font-weight:700;background:#f2f2f2;margin:-8px -8px 6px;padding:5px 7px;border-bottom:1px solid #000}
+.pr-table td.pr-scorelabel{font-weight:700;background:#f2f2f2;text-align:left}
+.pr-table td.pr-scoreval{font-weight:700}
+
+/* graph box */
+.pr-graphbox{border:1.5px solid #000;margin-top:10px;padding:8px 10px 4px}
+.pr-graphtitle{text-align:center;font-size:12px;font-weight:700;letter-spacing:.4px;color:#555;margin-bottom:6px}
+.pr-chart{display:flex;align-items:stretch;gap:4px}
+.pr-chart-axis{display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:#000;text-align:right;padding-right:4px;height:140px}
+.pr-chart-plot{position:relative;flex:1;height:140px;background-image:repeating-linear-gradient(to top, #000 0, #000 1px, transparent 1px, transparent 20%);background-size:100% 20%;background-position:bottom;border-left:1px solid #000;border-bottom:1px solid #000;display:flex;align-items:flex-end;justify-content:space-around;gap:6px;padding:0 4px}
+.pr-bar-wrap{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;flex:1;min-width:0}
+.pr-bar{width:60%;background:#4472C4;min-height:1px}
+.pr-bar-label{margin-top:4px;font-size:8.5px;color:#000;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+/* footer sign line */
+.pr-footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-style:italic;font-weight:700;font-size:11px;color:#000}
+
+/* checkbox chip used elsewhere */
+.rep-chk{width:16px;height:16px;cursor:pointer;accent-color:var(--success)}
 
 /* inline toast */
 #exToast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);z-index:99999;background:#14171f;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;max-width:88vw}
@@ -167,15 +257,745 @@
 .ex-table td.abscell .ex-in{color:#b91c1c;font-weight:700}
 
 /* =======================================================================
-   PRINT — Reports > Tabulation. Clicking "Print" prints ONLY the loaded
-   tabulation table; the sidebar, tabs, toolbars and everything else in the
-   app shell is hidden for a clean printout.
+   PRINT — Reports > Tabulation / Progress Reports. Clicking "Print" on
+   either control prints ONLY the relevant container: the tabulation
+   (#repTab) shows/hides via the app's normal display toggling, while the
+   per-student Progress Reports (#progRepPrintArea) are built and toggled
+   visible right before window.print() is called (see examinations.js).
+   Whichever one is actually on-screen (display:block) at print time is
+   what renders — the other stays display:none and is therefore never
+   painted, even though both are allow-listed as "visible" below.
+
+   IMPORTANT: no font-size/table-layout overrides live here anymore. The
+   tabulation/report tables print with EXACTLY the same layout as the
+   working on-screen version (auto column widths, natural font) — fit-to-
+   page is achieved by uniformly scaling the whole block (see JS
+   printContainer()), never by squeezing individual cells.
    ======================================================================= */
 @media print{
   body *{visibility:hidden}
-  #repTab, #repTab *{visibility:visible}
-  #repTab{position:absolute;left:0;top:0;width:100%;display:block !important}
+  #repTab, #repTab *, #progRepPrintArea, #progRepPrintArea *{visibility:visible}
+  #repTab{position:absolute;left:0;top:0;width:100%}
+  #progRepPrintArea{position:absolute;left:0;top:0;width:100%}
+  .rep-print-head{display:flex !important}
   .rep-tablewrap{max-height:none !important;overflow:visible !important;border:none}
   .rep-table thead th{position:static !important}
   .ex-legend{display:none}
+  thead{display:table-header-group}
+  .pr-panel{display:none !important}
+}
+/* Page size is set dynamically in JS right before each print call (a
+   <style id="pfPageSize"> tag is injected with the correct @page rule) —
+   Tabulation prints A4 landscape (wide multi-subject grid), Progress
+   Reports print A4 portrait (matches the single-student report layout).
+   A landscape default is kept here as a safety net in case the script
+   hasn't run yet. */
+@page{ size:A4 landscape; margin:10mm; }
+
+/* =======================================================================
+   PRINT REFINEMENT — Excel-style report composition
+   -----------------------------------------------------------------------
+   IMPORTANT: These rules are intentionally scoped to the Reports print
+   output. All examination-entry, scheduling, locks, KPIs and other UI
+   styling above remains unchanged.
+
+   The old school Excel/PDF reports use a fixed document composition rather
+   than shrinking a responsive page to fit A4. Progress Reports therefore
+   use a real A4 portrait canvas with controlled table proportions, compact
+   borders and a larger graph. Tabulation remains landscape and uses its
+   existing report table structure.
+   ======================================================================= */
+
+/* Progress Report: fixed A4 printable canvas (190 x 277 mm inside 10 mm
+   A4 margins). This is deliberately independent of the browser viewport. */
+#progRepPrintArea .pr-page{
+  width:190mm;
+  min-height:277mm;
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+  background:#fff;
+  font-family:Calibri,"Segoe UI",Arial,sans-serif;
+  color:#000;
+}
+
+#progRepPrintArea .pr-scale-inner{
+  width:190mm;
+  min-height:277mm;
+  box-sizing:border-box;
+  padding:4mm 4mm 3mm;
+  transform:none !important;
+}
+
+/* Header proportions match the old school print: compact logo area, strong
+   rule, then a centered underlined title. */
+#progRepPrintArea .pr-header{
+  height:25mm;
+  box-sizing:border-box;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding:0 0 2.5mm;
+  margin:0 0 2mm;
+  border-bottom:1.5px solid #000;
+}
+#progRepPrintArea .pr-header img{
+  height:22mm;
+  width:auto;
+  max-width:150mm;
+  object-fit:contain;
+}
+#progRepPrintArea .pr-title{
+  font-size:14px;
+  line-height:1.2;
+  font-weight:700;
+  text-decoration:underline;
+  text-align:center;
+  margin:1.5mm 0 3mm;
+  color:#000;
+}
+
+/* The report table is deliberately dense, like the Excel original. */
+#progRepPrintArea .pr-table{
+  width:100%;
+  table-layout:fixed;
+  border-collapse:collapse;
+  border:1.5px solid #000;
+  font-size:10.5px;
+  line-height:1.15;
+  color:#000;
+}
+#progRepPrintArea .pr-table td,
+#progRepPrintArea .pr-table th{
+  border:1px solid #000;
+  padding:3.2px 4px;
+  color:#000;
+  vertical-align:middle;
+}
+
+/* Explicit column proportions for the current FA layout:
+   Subject | CT1 | CT2 | UT | HA | Total | Holistic parameter | value */
+#progRepPrintArea .pr-table tr > :nth-child(1){width:17%;}
+#progRepPrintArea .pr-table tr > :nth-child(2){width:11%;}
+#progRepPrintArea .pr-table tr > :nth-child(3){width:11%;}
+#progRepPrintArea .pr-table tr > :nth-child(4){width:11%;}
+#progRepPrintArea .pr-table tr > :nth-child(5){width:11%;}
+#progRepPrintArea .pr-table tr > :nth-child(6){width:11%;}
+#progRepPrintArea .pr-table tr > :nth-child(7){width:20%;}
+#progRepPrintArea .pr-table tr > :nth-child(8){width:8%;}
+
+#progRepPrintArea .pr-table td.pr-label{
+  font-weight:700;
+  background:#f2f2f2;
+  text-align:left;
+}
+#progRepPrintArea .pr-table td.pr-value{
+  font-weight:600;
+  text-align:left;
+}
+#progRepPrintArea .pr-table td.pr-legend-cell{
+  font-size:9.2px;
+  font-style:italic;
+  text-align:left;
+  line-height:1.25;
+  background:#fff;
+  padding:4px 6px;
+}
+#progRepPrintArea .pr-table td.pr-subhead,
+#progRepPrintArea .pr-table th.pr-subhead,
+#progRepPrintArea .pr-table td.pr-holhead{
+  font-weight:700;
+  background:#f2f2f2;
+  text-align:center;
+}
+#progRepPrintArea .pr-table td.pr-subjectname{
+  font-weight:700;
+  text-align:left;
+}
+#progRepPrintArea .pr-table td.pr-tot{
+  font-weight:700;
+  background:#f2f2f2;
+}
+#progRepPrintArea .pr-table td.pr-impression{
+  text-align:left;
+  font-size:9.5px;
+  line-height:1.3;
+  vertical-align:top;
+  padding:5px 6px;
+}
+#progRepPrintArea .pr-table td.pr-impression b{
+  display:block;
+  text-align:center;
+  font-weight:700;
+  background:#f2f2f2;
+  margin:-5px -6px 5px;
+  padding:4px 5px;
+  border-bottom:1px solid #000;
+}
+#progRepPrintArea .pr-table td.pr-scorelabel{
+  font-weight:700;
+  background:#f2f2f2;
+  text-align:left;
+}
+#progRepPrintArea .pr-table td.pr-scoreval{font-weight:700;}
+
+/* Graphical analysis: give it the visual weight of the old Excel report. */
+#progRepPrintArea .pr-graphbox{
+  height:67mm;
+  box-sizing:border-box;
+  border:1px solid #000;
+  margin-top:2.5mm;
+  padding:3mm 4mm 2mm;
+}
+#progRepPrintArea .pr-graphtitle{
+  text-align:center;
+  font-size:10.5px;
+  font-weight:700;
+  letter-spacing:.35px;
+  color:#555;
+  margin-bottom:2mm;
+}
+#progRepPrintArea .pr-chart{
+  height:57mm;
+  display:flex;
+  align-items:stretch;
+  gap:2mm;
+}
+#progRepPrintArea .pr-chart-axis{
+  height:54mm;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  font-size:7.5px;
+  color:#000;
+  text-align:right;
+  padding-right:1.5mm;
+}
+#progRepPrintArea .pr-chart-plot{
+  position:relative;
+  flex:1;
+  height:54mm;
+  background-image:repeating-linear-gradient(to top,#000 0,#000 .25px,transparent .25px,transparent 20%);
+  background-size:100% 20%;
+  background-position:bottom;
+  border-left:1px solid #000;
+  border-bottom:1px solid #000;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-around;
+  gap:5mm;
+  padding:0 2mm;
+}
+#progRepPrintArea .pr-bar-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-end;
+  height:100%;
+  flex:1;
+  min-width:0;
+}
+#progRepPrintArea .pr-bar{
+  width:48%;
+  background:#4472C4;
+  min-height:1px;
+}
+#progRepPrintArea .pr-bar-label{
+  margin-top:1.5mm;
+  font-size:7px;
+  color:#000;
+  text-align:center;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:100%;
+}
+
+#progRepPrintArea .pr-footer{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-top:4mm;
+  padding:0 1mm;
+  font-style:italic;
+  font-weight:700;
+  font-size:10px;
+  color:#000;
+}
+
+/* Print-only geometry. No transform/scale is applied to Progress Reports. */
+@media print{
+  #progRepPrintArea{
+    position:absolute !important;
+    left:0 !important;
+    top:0 !important;
+    width:190mm !important;
+    display:block !important;
+  }
+  #progRepPrintArea .pr-page{
+    page-break-after:always;
+    break-after:page;
+  }
+  #progRepPrintArea .pr-page:last-child{
+    page-break-after:auto;
+    break-after:auto;
+  }
+  #progRepPrintArea .pr-scale-inner{
+    transform:none !important;
+    width:190mm !important;
+    min-height:277mm !important;
+  }
+
+  /* Tabulation: retain its landscape print behavior, but use a fixed
+     printable width rather than allowing browser viewport dimensions to
+     determine the document geometry. */
+  #repTab{
+    width:277mm !important;
+  }
+  #repTabScaler{
+    width:277mm !important;
+    transform:none !important;
+  }
+  #repTab .rep-tablewrap{
+    width:277mm !important;
+  }
+  #repTab .rep-table{
+    width:277mm !important;
+    table-layout:auto;
+  }
+}
+
+/* =======================================================================
+   FINAL TABULATION FORMAT — exact compact old-school marks sheet
+   ======================================================================= */
+#repTab{font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff}
+#repTab .rep-print-head{display:flex;justify-content:center;border-bottom:1.5px solid #000;padding:0 0 2mm;margin:0 0 2mm}
+#repTab .rep-print-head img{height:22mm;max-width:125mm;object-fit:contain}
+#repTab .rep-doc-title{font:700 12px Arial,Helvetica,sans-serif;text-decoration:underline;text-align:center;margin:1.5mm 0 2mm}
+#repTab .rep-doc-legend{font:italic 700 8px Arial,Helvetica,sans-serif;text-align:center;line-height:1.3;margin:0 0 2mm;white-space:normal}
+#repTab .rep-tablewrap{width:100%;max-height:60vh;overflow:auto;margin:0;border:0}
+#repTab .rep-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1.6px solid #000;font:8px Arial,Helvetica,sans-serif;color:#000}
+#repTab .rep-table col.c-sl{width:3%}
+#repTab .rep-table col.c-name{width:11%}
+#repTab .rep-table col.c-mark{width:auto}
+#repTab .rep-table col.c-hol{width:2.1%}
+#repTab .rep-table col.c-total{width:3.7%}
+#repTab .rep-table col.c-percent{width:2.5%}
+#repTab .rep-table col.c-pf{width:2.5%}
+#repTab .rep-table th,#repTab .rep-table td{border:1px solid #555;padding:1.3mm .45mm;text-align:center;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:clip;color:#000;background:#fff}
+#repTab .rep-table thead th{position:static;background:#f2f2f2;font-weight:700}
+#repTab .rep-table thead tr.top th{height:7mm;font-size:8px}
+#repTab .rep-table thead tr.sub th{height:9mm;font-size:8px;line-height:1.05}
+#repTab .rep-table th .mx{display:block;font-size:7px;font-weight:700;margin-top:.8mm;color:#000}
+#repTab .rep-table td.student-name{text-align:left;font-weight:700;padding-left:1mm}
+#repTab .rep-table th.grp,#repTab .rep-table td.grp{border-left:1.8px solid #000}
+#repTab .rep-table th.sumhead,#repTab .rep-table td.sub-total{font-weight:700;background:#f2f2f2}
+#repTab .rep-table th.total-head,#repTab .rep-table td.grand-total{font-weight:700;background:#e7e7e7}
+#repTab .rep-table tbody tr{height:6.2mm}
+#repTab .rep-table tbody tr:hover td{background:inherit}
+#repTab .rep-print-gen,#repTab .ex-legend{display:none!important}
+
+@media print{
+  #repTab{width:277mm!important;margin:0!important;padding:0!important}
+  #repTab .rep-tablewrap{width:277mm!important;max-height:none!important;overflow:visible!important}
+  #repTab .rep-table{width:277mm!important;table-layout:fixed!important}
+}
+
+
+/* Final requested refinements only: Calibri and Rank column. */
+#repTab,#repTab .rep-doc-title,#repTab .rep-doc-legend,#repTab .rep-table,
+#repTab .rep-table th,#repTab .rep-table td,
+#progRepPrintArea,#progRepPrintArea .pr-page,#progRepPrintArea .pr-table,
+#progRepPrintArea .pr-table th,#progRepPrintArea .pr-table td{
+  font-family:Calibri,"Segoe UI",Arial,sans-serif!important;
+}
+#repTab .rep-table col.c-pf{width:2.2%}
+#repTab .rep-table col.c-rank{width:2.8%}
+
+
+/* Final fit adjustment: preserve the frozen tabulation structure while
+   using a compact readable Calibri size that keeps every column on one page. */
+#repTab .rep-table,#repTab .rep-table td{font-family:Calibri,"Segoe UI",Arial,sans-serif!important;font-size:9.5px!important}
+#repTab .rep-table th{font-family:Calibri,"Segoe UI",Arial,sans-serif!important;font-size:10px!important}
+#repTab .rep-table th .mx{font-size:7px!important}
+
+/* Progress report only. */
+#progRepPrintArea{width:180mm!important;margin:0!important;font-family:Calibri,"Segoe UI",Arial,sans-serif!important;color:#000}
+#progRepPrintArea .pr-page{width:180mm!important;height:277mm!important;min-height:277mm!important;max-height:277mm!important;box-sizing:border-box;margin:0!important;padding:0!important;overflow:hidden;background:#fff}
+#progRepPrintArea .pr-scale-inner{width:180mm!important;height:277mm!important;min-height:277mm!important;box-sizing:border-box;transform:none!important;display:flex;flex-direction:column;align-items:stretch;overflow:hidden}
+#progRepPrintArea .pr-header{height:28mm;padding:0 0 2mm;margin:0 0 1.5mm;display:flex;align-items:flex-end;justify-content:center;border-bottom:1.5px solid #000;box-sizing:border-box}
+#progRepPrintArea .pr-header img{height:24mm;max-width:145mm;width:auto;object-fit:contain}
+#progRepPrintArea .pr-title{margin:0 0 2mm;font:700 13px Calibri,"Segoe UI",Arial,sans-serif;text-decoration:underline;text-align:center}
+#progRepPrintArea table{font-family:Calibri,"Segoe UI",Arial,sans-serif!important}
+#progRepPrintArea .pr-student-table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 2mm;font-size:10.5px}
+#progRepPrintArea .pr-student-table th,#progRepPrintArea .pr-student-table td{border:1px solid #000;padding:1.3mm 1.5mm;text-align:center;vertical-align:middle}
+#progRepPrintArea .pr-student-table th{font-weight:700;background:#f2f2f2;width:18%}
+#progRepPrintArea .pr-student-table td{font-weight:700;width:32%}
+#progRepPrintArea .pr-parameter-note{display:none!important}
+#progRepPrintArea .pr-section-title{border:1.5px solid #000;border-bottom:0;padding:1.1mm;text-align:center;font-size:11px;font-weight:700;background:#f2f2f2}
+#progRepPrintArea .pr-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1.5px solid #000;margin:0 0 2mm;font-size:10px}
+#progRepPrintArea .pr-table th,#progRepPrintArea .pr-table td{border:1px solid #000;padding:1mm .75mm;text-align:center!important;vertical-align:middle}
+#progRepPrintArea .pr-table th{font-weight:700;background:#f2f2f2}
+#progRepPrintArea .pr-academic-table th:first-child,#progRepPrintArea .pr-academic-table td:first-child{width:18%;font-weight:700}
+#progRepPrintArea .pr-table .mx{display:block;font-size:7.5px;margin-top:.25mm;font-weight:600}
+#progRepPrintArea .pr-table td.pr-tot,#progRepPrintArea .pr-component-total td,#progRepPrintArea .pr-result-row td,#progRepPrintArea .pr-scorelabel,#progRepPrintArea .pr-scoreval{font-weight:700;background:#f2f2f2}
+#progRepPrintArea .pr-holistic-table th:nth-child(1){width:11%}
+#progRepPrintArea .pr-holistic-table th:nth-child(2){width:55%}
+#progRepPrintArea .pr-holistic-table th:nth-child(3),#progRepPrintArea .pr-holistic-table th:nth-child(4){width:17%}
+#progRepPrintArea .pr-hol-name{text-align:center!important;font-weight:600}
+#progRepPrintArea .pr-impression-box{width:100%;border:1.5px solid #000;margin:0 0 2mm;box-sizing:border-box}
+#progRepPrintArea .pr-impression-title{padding:1.1mm;text-align:center;font-size:10.5px;font-weight:700;background:#f2f2f2;border-bottom:1px solid #000}
+#progRepPrintArea .pr-impression-text{min-height:12mm;padding:1.8mm 2.5mm;font-size:9.5px;line-height:1.35;text-align:left!important;box-sizing:border-box}
+#progRepPrintArea .pr-graphbox{width:100%;height:49mm;box-sizing:border-box;margin:0;padding:2mm 2.5mm 1.5mm;border:1.5px solid #000}
+#progRepPrintArea .pr-graphtitle{font-size:10.5px;margin:0 0 .5mm;text-align:center}
+#progRepPrintArea .pr-chart-legend{font-size:7.5px;text-align:right;margin:0 0 .5mm}
+#progRepPrintArea .pr-average-key{display:inline-block;width:10mm;border-top:1.5px dashed #b3261e;vertical-align:middle;margin-right:1mm}
+#progRepPrintArea .pr-chart-axis{height:35mm;font-size:7.5px}
+#progRepPrintArea .pr-chart-plot{height:35mm;gap:3mm;position:relative}
+#progRepPrintArea .pr-bar-wrap{height:35mm;position:relative;z-index:2}
+#progRepPrintArea .pr-average-line{position:absolute;left:0;top:0;width:100%;height:35mm;z-index:3;pointer-events:none;overflow:visible}
+#progRepPrintArea .pr-average-line polyline{fill:none;stroke:#b3261e;stroke-width:2;stroke-dasharray:12 8;vector-effect:non-scaling-stroke}
+#progRepPrintArea .pr-signature-space{height:10mm;flex:1 0 10mm}
+#progRepPrintArea .pr-footer{width:100%;margin:0;padding:0 1mm 2mm;display:flex;justify-content:space-between;align-items:flex-end;font-size:10px;font-style:italic;font-weight:700;box-sizing:border-box}
+@media print{
+ #progRepPrintArea{position:absolute!important;left:0!important;top:0!important;width:180mm!important}
+ #progRepPrintArea .pr-page{width:180mm!important;height:277mm!important;min-height:277mm!important;max-height:277mm!important;page-break-after:always;break-after:page}
+ #progRepPrintArea .pr-page:last-child{page-break-after:auto;break-after:auto}
+ #progRepPrintArea .pr-scale-inner{width:180mm!important;height:277mm!important;min-height:277mm!important;transform:none!important}
+}
+
+
+/* Requested progress-report refinements only. */
+#progRepPrintArea .pr-academic-table{margin-bottom:0!important}
+#progRepPrintArea .pr-result-table{margin-top:2.5mm!important;margin-bottom:2mm!important;border:1.5px solid #000!important}
+#progRepPrintArea .pr-result-table th,#progRepPrintArea .pr-result-table td{font-size:10px!important;font-weight:700!important;background:#f2f2f2!important;text-align:center!important}
+#progRepPrintArea .pr-impression-text{font-size:10px!important;line-height:1.35!important;text-align:left!important}
+
+
+/* Final progress-report refinements: visual grouping only. */
+#progRepPrintArea .pr-academic-table th:nth-child(4),
+#progRepPrintArea .pr-academic-table td:nth-child(4){border-left:2.2px solid #000!important}
+#progRepPrintArea .pr-academic-table th:last-child,
+#progRepPrintArea .pr-academic-table td:last-child{border-right:2.2px solid #000!important}
+#progRepPrintArea .pr-component-total td{font-size:9px!important;white-space:nowrap}
+#progRepPrintArea .pr-result-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5mm;margin:3mm 0 2mm}
+#progRepPrintArea .pr-result-card{border:1.5px solid #000;background:#f2f2f2;min-height:11mm;display:flex;align-items:center;justify-content:center;gap:2mm;padding:1.5mm 2mm;box-sizing:border-box;text-align:center}
+#progRepPrintArea .pr-result-card span{font-size:10px;font-weight:700}
+#progRepPrintArea .pr-result-card b{font-size:11px;font-weight:700;color:#000}
+
+
+/* Formal attendance section and print-normalized progress report. */
+#progRepPrintArea .pr-attendance-table{margin-bottom:2mm!important;font-size:9.5px!important}
+#progRepPrintArea .pr-attendance-table th,#progRepPrintArea .pr-attendance-table td{text-align:center!important;padding:1mm!important}
+#progRepPrintArea .pr-attendance-table th{background:#f2f2f2!important;color:#000!important}
+#progRepPrintArea .pr-attendance-total td{font-weight:700!important;background:#f2f2f2!important;border-top:1.5px solid #000!important}
+#progRepPrintArea .pr-impression-text{font-size:10px!important;line-height:1.35!important;text-align:left!important}
+@media print{
+ #progRepPrintArea .pr-result-card,#progRepPrintArea .pr-impression-box{border-radius:0!important;box-shadow:none!important}
+ #progRepPrintArea .pr-result-card{border:1.5px solid #000!important;background:#f2f2f2!important}
+ #progRepPrintArea .pr-result-card span,#progRepPrintArea .pr-result-card b{color:#000!important}
+ #progRepPrintArea .pr-academic-table thead th,#progRepPrintArea .pr-impression-title{background:#f2f2f2!important;color:#000!important}
+ #progRepPrintArea .pr-academic-table tbody td,#progRepPrintArea .pr-academic-table tbody tr:nth-child(even) td{background:#fff!important}
+ #progRepPrintArea .pr-academic-table td:first-child,#progRepPrintArea .pr-academic-table td.pr-tot,#progRepPrintArea .pr-component-total td{background:#f2f2f2!important}
+}
+
+
+/* Horizontal attendance and management holistic/health entry. */
+#progRepPrintArea .pr-attendance-table{table-layout:fixed!important;font-size:8.5px!important}
+#progRepPrintArea .pr-attendance-table th:first-child{width:19%!important}
+#progRepPrintArea .pr-attendance-table th,#progRepPrintArea .pr-attendance-table td{padding:.8mm .35mm!important;white-space:nowrap}
+#progRepPrintArea .pr-attendance-table .pr-att-cum{font-weight:700!important;background:#f2f2f2!important}
+#progRepPrintArea .pr-health-table{margin-bottom:2mm!important}
+#progRepPrintArea .pr-health-table th,#progRepPrintArea .pr-health-table td{text-align:center!important;padding:1mm!important}
+.hm-health{border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:16px;background:#fff}
+.hm-health h4{margin:0 0 10px;color:var(--maroon);font-size:14px}
+.hm-health .hm-bmi{font-weight:800;color:var(--text-main)}
+
+
+/* Final SA fit and responsibility-assignment refinements. */
+#progRepPrintArea .pr-academic-table tbody td,
+#progRepPrintArea .pr-academic-table tbody tr:nth-child(even) td,
+#progRepPrintArea .pr-academic-table td:first-child{background:#fff!important}
+#progRepPrintArea .pr-academic-table td.pr-tot,
+#progRepPrintArea .pr-component-total td{background:#f2f2f2!important}
+#progRepPrintArea .pr-health-table{margin:0 0 1.2mm!important}
+#progRepPrintArea .pr-health-table th,#progRepPrintArea .pr-health-table td{padding:.65mm!important;font-size:9px!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-header{height:25mm!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-header img{height:21mm!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-table{margin-bottom:1.2mm!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-section-title{padding:.75mm!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-impression-text{min-height:9mm!important;padding:1.2mm 2mm!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-graphbox{height:43mm!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-chart-axis,
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-chart-plot,
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-bar-wrap{height:30mm!important}
+#progRepPrintArea .pr-page:has(.pr-health-table) .pr-signature-space{height:6mm!important;flex-basis:6mm!important}
+.ha-assign{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px}
+.ha-assign .ha-teacher{min-width:240px;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fff}
+
+
+/* Final one-page progress fit and compact impression. */
+#progRepPrintArea .pr-impression-box{display:grid!important;grid-template-columns:31mm 1fr!important;align-items:stretch!important;margin-bottom:1.2mm!important}
+#progRepPrintArea .pr-impression-title{border-bottom:0!important;border-right:1px solid #000!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:.8mm!important}
+#progRepPrintArea .pr-impression-text{min-height:0!important;padding:1mm 1.5mm!important;font-size:9px!important;line-height:1.25!important}
+#progRepPrintArea .pr-component-total td{padding:.55mm .3mm!important;font-size:8.3px!important}
+#progRepPrintArea .pr-page{height:277mm!important;max-height:277mm!important;overflow:hidden!important}
+#progRepPrintArea .pr-scale-inner{height:277mm!important;max-height:277mm!important;overflow:hidden!important}
+#progRepPrintArea .pr-header{height:24mm!important;margin-bottom:1mm!important}
+#progRepPrintArea .pr-header img{height:20mm!important}
+#progRepPrintArea .pr-title{margin-bottom:1.2mm!important;font-size:12px!important}
+#progRepPrintArea .pr-student-table{margin-bottom:1.2mm!important}
+#progRepPrintArea .pr-student-table th,#progRepPrintArea .pr-student-table td{padding:.8mm 1mm!important}
+#progRepPrintArea .pr-section-title{padding:.65mm!important}
+#progRepPrintArea .pr-table{margin-bottom:1mm!important}
+#progRepPrintArea .pr-table th,#progRepPrintArea .pr-table td{padding:.65mm .45mm!important}
+#progRepPrintArea .pr-result-strip{margin:1.2mm 0!important;gap:1.5mm!important}
+#progRepPrintArea .pr-result-card{min-height:8mm!important;padding:.7mm 1mm!important;border-radius:0!important;box-shadow:none!important}
+#progRepPrintArea .pr-attendance-table{margin-bottom:1mm!important}
+#progRepPrintArea .pr-health-table{margin-bottom:1mm!important}
+#progRepPrintArea .pr-health-table th,#progRepPrintArea .pr-health-table td{padding:.45mm!important}
+#progRepPrintArea .pr-graphbox{height:39mm!important;padding:1.2mm 2mm .8mm!important}
+#progRepPrintArea .pr-chart-axis,#progRepPrintArea .pr-chart-plot,#progRepPrintArea .pr-bar-wrap{height:28mm!important}
+#progRepPrintArea .pr-average-line{height:28mm!important}
+#progRepPrintArea .pr-signature-space{height:4mm!important;flex-basis:4mm!important}
+#progRepPrintArea .pr-footer{padding-bottom:1mm!important}
+.ha-assign .ex-tablewrap{max-height:58vh}
+
+
+/* Separate elegant sizing for formative and summative progress reports. */
+#progRepPrintArea .pr-fa .pr-header{height:29mm!important;margin-bottom:1.8mm!important}
+#progRepPrintArea .pr-fa .pr-header img{height:25mm!important}
+#progRepPrintArea .pr-fa .pr-title{font-size:13px!important;margin-bottom:2mm!important}
+#progRepPrintArea .pr-fa .pr-student-table{margin-bottom:2mm!important;font-size:10.5px!important}
+#progRepPrintArea .pr-fa .pr-student-table th,#progRepPrintArea .pr-fa .pr-student-table td{padding:1.25mm 1.5mm!important}
+#progRepPrintArea .pr-fa .pr-section-title{padding:1.05mm!important;font-size:11px!important}
+#progRepPrintArea .pr-fa .pr-table{margin-bottom:1.8mm!important;font-size:10px!important}
+#progRepPrintArea .pr-fa .pr-table th,#progRepPrintArea .pr-fa .pr-table td{padding:1mm .7mm!important}
+#progRepPrintArea .pr-fa .pr-component-total td{font-size:9px!important;padding:.8mm .4mm!important}
+#progRepPrintArea .pr-fa .pr-result-strip{margin:2.2mm 0!important;gap:2mm!important}
+#progRepPrintArea .pr-fa .pr-result-card{min-height:10mm!important;padding:1.2mm!important}
+#progRepPrintArea .pr-fa .pr-impression-box{margin-bottom:1.8mm!important}
+#progRepPrintArea .pr-fa .pr-impression-text{font-size:9.5px!important;padding:1.3mm 2mm!important}
+#progRepPrintArea .pr-fa .pr-graphbox{height:52mm!important;padding:2mm 2.5mm 1.5mm!important}
+#progRepPrintArea .pr-fa .pr-chart-axis,#progRepPrintArea .pr-fa .pr-chart-plot,#progRepPrintArea .pr-fa .pr-bar-wrap{height:39mm!important}
+#progRepPrintArea .pr-fa .pr-average-line{height:39mm!important}
+#progRepPrintArea .pr-fa .pr-signature-space{height:8mm!important;flex-basis:8mm!important}
+
+#progRepPrintArea .pr-sa .pr-header{height:28mm!important;margin-bottom:1.5mm!important}
+#progRepPrintArea .pr-sa .pr-header img{height:24mm!important}
+#progRepPrintArea .pr-sa .pr-title{font-size:13px!important;margin-bottom:1.8mm!important}
+#progRepPrintArea .pr-sa .pr-student-table{margin-bottom:1.7mm!important;font-size:10.5px!important}
+#progRepPrintArea .pr-sa .pr-student-table th,#progRepPrintArea .pr-sa .pr-student-table td{padding:1.1mm 1.4mm!important}
+#progRepPrintArea .pr-sa .pr-section-title{padding:.9mm!important;font-size:10.8px!important}
+#progRepPrintArea .pr-sa .pr-table{margin-bottom:1.4mm!important;font-size:9.8px!important}
+#progRepPrintArea .pr-sa .pr-table th,#progRepPrintArea .pr-sa .pr-table td{padding:.82mm .55mm!important}
+#progRepPrintArea .pr-sa .pr-component-total td{font-size:8.8px!important;padding:.65mm .35mm!important}
+#progRepPrintArea .pr-sa .pr-result-strip{margin:1.8mm 0!important;gap:1.8mm!important}
+#progRepPrintArea .pr-sa .pr-result-card{min-height:9.2mm!important;padding:1mm!important}
+#progRepPrintArea .pr-sa .pr-attendance-table th,#progRepPrintArea .pr-sa .pr-attendance-table td{padding:.72mm .3mm!important}
+#progRepPrintArea .pr-sa .pr-health-table th,#progRepPrintArea .pr-sa .pr-health-table td{padding:.7mm!important;font-size:9.5px!important}
+#progRepPrintArea .pr-sa .pr-impression-box{margin-bottom:1.5mm!important}
+#progRepPrintArea .pr-sa .pr-impression-text{font-size:9.3px!important;padding:1.15mm 1.8mm!important}
+#progRepPrintArea .pr-sa .pr-graphbox{height:47mm!important;padding:1.7mm 2.3mm 1.2mm!important}
+#progRepPrintArea .pr-sa .pr-chart-axis,#progRepPrintArea .pr-sa .pr-chart-plot,#progRepPrintArea .pr-sa .pr-bar-wrap{height:34mm!important}
+#progRepPrintArea .pr-sa .pr-average-line{height:34mm!important}
+#progRepPrintArea .pr-sa .pr-signature-space{height:6mm!important;flex-basis:6mm!important}
+
+/* Compact responsibility matrix: one assessment at a time. */
+.ha-matrix-wrap{max-height:none!important;overflow:auto!important}
+.ha-matrix{table-layout:fixed;min-width:900px}
+.ha-matrix th:first-child,.ha-matrix td:first-child{width:80px!important;text-align:center!important;font-weight:800}
+.ha-matrix th:not(:first-child),.ha-matrix td:not(:first-child){min-width:220px;white-space:normal!important}
+.ha-matrix .ha-teacher{min-width:0!important;width:100%!important;padding:7px 8px!important}
+.ha-matrix .ha-na{text-align:center;color:var(--text-muted);background:#f8fafc}
+
+
+/* Final report consistency and SA-2 attendance layout. */
+#progRepPrintArea .pr-academic-table tbody td,
+#progRepPrintArea .pr-academic-table tbody tr:nth-child(even) td,
+#progRepPrintArea .pr-academic-table tbody td:first-child,
+#progRepPrintArea .pr-academic-table tbody td:last-child,
+#progRepPrintArea .pr-academic-table tbody td.pr-tot{background:#fff!important}
+#progRepPrintArea .pr-holistic-table tbody td:last-child,
+#progRepPrintArea .pr-holistic-table tbody td.pr-tot{background:#fff!important}
+#progRepPrintArea .pr-component-total td{
+  background:#f2f2f2!important;
+  font-weight:800!important;
+  font-size:10.3px!important;
+  padding:1.45mm .55mm!important;
+  border-top:1px solid #000!important;
+  border-bottom:1px solid #000!important;
+}
+#progRepPrintArea .pr-fa .pr-academic-table,
+#progRepPrintArea .pr-sa .pr-academic-table{margin-bottom:0!important}
+#progRepPrintArea .pr-fa .pr-result-strip,
+#progRepPrintArea .pr-sa .pr-result-strip{margin-top:2.3mm!important;margin-bottom:2.3mm!important}
+#progRepPrintArea .pr-fa .pr-result-strip + .pr-section-title,
+#progRepPrintArea .pr-sa .pr-result-strip + .pr-section-title{margin-top:0!important}
+
+#progRepPrintArea .pr-attendance-table th,
+#progRepPrintArea .pr-attendance-table td{white-space:normal!important;word-break:normal!important;line-height:1.05!important}
+#progRepPrintArea .pr-attendance-table thead th:not(:first-child){font-size:7.8px!important}
+#progRepPrintArea .pr-attendance-bands{display:grid;grid-template-columns:1fr 1fr;gap:1.2mm;margin-bottom:1mm}
+#progRepPrintArea .pr-attendance-bands .pr-attendance-table{margin:0!important;font-size:7.8px!important}
+#progRepPrintArea .pr-attendance-bands .pr-attendance-table th,
+#progRepPrintArea .pr-attendance-bands .pr-attendance-table td{padding:.55mm .25mm!important}
+
+#progRepPrintArea .pr-chart-plot{padding-bottom:5mm!important;box-sizing:border-box!important;overflow:visible!important}
+#progRepPrintArea .pr-bar-wrap{position:relative!important;height:100%!important;padding-bottom:4mm!important;box-sizing:border-box!important;overflow:visible!important}
+#progRepPrintArea .pr-bar{margin-bottom:0!important;flex-shrink:0!important}
+#progRepPrintArea .pr-bar-label{position:absolute!important;left:50%!important;bottom:.5mm!important;transform:translateX(-50%)!important;display:block!important;width:max-content!important;max-width:none!important;white-space:nowrap!important;overflow:visible!important;text-overflow:clip!important;font-size:8px!important;line-height:1!important;z-index:5!important}
+#progRepPrintArea .pr-sa .pr-chart-plot{overflow:visible!important;padding-left:3%!important;padding-right:3%!important;padding-bottom:5mm!important}
+#progRepPrintArea .pr-sa .pr-average-line{left:3%!important;width:94%!important}
+
+/* Frozen final overrides requested for report consistency. */
+#progRepPrintArea .pr-academic-table tbody tr:not(.pr-component-total) td,
+#progRepPrintArea .pr-academic-table tbody tr:not(.pr-component-total) td:first-child,
+#progRepPrintArea .pr-academic-table tbody tr:not(.pr-component-total) td:last-child,
+#progRepPrintArea .pr-academic-table tbody tr:not(.pr-component-total) td.pr-tot{background:#fff!important}
+#progRepPrintArea .pr-component-total td{background:#f2f2f2!important;font-weight:800!important;font-size:10.5px!important;padding:1.7mm .6mm!important;border-top:1px solid #000!important;border-bottom:1px solid #000!important}
+#progRepPrintArea .pr-holistic-table tbody tr:not(.pr-holistic-total) td:last-child,
+#progRepPrintArea .pr-holistic-table tbody tr:not(.pr-holistic-total) td.pr-tot{background:#fff!important}
+#progRepPrintArea .pr-holistic-total td,
+#progRepPrintArea .pr-holistic-total td.pr-scorelabel,
+#progRepPrintArea .pr-holistic-total td.pr-scoreval{background:#f2f2f2!important;font-weight:800!important}
+#progRepPrintArea .pr-fa .pr-result-strip,#progRepPrintArea .pr-sa .pr-result-strip{margin-top:2.5mm!important;margin-bottom:2.5mm!important}
+#progRepPrintArea .pr-absent{background:#fff!important;font-weight:800!important;color:#000!important}
+#progRepPrintArea .pr-chart{align-items:stretch!important}
+#progRepPrintArea .pr-chart-main{display:flex!important;flex-direction:column!important;flex:1!important;min-width:0!important;height:100%!important}
+#progRepPrintArea .pr-chart-plot{position:relative!important;flex:1!important;min-height:0!important;padding:0 2%!important;overflow:hidden!important;box-sizing:border-box!important}
+#progRepPrintArea .pr-chart-labels{display:grid!important;grid-template-columns:repeat(var(--subject-count),1fr)!important;min-height:5mm!important;padding:1mm 2% 0!important;box-sizing:border-box!important}
+#progRepPrintArea .pr-chart-labels span{font-size:8px!important;line-height:1!important;text-align:center!important;white-space:nowrap!important;color:#000!important}
+#progRepPrintArea .pr-bar-wrap{height:100%!important;padding:0!important;overflow:hidden!important}
+#progRepPrintArea .pr-average-line{position:absolute!important;left:2%!important;top:0!important;width:96%!important;height:100%!important;overflow:hidden!important}
+#progRepPrintArea .pr-sa .pr-chart-plot{padding:0 3%!important;overflow:hidden!important}
+#progRepPrintArea .pr-sa .pr-average-line{left:3%!important;width:94%!important;height:100%!important}
+#progRepPrintArea .pr-attendance-table thead th{font-size:7.8px!important;white-space:normal!important}
+#progRepPrintArea .pr-attendance-bands{grid-template-columns:1.08fr .92fr!important}
+
+/* FINAL AUTHORITATIVE REPORT FIXES */
+#progRepPrintArea .pr-component-total td{height:8mm!important;padding:1.35mm .55mm!important;background:#f2f2f2!important;font-weight:800!important;vertical-align:middle!important}
+#progRepPrintArea .pr-holistic-table tbody tr:not(.pr-holistic-total) td,#progRepPrintArea .pr-holistic-table tbody tr:not(.pr-holistic-total) td:last-child{background:#fff!important}
+#progRepPrintArea .pr-holistic-total td,#progRepPrintArea .pr-holistic-total td.pr-scorelabel,#progRepPrintArea .pr-holistic-total td.pr-scoreval{background:#f2f2f2!important;font-weight:800!important}
+#progRepPrintArea .pr-absent{background:#fff!important;color:#000!important;font-weight:800!important}
+#progRepPrintArea .pr-graphbox{height:49mm!important;padding:1.5mm 2.5mm 1.2mm!important;overflow:hidden!important}
+#progRepPrintArea .pr-chart{height:39mm!important;display:flex!important;align-items:stretch!important;overflow:hidden!important}
+#progRepPrintArea .pr-chart-axis{height:32mm!important;flex:0 0 8mm!important}
+#progRepPrintArea .pr-chart-main{display:grid!important;grid-template-rows:32mm 6mm!important;flex:1!important;min-width:0!important;height:38mm!important;overflow:hidden!important}
+#progRepPrintArea .pr-chart-plot{position:relative!important;height:32mm!important;min-height:32mm!important;display:flex!important;align-items:flex-end!important;justify-content:space-around!important;gap:3mm!important;padding:0 2%!important;border-left:1px solid #000!important;border-bottom:1px solid #000!important;overflow:hidden!important;box-sizing:border-box!important}
+#progRepPrintArea .pr-bar-wrap{height:100%!important;display:flex!important;align-items:center!important;justify-content:flex-end!important;flex-direction:column!important;padding:0!important;overflow:hidden!important;position:relative!important;z-index:2!important}
+#progRepPrintArea .pr-bar{width:48%!important;flex:0 0 auto!important;margin:0!important;background:#4472C4!important}
+#progRepPrintArea .pr-average-line{position:absolute!important;left:2%!important;top:0!important;width:96%!important;height:100%!important;z-index:3!important;overflow:hidden!important;pointer-events:none!important}
+#progRepPrintArea .pr-average-line polyline{fill:none!important;stroke:#b3261e!important;stroke-width:2!important;stroke-dasharray:12 8!important;vector-effect:non-scaling-stroke!important}
+#progRepPrintArea .pr-chart-labels{display:grid!important;grid-template-columns:repeat(var(--subject-count),1fr)!important;height:6mm!important;padding:1.2mm 2% 0!important;box-sizing:border-box!important;overflow:visible!important}
+#progRepPrintArea .pr-chart-labels span{font-size:7.5px!important;line-height:1!important;text-align:center!important;white-space:nowrap!important;overflow:visible!important;color:#000!important}
+#progRepPrintArea .pr-attendance-bands{display:grid!important;grid-template-columns:1fr 1fr!important;gap:1.2mm!important;margin-bottom:1mm!important}
+#progRepPrintArea .pr-attendance-bands .pr-attendance-table{width:100%!important;table-layout:fixed!important;margin:0!important}
+
+/* FINAL TARGETED FIXES: graph labels, normal component row, single SA-2 attendance, mobile health entry. */
+#progRepPrintArea .pr-component-total td{
+  height:auto!important;
+  min-height:0!important;
+  padding:1mm .7mm!important;
+  font-size:10px!important;
+  line-height:1.15!important;
+  background:#f2f2f2!important;
+  border-top:1px solid #000!important;
+  border-bottom:1px solid #000!important;
+}
+#progRepPrintArea .pr-graphbox{height:51mm!important;overflow:hidden!important;padding:1.5mm 2.5mm 1mm!important}
+#progRepPrintArea .pr-chart{height:40mm!important;overflow:visible!important;align-items:flex-start!important}
+#progRepPrintArea .pr-chart-axis{height:32mm!important;flex:0 0 8mm!important}
+#progRepPrintArea .pr-chart-main{height:40mm!important;display:grid!important;grid-template-rows:32mm 8mm!important;overflow:visible!important;flex:1!important;min-width:0!important}
+#progRepPrintArea .pr-chart-plot{height:32mm!important;min-height:32mm!important;overflow:hidden!important;padding:0 2%!important;box-sizing:border-box!important}
+#progRepPrintArea .pr-average-line{top:0!important;height:100%!important;left:2%!important;width:96%!important;overflow:hidden!important}
+#progRepPrintArea .pr-chart-labels{display:grid!important;grid-template-columns:repeat(var(--subject-count),minmax(0,1fr))!important;height:8mm!important;padding:1.4mm 2% 0!important;overflow:visible!important;box-sizing:border-box!important}
+#progRepPrintArea .pr-chart-labels span{display:block!important;font-size:8px!important;line-height:1.1!important;text-align:center!important;white-space:normal!important;overflow:visible!important;word-break:normal!important;color:#000!important}
+#progRepPrintArea .pr-attendance-sa2{table-layout:fixed!important;font-size:7px!important}
+#progRepPrintArea .pr-attendance-sa2 th,#progRepPrintArea .pr-attendance-sa2 td{padding:.55mm .12mm!important;white-space:normal!important;line-height:1!important}
+#progRepPrintArea .pr-attendance-sa2 th:first-child{width:14%!important}
+#progRepPrintArea .pr-attendance-sa2 th:not(:first-child),#progRepPrintArea .pr-attendance-sa2 td:not(:first-child){width:auto!important}
+
+.hw-entrylist{display:flex;flex-direction:column;gap:10px}
+.hw-entryrow{border:1px solid var(--border);border-radius:12px;background:#fff;padding:11px 12px}
+.hw-student{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.hw-student b{min-width:28px;height:28px;border-radius:7px;background:var(--primary-light);color:var(--maroon);display:inline-flex;align-items:center;justify-content:center}
+.hw-student span{font-weight:700;color:var(--text-main)}
+.hw-inputs{display:grid;grid-template-columns:1fr 1fr .72fr;gap:8px;align-items:end}
+.hw-inputs label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:700;color:var(--text-muted)}
+.hw-inputs .ex-in{width:100%;box-sizing:border-box;font-size:16px;padding:9px 6px}
+.hw-bmi{min-height:39px;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:var(--text-main);background:#f8fafc}
+@media(max-width:600px){
+  .hw-entryrow{padding:10px}
+  .hw-inputs{grid-template-columns:1fr 1fr}
+  .hw-inputs label:last-child{grid-column:1/-1}
+  .hw-bmi{min-height:36px}
+  #hwSave{width:100%}
+}
+
+/* Graph label visibility: reserve a fixed label band inside the graph box. */
+#progRepPrintArea .pr-graphbox{
+  height:53mm!important;
+  overflow:hidden!important;
+  padding:1.5mm 2.5mm 1.2mm!important;
+}
+#progRepPrintArea .pr-chart{
+  height:42mm!important;
+  overflow:hidden!important;
+  align-items:flex-start!important;
+}
+#progRepPrintArea .pr-chart-axis{
+  height:33mm!important;
+  flex:0 0 8mm!important;
+}
+#progRepPrintArea .pr-chart-main{
+  position:relative!important;
+  display:block!important;
+  flex:1!important;
+  min-width:0!important;
+  height:42mm!important;
+  overflow:hidden!important;
+}
+#progRepPrintArea .pr-chart-plot{
+  position:absolute!important;
+  left:0!important;
+  right:0!important;
+  top:0!important;
+  height:33mm!important;
+  min-height:33mm!important;
+  padding:0 2%!important;
+  overflow:hidden!important;
+  box-sizing:border-box!important;
+}
+#progRepPrintArea .pr-average-line{
+  top:0!important;
+  height:100%!important;
+  left:2%!important;
+  width:96%!important;
+  overflow:hidden!important;
+}
+#progRepPrintArea .pr-chart-labels{
+  position:absolute!important;
+  left:0!important;
+  right:0!important;
+  bottom:0!important;
+  display:grid!important;
+  grid-template-columns:repeat(var(--subject-count),minmax(0,1fr))!important;
+  height:8mm!important;
+  padding:1.4mm 2% 0!important;
+  box-sizing:border-box!important;
+  overflow:visible!important;
+  z-index:6!important;
+}
+#progRepPrintArea .pr-chart-labels span{
+  display:block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  color:#000!important;
+  font-size:8px!important;
+  font-weight:600!important;
+  line-height:1.1!important;
+  text-align:center!important;
+  white-space:normal!important;
+  overflow:visible!important;
 }
