@@ -217,9 +217,9 @@
             '<td data-label="Mode">' + esc(a.mode) + '</td>' +
             '<td class="r" data-label="Amount Paid"><span class="ok">+' + money(a.amount) + '</span></td>' +
             '<td data-label="Actions">' +
-              '<button class="mini rP" data-r="' + esc(a.receiptId) + '" title="Print"><i class="material-icons" style="font-size:15px">print</i></button> ' +
-              '<button class="mini rS" data-r="' + esc(a.receiptId) + '" title="Share"><i class="material-icons" style="font-size:15px">ios_share</i></button> ' +
-              '<button class="mini btn-void-alloc" data-r="' + esc(a.receiptId) + '" data-ft="' + esc(a.code) + '" style="color:#b91c1c;border-color:#fca5a5;" title="Void Only This Allocation"><i class="material-icons" style="font-size:15px">delete_outline</i></button>' +
+              '<button class="mini rP" data-r="' + esc(a.receiptId) + '" data-y="' + esc(yf) + '" title="Print"><i class="material-icons" style="font-size:15px">print</i></button> ' +
+              '<button class="mini rS" data-r="' + esc(a.receiptId) + '" data-y="' + esc(yf) + '" title="Share"><i class="material-icons" style="font-size:15px">ios_share</i></button> ' +
+              '<button class="mini btn-void-alloc" data-r="' + esc(a.receiptId) + '" data-y="' + esc(yf) + '" data-ft="' + esc(a.code) + '" style="color:#b91c1c;border-color:#fca5a5;" title="Void Only This Allocation"><i class="material-icons" style="font-size:15px">delete_outline</i></button>' +
             '</td>' +
             '</tr>'
           );
@@ -289,19 +289,20 @@
         .catch(function (e) { toast(e.message || e, "err"); });
     }
 
-    function withReceipt(rid, cb) { P.api("feeGetReceipt", [rid], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
+    function withReceipt(rid, year, cb) { P.api("feeGetReceipt", [rid, year], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
     function wireReceiptButtons() {
-      Array.prototype.forEach.call($("lD").querySelectorAll(".rP"), function (b) { b.onclick = function () { withReceipt(b.getAttribute("data-r"), function (r) { ReceiptShare.print(r); }); }; });
-      Array.prototype.forEach.call($("lD").querySelectorAll(".rS"), function (b) { b.onclick = function () { withReceipt(b.getAttribute("data-r"), function (r) { ReceiptShare.share(r); }); }; });
+      Array.prototype.forEach.call($("lD").querySelectorAll(".rP"), function (b) { b.onclick = function () { withReceipt(b.getAttribute("data-r"), b.getAttribute("data-y"), function (r) { ReceiptShare.print(r); }); }; });
+      Array.prototype.forEach.call($("lD").querySelectorAll(".rS"), function (b) { b.onclick = function () { withReceipt(b.getAttribute("data-r"), b.getAttribute("data-y"), function (r) { ReceiptShare.share(r); }); }; });
       
       Array.prototype.forEach.call($("lD").querySelectorAll(".btn-void-alloc"), function (b) {
         b.onclick = function () {
           var rid = b.getAttribute("data-r");
+          var year = b.getAttribute("data-y");
           var code = b.getAttribute("data-ft");
           var reason = prompt('Enter reason for voiding ' + code + ' allocation in receipt "' + rid + '":');
           if (!reason) return;
 
-          P.api("feeVoidAllocation", [rid, code, reason], { text: "Voiding allocation…" })
+          P.api("feeVoidAllocation", [rid, year, code, reason], { text: "Voiding allocation…" })
             .then(function (res) {
               if (res.success) {
                 toast("Allocation for " + code + " voided.", "ok");
