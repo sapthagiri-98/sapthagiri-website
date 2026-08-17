@@ -8,6 +8,9 @@ window.PORTAL_CONFIG = {
   ADMIN_USER_NAME: "Admin",
   PRINCIPAL_WHATSAPP: "919246932393",
   PERF: true,
+  WHATSAPP_APP_ID: "2972537683097915",
+  WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: "167093995066179",
+  SUPABASE_WA_ONBOARD_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/whatsapp-onboarding",
   CLASS_TTL_MS: 30 * 60 * 1000,
   MONTH_TTL_MS: 90 * 1000,
   SCHOOL: {

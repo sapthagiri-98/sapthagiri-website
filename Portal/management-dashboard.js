@@ -178,6 +178,7 @@
       { id: "fees", label: "Fee Ledger", icon: "payments", href: "fees.html" },
       { id: "stafftrack", label: "Staff Attendance", icon: "groups", href: "staff-attendance.html" },
       { id: "usermgmt", label: "User Management", icon: "manage_accounts", href: "user-management.html" },
+      { id: "whatsapp", label: "WhatsApp Setup", icon: "whatsapp", href: "whatsapp-connect.html" },
     ];
     byId("dashLinks").innerHTML = mods.map(function (m) {
       return '<a class="dash-link" href="' + m.href + '"><i class="material-icons">' + m.icon + '</i><span>' + esc(m.label) + '</span><i class="material-icons dash-link-chev">chevron_right</i></a>';
