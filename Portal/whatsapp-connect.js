@@ -17,8 +17,11 @@
     return;
   }
 
-  var APP_ID = CONFIG.WHATSAPP_APP_ID;
-  var CONFIG_ID = CONFIG.WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID;
+  // Meta Embedded Signup identifiers.
+  // Keep these explicit here so the Facebook JS SDK cannot silently
+  // receive an undefined config_id from config.js.
+  var APP_ID = "2972537683097915";
+  var CONFIG_ID = "1670939950666179";
   var ONBOARD_URL = CONFIG.SUPABASE_WA_ONBOARD_BASE;
   var state = {
     code: null,
@@ -87,6 +90,12 @@
 
     if (!window.FB) {
       setStatus("Meta SDK not loaded", "Refresh the page and try again.", "error", "err");
+      resetButton();
+      return;
+    }
+
+    if (!APP_ID || !CONFIG_ID) {
+      setStatus("Meta configuration missing", "APP_ID or Embedded Signup config_id is missing.", "error", "err");
       resetButton();
       return;
     }
