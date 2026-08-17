@@ -3,26 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>WhatsApp Setup · Sapthagiri Portal</title>
+
   <link rel="icon" href="../logo-mark.jpg">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap"
+    rel="stylesheet"
+  >
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Material+Icons"
+    rel="stylesheet"
+  >
+
   <link rel="stylesheet" href="portal.css">
 </head>
+
 <body>
+
   <nav class="app-mobile-nav" id="mobileNav"></nav>
+
   <div class="app-body">
+
     <nav class="pv2-sidebar" id="nav"></nav>
+
     <main class="app-main">
       <div id="view"></div>
     </main>
+
   </div>
 
+  <!-- Portal configuration -->
   <script src="config.js"></script>
+
+  <!-- Portal core -->
   <script src="portal.js"></script>
-  <script src="whatsapp-connect.js"></script>
+
+  <!--
+    Meta WhatsApp Embedded Signup configuration.
+    These are PUBLIC identifiers. Do NOT put META_APP_SECRET here.
+  -->
+  <script>
+    window.META_APP_ID = "2972537683097915";
+    window.META_CONFIG_ID = "1670939950666179";
+
+    /*
+     * IMPORTANT:
+     * This must exactly match the redirect URI configured
+     * in Meta for the Embedded Signup configuration.
+     */
+    window.META_REDIRECT_URI =
+      window.location.origin + "/Portal/whatsapp-connect.html";
+  </script>
+
+  <!-- Meta SDK must load before our WhatsApp code -->
   <script src="https://connect.facebook.net/en_US/sdk.js"></script>
+
+  <!-- WhatsApp connection logic -->
+  <script src="whatsapp-connect.js"></script>
+
 </body>
 </html>
