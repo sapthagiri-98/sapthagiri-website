@@ -48,7 +48,7 @@ window.PORTAL_CONFIG = {
   SUPABASE_SYL_BASE: "https://denmdonkbmcmqfxlunpy.functions.supabase.co/syllabus-api",
   SUPABASE_SYL_FNS: [
     "getTeacherClassSubjects","getSyllabusAndPlansCatalog","extractTasksFromDrivePDF",
-    "saveTaskProgress","regenerateTeluguForTask","getSessionDetailedExplanation",
+    "saveTaskProgress","regenerateTeluguForTask","getManagementLessonTasks", "getSessionDetailedExplanation",
     "getManagementTimelineAuditReport"
   ],
   SUPABASE_EXAM_BASE: "https://denmdonkbmcmqfxlunpy.functions.supabase.co/exams-api",
