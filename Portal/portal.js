@@ -272,7 +272,12 @@
   function renderSubtabs(activeId, session) {
     var group = _groupOf(activeId); if (!group) return;
     var isMgmt = session.role === "Management";
-    var tabs = SUBTABS[group].filter(function (t) { return t.mgmt ? isMgmt : (t.teacherOnly ? !isMgmt : true); });
+    var isAttendanceEntry = String(session.name || "").trim().toLowerCase() === "attendance entry";
+    // Attendance Entry is intentionally restricted to the Daily Entry page.
+    // Do not expose Monthly Sheet / Report / Absentee tabs to this account.
+    var tabs = isAttendanceEntry
+      ? SUBTABS[group].filter(function (t) { return t.id === "attendance"; })
+      : SUBTABS[group].filter(function (t) { return t.mgmt ? isMgmt : (t.teacherOnly ? !isMgmt : true); });
     if (tabs.length < 2) return; // nothing to switch between
     var main = document.querySelector(".app-main"), view = document.getElementById("view");
     if (!main || !view) return;
@@ -302,7 +307,11 @@
   var MOBILE_ADMIN_BP = 900;
   function isMobileAdmin(session) {
     session = session || Session.get();
-    return !!(session && session.role === "Management" &&
+    // Attendance Entry is a dedicated daily-entry Management account.
+    // It must retain its attendance write controls on phones; the normal
+    // Management mobile read-only behavior remains unchanged for everyone else.
+    var isAttendanceEntry = !!(session && String(session.name || "").trim().toLowerCase() === "attendance entry");
+    return !!(session && session.role === "Management" && !isAttendanceEntry &&
       (window.innerWidth || document.documentElement.clientWidth) < MOBILE_ADMIN_BP);
   }
   function _applyReadOnlyClass(session) {
