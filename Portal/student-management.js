@@ -53,11 +53,13 @@
       '<div id="smKpis" class="sm-kpis"></div>' +
       '<div class="sm-tabs" id="smTabs">' +
         tabBtn("directory", "groups", "Student Directory") +
+        tabBtn("rollnumbers", "format_list_numbered", "Edit Roll Numbers") +
         tabBtn("admit", "person_add", "New Admission") +
         tabBtn("promote", "upgrade", "Bulk Promotion") +
         tabBtn("tools", "settings", "Import / Fields") +
       '</div>' +
       '<div id="smDirectory"></div>' +
+      '<div id="smRollnumbers" style="display:none"></div>' +
       '<div id="smAdmit" style="display:none"></div>' +
       '<div id="smPromote" style="display:none"></div>' +
       '<div id="smTools" style="display:none"></div>' +
@@ -77,8 +79,9 @@
 
   function tabBtn(id, icon, label) { return '<button data-t="' + id + '" class="' + (id === "directory" ? "active" : "") + '"><i class="material-icons">' + icon + '</i>' + label + '</button>'; }
   function switchTab(t) {
-    ["directory", "admit", "promote", "tools"].forEach(function (x) { $("sm" + cap(x)).style.display = x === t ? "block" : "none"; });
+    ["directory", "rollnumbers", "admit", "promote", "tools"].forEach(function (x) { $("sm" + cap(x)).style.display = x === t ? "block" : "none"; });
     Array.prototype.forEach.call($("smTabs").querySelectorAll("button"), function (b) { b.classList.toggle("active", b.getAttribute("data-t") === t); });
+    if (t === "rollnumbers" && !$("smRollnumbers").innerHTML) mountRollNumbers();
     if (t === "admit" && !$("smAdmit").innerHTML) mountAdmit();
     if (t === "promote" && !$("smPromote").innerHTML) mountPromote();
     if (t === "tools" && !$("smTools").innerHTML) mountTools();
@@ -414,6 +417,157 @@
     });
   }
 
+
+  /* ======================== EDIT ROLL NUMBERS ============================ */
+  function mountRollNumbers() {
+    var years = (BOOT.years || []).map(function (y) {
+      return '<option value="' + esc(y) + '"' + (y === BOOT.currentYear ? " selected" : "") + '>' +
+        esc(y) + (y === BOOT.currentYear ? " (current)" : "") + '</option>';
+    }).join("");
+    var classes = '<option value="">Select class</option>' +
+      (BOOT.classes || []).map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join("");
+
+    $("smRollnumbers").innerHTML =
+      '<div class="sm-card sm-roll-card">' +
+        '<h3><i class="material-icons">format_list_numbered</i> Edit Roll Numbers</h3>' +
+        '<div class="sm-note"><i class="material-icons">info</i>Select an academic year and class, then enter the roll number for every student. <b>Save is all-or-nothing:</b> if any roll number is missing or duplicated, nothing will be saved.</div>' +
+        '<div class="sm-row2">' +
+          field("Academic Year", '<select id="rnYear" class="sm-input">' + years + '</select>') +
+          field("Class", '<select id="rnClass" class="sm-input">' + classes + '</select>') +
+        '</div>' +
+        '<div id="rnStatus" class="sm-roll-status"></div>' +
+        '<div id="rnList"></div>' +
+      '</div>';
+
+    $("rnYear").addEventListener("change", loadRollNumbers);
+    $("rnClass").addEventListener("change", loadRollNumbers);
+    loadRollNumbers();
+  }
+
+  function loadRollNumbers() {
+    var year = $("rnYear").value;
+    var cls = $("rnClass").value;
+    var box = $("rnList"), status = $("rnStatus");
+    if (!cls) {
+      status.innerHTML = '<div class="sm-note"><i class="material-icons">arrow_upward</i>Select a class to load its students.</div>';
+      box.innerHTML = "";
+      return;
+    }
+
+    status.innerHTML = '<div class="sm-empty sm-roll-loading"><i class="material-icons">sync</i>Loading class roster…</div>';
+    box.innerHTML = "";
+
+    P.api("smGetRollNumbers", [year, cls], { overlay: false }).then(function (res) {
+      renderRollNumbers(res);
+    }).catch(function (e) {
+      status.innerHTML = errBox(e);
+      box.innerHTML = "";
+    });
+  }
+
+  function renderRollNumbers(res) {
+    var rows = res.rows || [];
+    var status = $("rnStatus"), box = $("rnList");
+
+    status.innerHTML =
+      '<div class="sm-roll-summary">' +
+        '<span><i class="material-icons">groups</i><b>' + rows.length + '</b> student' + (rows.length === 1 ? "" : "s") + '</span>' +
+        '<span><i class="material-icons">event</i>' + esc(res.year) + '</span>' +
+        '<span><i class="material-icons">school</i>Class ' + esc(res.className) + '</span>' +
+      '</div>';
+
+    if (!rows.length) {
+      box.innerHTML = '<div class="sm-empty"><i class="material-icons">group_off</i>No students found in this class for the selected year.</div>';
+      return;
+    }
+
+    box.innerHTML =
+      '<div class="sm-roll-tablewrap">' +
+        '<table class="sm-table sm-roll-table">' +
+          '<thead><tr><th style="width:70px">S.No.</th><th>Student</th><th>Student ID</th><th style="width:180px">Roll Number *</th></tr></thead>' +
+          '<tbody>' +
+            rows.map(function (r, i) {
+              return '<tr>' +
+                '<td data-label="S.No.">' + (i + 1) + '</td>' +
+                '<td data-label="Student"><b class="sm-name">' + esc(r.name) + '</b></td>' +
+                '<td data-label="Student ID"><span class="sm-sid">' + esc(r.studentId) + '</span></td>' +
+                '<td data-label="Roll Number">' +
+                  '<input type="number" min="1" step="1" inputmode="numeric" class="sm-input sm-roll-input" data-enrollment-id="' + esc(r.enrollmentId) + '" data-student-id="' + esc(r.studentId) + '" data-name="' + esc(r.name) + '" value="' + esc(r.rollNumber || "") + '">' +
+                '</td>' +
+              '</tr>';
+            }).join("") +
+          '</tbody>' +
+        '</table>' +
+      '</div>' +
+      '<div class="sm-roll-footer">' +
+        '<div class="sm-note"><i class="material-icons">warning</i><span>Every student must have a unique roll number. Duplicate or blank values will block saving.</span></div>' +
+        '<button id="rnSave" class="btn btn-maroon"><i class="material-icons">save</i> Save Roll Numbers</button>' +
+      '</div>';
+
+    $("rnSave").addEventListener("click", saveRollNumbers);
+  }
+
+  function saveRollNumbers() {
+    var year = $("rnYear").value;
+    var cls = $("rnClass").value;
+    var inputs = Array.prototype.slice.call($("rnList").querySelectorAll(".sm-roll-input"));
+    var missing = [];
+    var invalid = [];
+    var dup = {};
+
+    inputs.forEach(function (el) {
+      var value = el.value.trim();
+      var name = el.getAttribute("data-name") || el.getAttribute("data-student-id") || "Student";
+      if (!value) {
+        missing.push(name);
+        return;
+      }
+      if (!/^\d+$/.test(value) || Number(value) <= 0) {
+        invalid.push(name + " (" + value + ")");
+        return;
+      }
+      var n = String(Number(value));
+      if (!dup[n]) dup[n] = [];
+      dup[n].push(name);
+    });
+
+    var duplicateParts = Object.keys(dup).filter(function (n) { return dup[n].length > 1; }).map(function (n) {
+      return "Roll " + n + ": " + dup[n].join(" & ");
+    });
+
+    if (missing.length || invalid.length || duplicateParts.length) {
+      var msg = "Roll number changes were NOT saved.\n\n";
+      if (missing.length) msg += "Missing roll number:\n• " + missing.join("\n• ") + "\n\n";
+      if (duplicateParts.length) msg += "Duplicate roll number(s):\n• " + duplicateParts.join("\n• ") + "\n\n";
+      if (invalid.length) msg += "Invalid roll number:\n• " + invalid.join("\n• ");
+      window.alert(msg.trim());
+      return;
+    }
+
+    var rows = inputs.map(function (el) {
+      return {
+        enrollmentId: el.getAttribute("data-enrollment-id"),
+        studentId: el.getAttribute("data-student-id"),
+        name: el.getAttribute("data-name"),
+        rollNumber: el.value.trim()
+      };
+    });
+
+    var btn = $("rnSave");
+    btn.disabled = true;
+    btn.innerHTML = '<i class="material-icons">sync</i> Saving…';
+
+    P.api("smSaveRollNumbers", [year, cls, rows, ME], { overlay: false }).then(function (r) {
+      toast("Saved roll numbers for " + r.count + " student(s).", "ok");
+      loadRollNumbers();
+    }).catch(function (e) {
+      window.alert("Roll numbers were NOT saved.\n\n" + (e && e.message ? e.message : e));
+    }).then(function () {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="material-icons">save</i> Save Roll Numbers';
+    });
+  }
+
   /* ============================ NEW ADMISSION ========================== */
   function mountAdmit() {
     var cust = (BOOT.customFields || []).map(function (f) { return field(f.name + (f.required ? " *" : ""), customInput("ad_cf_" + f.code, f, "")); }).join("");
@@ -639,6 +793,7 @@
     ".ex-chip{font-size:11px;font-weight:700;color:var(--maroon);background:var(--primary-light);padding:3px 10px;border-radius:999px}" +
     ".sm-kpis{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.sm-kpi{flex:1 1 120px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-sm)}.sm-kpi-v{display:block;font-size:22px;font-weight:800;color:var(--text-main)}.sm-kpi-l{font-size:11.5px;font-weight:700;color:var(--text-muted)}.sm-kpi.green .sm-kpi-v{color:#059669}.sm-kpi.orange .sm-kpi-v{color:#d97706}.sm-kpi.blue .sm-kpi-v{color:#2563eb}" +
     ".sm-tabs{display:inline-flex;flex-wrap:wrap;gap:6px;background:#f1f5f9;border:1px solid var(--border);border-radius:999px;padding:4px;margin:0 0 18px}.sm-tabs button{border:none;background:transparent;color:var(--text-muted);font-weight:700;font-size:13px;padding:9px 15px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.sm-tabs button i{font-size:17px}.sm-tabs button.active{background:var(--maroon);color:#fff}" +
+    ".sm-roll-card{max-width:980px}.sm-roll-status{margin-bottom:12px}.sm-roll-summary{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.sm-roll-summary span{display:inline-flex;align-items:center;gap:5px;background:#f8fafc;border:1px solid var(--border);border-radius:999px;padding:6px 11px;font-size:12px;color:var(--text-muted)}.sm-roll-summary i{font-size:16px;color:var(--maroon)}.sm-roll-tablewrap{overflow:auto;background:#fff;border:1px solid var(--border);border-radius:14px}.sm-roll-table th:last-child,.sm-roll-table td:last-child{width:180px}.sm-roll-input{max-width:150px;text-align:center;font-weight:700}.sm-roll-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}.sm-roll-footer .sm-note{margin:0;flex:1}.sm-roll-loading{padding:20px}@media(max-width:640px){.sm-roll-footer{flex-direction:column;align-items:stretch}.sm-roll-footer .btn{justify-content:center}.sm-roll-input{max-width:none}.sm-roll-card{padding:12px}}"+
     ".sm-searchbar{background:#fff;border:1px solid var(--border);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm);margin-bottom:14px}" +
     ".sm-search{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:8px 12px}.sm-search i{color:var(--maroon)}.sm-search input{flex:1;border:none;background:transparent;font:inherit;font-size:15px;outline:none}.sm-clear{border:none;background:#e2e8f0;color:#475569;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:16px;line-height:1}" +
     ".sm-filters{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}.smart-selector{flex:1 1 160px;display:flex;flex-direction:column;gap:4px}" +
