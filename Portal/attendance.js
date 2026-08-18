@@ -14,7 +14,25 @@
 
   var isMgmt = session.role === "Management";
   var isAttendanceEntry = String(session.name || "").trim().toLowerCase() === "attendance entry";
-  var att = { date: todayIso(), session: "Morning", className: "", roster: [], isEditMode: false, frozen: false, editable: true, reason: "" };
+
+  /* Attendance Entry uses India Standard Time as the authoritative date.
+     Do not use the browser/device timezone for this account. */
+  function indiaTodayIso() {
+    var parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date());
+    var out = {};
+    parts.forEach(function (p) {
+      if (p.type !== "literal") out[p.type] = p.value;
+    });
+    return out.year + "-" + out.month + "-" + out.day;
+  }
+
+  var attendanceToday = isAttendanceEntry ? indiaTodayIso() : todayIso();
+  var att = { date: attendanceToday, session: "Morning", className: "", roster: [], isEditMode: false, frozen: false, editable: true, reason: "" };
   var holidayInfo = null, pendingRecords = [];
 
   $("view").innerHTML = shell(isMgmt);
@@ -30,7 +48,7 @@
     st.textContent =
       ".att-entry-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:14px 16px;border:1px solid var(--border);border-radius:14px;background:#fff}" +
       ".att-entry-header .aeh-title{font-weight:800;color:var(--text-main);font-size:15px}.att-entry-header .aeh-sub{font-size:12px;color:var(--text-muted);margin-top:2px}" +
-      ".att-entry-clock{font-size:12px;font-weight:800;color:var(--maroon);white-space:nowrap}" +
+      ".att-entry-clock{font-size:12px;font-weight:800;color:var(--maroon);white-space:nowrap;background:#fff5f5;padding:7px 10px;border-radius:10px}" +
       ".att-entry-status{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:#f8fafc;border:1px solid var(--border);font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px}" +
       ".att-entry-status i{font-size:18px;color:var(--maroon)}" +
       ".att-entry-frozen{padding:14px;border-radius:12px;background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:13px;font-weight:700;margin-bottom:14px}" +
@@ -38,7 +56,66 @@
       ".att-entry-pill.locked{background:#f1f5f9;color:#64748b;cursor:default}" +
       ".att-entry-pill.wait{background:#fff7ed;color:#9a3412;cursor:default}" +
       ".att-entry-pill.done{background:#ecfdf5;color:#047857}" +
-      ".att-entry-help{font-size:12px;color:var(--text-muted);line-height:1.45;margin-top:10px}";
+      ".att-entry-help{font-size:12px;color:var(--text-muted);line-height:1.45;margin-top:10px}" +
+
+      /* Attendance Entry is a write screen even though its account role is Management.
+         Override only the attendance controls hidden by the generic mobile-admin CSS. */
+      "@media(max-width:900px){" +
+        "body.mobile-admin #attendance-view .att-bulkbar{display:grid!important;grid-template-columns:1fr 1fr;gap:8px}" +
+        "body.mobile-admin #attendance-view .pa-toggle{display:grid!important;grid-template-columns:1fr 1fr;gap:4px;pointer-events:auto!important}" +
+        "body.mobile-admin #attendance-view #attAdminInlineSave{display:flex!important}" +
+        "body.mobile-admin #attendance-view #attAdminInlineSave .btn{display:flex!important;width:100%;min-height:48px;align-items:center;justify-content:center}" +
+
+        "#attendance-view{width:100%;margin:0;padding:0}" +
+        "#attendance-view .smart-selector-row{display:block}" +
+        "#attendance-view .smart-selector-row .smart-selector{margin-bottom:8px}" +
+
+        ".att-entry-header{padding:12px 13px;margin-bottom:9px;border-radius:13px}" +
+        ".att-entry-header .aeh-title{font-size:14px}" +
+        ".att-entry-header .aeh-sub{font-size:11px;line-height:1.35}" +
+        ".att-entry-clock{font-size:12px;padding:7px 9px}" +
+        ".att-entry-status{padding:10px 12px;margin-bottom:10px;font-size:11.5px;line-height:1.35;align-items:flex-start}" +
+
+        ".att-admin-split{display:flex!important;flex-direction:column!important;gap:12px!important}" +
+        "#attAdminSplit>div:first-child,#attAdminSplit>div:last-child{width:100%!important}" +
+
+        "#attClassListBox .cls-card{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 12px;margin-bottom:7px;border-radius:12px}" +
+        "#attClassListBox .cls-name{font-size:14px;font-weight:800;min-width:68px}" +
+        "#attClassListBox .cls-badges{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}" +
+        "#attClassListBox .mini-pill{min-height:34px;padding:7px 9px;font-size:11px;border-radius:999px}" +
+        "#attClassListBox .cls-total-card{padding:11px 12px;border-radius:12px;margin-top:8px}" +
+
+        ".att-bulkbar{margin-bottom:9px}" +
+        ".att-bulkbar .btn{min-height:44px;justify-content:center;border-radius:11px;font-size:12px}" +
+        ".att-counts{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}" +
+        ".att-chip{padding:9px 5px;border-radius:11px;text-align:center}" +
+        ".att-chip .n{font-size:20px;line-height:1}" +
+        ".att-chip .l{font-size:9px;margin-top:3px}" +
+
+        ".student-row-mobile{display:flex!important;align-items:center;justify-content:space-between;gap:10px;padding:11px 10px;margin-bottom:6px;background:#fff;border:1px solid var(--border);border-radius:12px;min-height:62px}" +
+        ".student-info{min-width:0;flex:1}" +
+        ".student-name{display:block;font-size:14px;font-weight:800;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+        ".student-id{display:block;font-size:10px;color:var(--text-muted);margin-top:3px}" +
+        ".pa-toggle{flex:0 0 auto;background:#f1f5f9;padding:3px;border-radius:10px}" +
+        ".pa-toggle button{width:40px;height:38px;border:0;border-radius:8px;font-size:14px;font-weight:900;background:transparent;cursor:pointer;touch-action:manipulation;pointer-events:auto!important}" +
+        ".pa-toggle button.on-p{background:#dcfce7;color:#047857}" +
+        ".pa-toggle button.on-a{background:#fee2e2;color:#b91c1c}" +
+
+        "#attAdminInlineSave{margin-top:10px}" +
+        "#attAdminInlineSave .btn{min-height:48px;border-radius:12px;font-size:13px}" +
+
+        ".att-entry-frozen{font-size:12px;padding:11px 12px;margin-bottom:9px}" +
+        ".att-entry-help{font-size:11px;line-height:1.4}" +
+      "}" +
+
+      "@media(max-width:420px){" +
+        ".att-entry-header{align-items:flex-start}" +
+        ".att-entry-clock{margin-top:1px}" +
+        "#attClassListBox .cls-card{align-items:flex-start;flex-direction:column}" +
+        "#attClassListBox .cls-badges{width:100%;justify-content:flex-start}" +
+        "#attClassListBox .mini-pill{flex:1 1 auto;text-align:center;justify-content:center}" +
+        ".student-name{font-size:13px}" +
+      "}";
     document.head.appendChild(st);
   }
 
@@ -147,10 +224,10 @@
   }
   function applyDateLock(mgmt) {
     var cell = $("attDateCell"), input = $("attDate"), stat = $("attDateStatic");
-    input.setAttribute("max", todayIso());
+    input.setAttribute("max", attendanceToday);
     if (isAttendanceEntry) {
-      cell.classList.add("locked"); input.style.display = "none"; stat.style.display = "block"; input.value = todayIso();
-      stat.textContent = prettyDate(todayIso()) + " (Today)";
+      cell.classList.add("locked"); input.style.display = "none"; stat.style.display = "block"; input.value = attendanceToday;
+      stat.textContent = prettyDate(attendanceToday) + " (Today)";
     } else if (mgmt) { cell.classList.remove("locked"); input.style.display = ""; stat.style.display = "none"; if (!input.value || input.value > todayIso()) input.value = todayIso(); }
     else { cell.classList.add("locked"); input.style.display = "none"; stat.style.display = "block"; input.value = todayIso(); stat.textContent = prettyDate(todayIso()) + " (Today)"; }
   }
@@ -167,7 +244,9 @@
         if (before !== after) { P.api("getClassAttendanceSummary", [$("attDate").value], { overlay: false }).then(function (s) { renderCompliance(s || []); }); }
       }, 30000);
     }
-    var date = $("attDate").value, campus = mgmt ? "" : (session.campus || "");
+    var date = $("attDate").value || attendanceToday;
+    $("attDate").value = date;
+    var campus = mgmt ? "" : (session.campus || "");
     var cachedClasses = isAttendanceEntry ? null : P.Cache.get("classes_" + campus);
     var jobs = [P.api("getHolidaysForDate", [date], { overlay: false })];
     jobs.push(cachedClasses ? Promise.resolve(cachedClasses) : P.api("getClasses", [campus], { overlay: false }));
@@ -197,11 +276,11 @@
   function onDateOrSession(mgmt) {
     var date = $("attDate").value;
     if (isAttendanceEntry) {
-      $("attDate").value = todayIso();
+      $("attDate").value = attendanceToday;
       updateAttendanceEntryClock();
-      if (isSunday(todayIso())) { applyDayBlock(true); return; }
+      if (isSunday(attendanceToday)) { applyDayBlock(true); return; }
     }
-    if (date && date > todayIso()) { $("attDate").value = todayIso(); showResult(false, "Future date", "Attendance cannot be recorded for a future date. Reverted to today."); return; }
+    if (date && date > attendanceToday) { $("attDate").value = attendanceToday; showResult(false, "Future date", "Attendance cannot be recorded for a future date. Reverted to today."); return; }
     setStatus("loading", "Refreshing…");
     P.api("getHolidaysForDate", [date], { text: "Checking day…" }).then(function (info) {
       holidayInfo = info || { perClass: {} };
