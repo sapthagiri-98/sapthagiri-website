@@ -47,7 +47,7 @@
     st.id = "att-entry-mode-css";
     st.textContent =
       ".att-entry-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:14px 16px;border:1px solid var(--border);border-radius:14px;background:#fff}" +
-      ".att-entry-header .aeh-title{font-weight:800;color:var(--text-main);font-size:15px}.att-entry-header .aeh-sub{font-size:12px;color:var(--text-muted);margin-top:2px}" +
+      ".att-entry-header .aeh-title{font-weight:800;color:var(--text-main);font-size:15px}" +
       ".att-entry-clock{font-size:12px;font-weight:800;color:var(--maroon);white-space:nowrap;background:#fff5f5;padding:7px 10px;border-radius:10px}" +
       ".att-entry-status{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:#f8fafc;border:1px solid var(--border);font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px}" +
       ".att-entry-status i{font-size:18px;color:var(--maroon)}" +
@@ -57,6 +57,14 @@
       ".att-entry-pill.wait{background:#fff7ed;color:#9a3412;cursor:default}" +
       ".att-entry-pill.done{background:#ecfdf5;color:#047857}" +
       ".att-entry-help{font-size:12px;color:var(--text-muted);line-height:1.45;margin-top:10px}" +
+      ".att-selected-register{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:11px 12px;border:1px solid var(--border);border-radius:12px;background:#fff}" +
+      ".att-selected-register .asr-icon{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:#fff5f5;color:var(--maroon);flex:0 0 auto}" +
+      ".att-selected-register .asr-icon i{font-size:19px}" +
+      ".att-selected-register .asr-main{min-width:0;flex:1}" +
+      ".att-selected-register .asr-class{font-size:15px;font-weight:900;color:var(--text-main);line-height:1.2}" +
+      ".att-selected-register .asr-session{font-size:11px;color:var(--text-muted);margin-top:2px}" +
+      ".att-selected-register .asr-back{border:1px solid var(--border);background:#fff;color:var(--maroon);border-radius:9px;padding:7px 9px;font-size:11px;font-weight:800;display:flex;align-items:center;gap:3px;cursor:pointer}" +
+      ".att-selected-register .asr-back i{font-size:15px}" +
 
       /* Attendance Entry is a write screen even though its account role is Management.
          Override only the attendance controls hidden by the generic mobile-admin CSS. */
@@ -72,7 +80,7 @@
 
         ".att-entry-header{padding:12px 13px;margin-bottom:9px;border-radius:13px}" +
         ".att-entry-header .aeh-title{font-size:14px}" +
-        ".att-entry-header .aeh-sub{font-size:11px;line-height:1.35}" +
+
         ".att-entry-clock{font-size:12px;padding:7px 9px}" +
         ".att-entry-status{padding:10px 12px;margin-bottom:10px;font-size:11.5px;line-height:1.35;align-items:flex-start}" +
 
@@ -106,6 +114,10 @@
 
         ".att-entry-frozen{font-size:12px;padding:11px 12px;margin-bottom:9px}" +
         ".att-entry-help{font-size:11px;line-height:1.4}" +
+        ".att-selected-register{margin-bottom:9px;padding:10px;border-radius:11px}" +
+        ".att-selected-register .asr-class{font-size:14px}" +
+        ".att-selected-register .asr-session{font-size:10px}" +
+        ".att-selected-register .asr-back{min-height:36px;padding:7px 8px}" +
       "}" +
 
       "@media(max-width:420px){" +
@@ -126,7 +138,7 @@
     return '' +
       '<div class="card wide-card" id="attendance-view">' +
         '<span class="eyebrow">Staff Portal</span><h2>' + (isAttendanceEntry ? 'Attendance Entry' : 'Daily Student Attendance') + '</h2>' +
-        '<p class="view-description">' + (isAttendanceEntry ? 'Primary attendance entry · Nursery to Grade 5' : 'Manage daily classroom registers') + '</p>' +
+        '<p class="view-description">' + (isAttendanceEntry ? '' : 'Manage daily classroom registers') + '</p>' +
         '<div class="smart-selector-row">' +
           '<div class="smart-selector" id="attDateCell"><div class="ss-icon"><i class="material-icons">event</i></div>' +
             '<div class="ss-body"><div class="ss-label">Date</div><input type="date" id="attDate" max="' + todayIso() + '"><span class="ss-value" id="attDateStatic" style="display:none;"></span></div></div>' +
@@ -153,14 +165,19 @@
   }
   function adminSplit() {
     var specialHead = isAttendanceEntry ?
-      '<div class="att-entry-header"><div><div class="aeh-title">Attendance Entry</div><div class="aeh-sub">Nursery to Grade 5 · Today only · one-time register entry</div></div><div class="att-entry-clock" id="attEntryClock">--:--</div></div>' +
-      '<div class="att-entry-status"><i class="material-icons">info</i><span id="attEntryStatusText">Morning open. Afternoon opens at 12:30 PM. All registers freeze after saving.</span></div>' : '';
+      '<div class="att-entry-header"><div><div class="aeh-title">Attendance Entry</div></div><div class="att-entry-clock" id="attEntryClock">--:--</div></div>' +
+      '' : '';
     return '<div class="att-admin-split" id="attAdminSplit">' +
       '<div>' + specialHead + '<div id="attClassListBox"><h3><i class="material-icons">fact_check</i> ' + (isAttendanceEntry ? "Today's Attendance Status" : 'Class Submission Summary') + '</h3><div id="attComplianceRows"></div></div></div>' +
       '<div>' +
         '<div id="attLoader" class="inline-loader" style="display:none;"><i class="material-icons">sync</i>Loading student entries…</div>' +
         '<div id="attEditWarning" class="alert-warning" style="display:none;"><i class="material-icons" style="color:#92400e;">warning</i><div><strong>Records Exist:</strong> Attendance is already saved for this selection. Saving will overwrite existing values.</div></div>' +
-        '<div id="attAdminEmptyHint"><i class="material-icons">touch_app</i>Select a class on the left to load its register for editing.</div>' +
+        '<div id="attAdminEmptyHint"><i class="material-icons">touch_app</i>Select a class and session above to enter attendance.</div>' +
+        '<div id="attSelectedRegister" class="att-selected-register" style="display:none;">' +
+          '<div class="asr-icon"><i class="material-icons">groups</i></div>' +
+          '<div class="asr-main"><div class="asr-class" id="attSelectedClass">Class</div><div class="asr-session" id="attSelectedSession">Morning attendance</div></div>' +
+          '<button type="button" class="asr-back" id="attBackToClasses"><i class="material-icons">arrow_upward</i> Classes</button>' +
+        '</div>' +
         '<div id="attStudentCard">' + bulkAndCounts() + '<div id="attStudentList"></div>' +
           '<div id="attAdminInlineSave"><button class="btn btn-success" id="attAdminSaveBtn"><i class="material-icons" style="color:#fff;">verified_user</i> Review &amp; Commit Records</button></div>' +
         '</div></div></div>';
@@ -221,6 +238,14 @@
     if ($("attAllPresent")) $("attAllPresent").addEventListener("click", function () { setAll("P"); });
     if ($("attAllAbsent")) $("attAllAbsent").addEventListener("click", function () { setAll("A"); });
     $("attConfirmSaveBtn").addEventListener("click", executeSubmit);
+    if ($("attBackToClasses")) $("attBackToClasses").addEventListener("click", function () {
+      hide("attStudentCard");
+      hide("attSelectedRegister");
+      show("attAdminEmptyHint");
+      $("attAdminInlineSave").style.display = "none";
+      var box = $("attClassListBox");
+      if (box) box.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
   function applyDateLock(mgmt) {
     var cell = $("attDateCell"), input = $("attDate"), stat = $("attDateStatic");
@@ -313,9 +338,18 @@
     });
     box.insertAdjacentHTML("beforeend", '<div class="cls-total-card"><div>TOTALS</div><div class="totals-pair"><span>M: ' + mP + ' / ' + mT + '</span><span>A: ' + aP + ' / ' + aT + '</span></div></div>');
     if (isAttendanceEntry) {
-      box.insertAdjacentHTML("beforeend", '<div class="att-entry-help">Tap a pending session to enter it. A saved session is immediately frozen. Morning remains available after 12:30 only if it was not already saved. All new entry is blocked at 5:00 PM.</div>');
+      /* No explanatory block here. The status pills themselves carry the action/state. */
     }
     Array.prototype.forEach.call(box.querySelectorAll(".mini-pill[data-cls]"), function (b) { b.addEventListener("click", function () { loadAdminClass(b.getAttribute("data-cls"), b.getAttribute("data-ses")); }); });
+  }
+
+  function setSelectedRegister(className, sessionType) {
+    if (!isAttendanceEntry) return;
+    var wrap = $("attSelectedRegister"), cls = $("attSelectedClass"), ses = $("attSelectedSession");
+    if (!wrap) return;
+    if (cls) cls.textContent = className;
+    if (ses) ses.textContent = sessionType + " attendance";
+    wrap.style.display = "flex";
   }
 
   function loadAdminClass(className, sessionType) {
@@ -327,6 +361,7 @@
     if (isSunday(date)) { applyDayBlock(true); return; }
     att.className = className; att.session = sessionType;
     hide("attAdminEmptyHint"); show("attLoader"); hide("attStudentCard"); hide("attEditWarning"); $("attAdminInlineSave").style.display = "none";
+    setSelectedRegister(className, sessionType);
     att.frozen = false; att.editable = true; att.reason = "";
     loadRoster(className, date, sessionType);
   }
@@ -371,6 +406,10 @@
     Array.prototype.forEach.call($("attStudentList").querySelectorAll(".pa-toggle button"), function (btn) { btn.addEventListener("click", function () { if (isAttendanceEntry && (!att.editable || att.frozen)) return; toggle(+btn.getAttribute("data-i"), btn.getAttribute("data-s")); }); });
     show("attStudentCard");
     if (isMgmt) $("attAdminInlineSave").style.display = isAttendanceEntry && (!att.editable || att.frozen) ? "none" : "flex";
+    if (isAttendanceEntry) {
+      var selected = $("attSelectedRegister");
+      if (selected) selected.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     else { $("attFooter").classList.add("show"); $("attStudentCard").scrollIntoView({ behavior: "smooth", block: "start" }); }
     if (isAttendanceEntry && (!att.editable || att.frozen)) $("attFooter").classList.remove("show");
     updateCounts();
