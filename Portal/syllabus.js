@@ -340,7 +340,7 @@
         '<div id="sylClassView"></div>' +
         '<div id="sylDateView" style="display:none;"></div>' +
       '</div>' +
-      drillModal() + dateDrillModal();
+      drillModal() + managementTaskModal() + dateDrillModal();
 
     bindModals();
     Array.prototype.forEach.call($("sylViewSeg").querySelectorAll("button"), function (b) { b.addEventListener("click", function () { switchView(b.getAttribute("data-view")); }); });
