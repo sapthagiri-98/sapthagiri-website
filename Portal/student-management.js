@@ -500,7 +500,6 @@
         '</table>' +
       '</div>' +
       '<div class="sm-roll-footer">' +
-        '<div class="sm-note"><i class="material-icons">warning</i><span>Every student must have a unique roll number. Duplicate or blank values will block saving.</span></div>' +
         '<button id="rnSave" class="btn btn-maroon"><i class="material-icons">save</i> Save Roll Numbers</button>' +
       '</div>';
 
