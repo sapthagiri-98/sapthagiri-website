@@ -47,6 +47,7 @@
   var catalogCache = {};   // "class||subject" -> catalog array
   var tasksCache = {};     // "class||subject||lesson" -> sessions object
   var mgmtReport = null;
+  var mgmtTasksCache = {}; // "class||subject||lesson" -> sessions object
 
   if (isMgmt) buildManagement(); else buildTeacher();
 
@@ -256,9 +257,38 @@
     var note = $("note-" + key);
     var checked = chk ? chk.checked : false, notes = note ? note.value.trim() : "";
     var card = $("task-" + key); if (card) card.classList.toggle("checked", checked);
-    // reflect in cache + tab counts
-    Object.keys(curSessions).forEach(function (s) { (curSessions[s] || []).forEach(function (t) { if (String(t.taskKey) === String(key)) { t.checked = checked; t.notes = notes; } }); });
-    P.api("saveTaskProgress", [key, checked, me, notes], { overlay: false }).catch(function (e) { console.warn("save failed", e); });
+
+    // Optimistic UI, followed by a real server confirmation. If the database
+    // rejects the save, immediately restore the previous checkbox state.
+    var previous = null;
+    Object.keys(curSessions).forEach(function (s) {
+      (curSessions[s] || []).forEach(function (t) {
+        if (String(t.taskKey) === String(key)) {
+          previous = { checked: !!t.checked, notes: t.notes || "" };
+          t.checked = checked; t.notes = notes;
+        }
+      });
+    });
+
+    P.api("saveTaskProgress", [key, checked, me, notes], { overlay: false })
+      .then(function () {
+        var ck = curLesson ? (curLesson.grade + "||" + curLesson.subject + "||" + curLesson.lesson) : "";
+        if (ck && tasksCache[ck]) tasksCache[ck] = curSessions;
+      })
+      .catch(function (e) {
+        console.warn("save failed", e);
+        if (previous) {
+          Object.keys(curSessions).forEach(function (s) {
+            (curSessions[s] || []).forEach(function (t) {
+              if (String(t.taskKey) === String(key)) { t.checked = previous.checked; t.notes = previous.notes; }
+            });
+          });
+          if (chk) chk.checked = previous.checked;
+          if (note) note.value = previous.notes;
+          if (card) card.classList.toggle("checked", previous.checked);
+        }
+        alert("Could not save this task. Please try again.");
+      });
   }
   function regenTelugu(key) {
     if (!curLesson) return;
@@ -371,9 +401,12 @@
     // annotate once
     rep.forEach(function (s) {
       s._lag = subjLagging(s);
-      s._done = s.completedLessonsCount || 0;
-      s._active = s.inProgressLessonsCount || 0;
-      s._total = s.totalLessonsCount || 0;
+      s._taskPlan = !!s.hasTaskPlan;
+      s._done = s._taskPlan ? (s.completedTasks || 0) : (s.completedLessonsCount || 0);
+      s._total = s._taskPlan ? (s.totalTasks || 0) : (s.totalLessonsCount || 0);
+      s._active = s._taskPlan
+        ? ((s._total > 0 && s._done > 0 && s._done < s._total) ? 1 : 0)
+        : (s.inProgressLessonsCount || 0);
     });
 
     var byGrade = {};
@@ -423,13 +456,14 @@
         var pk = "d_" + gw(g) + "_" + esc(s.subject).replace(/\W+/g, "");
         _drillCache[pk] = s;
         var col, pill;
-        if (s._total === 0) { col = "grey"; pill = '<span class="syl-cpill grey">No chapters mapped</span>'; }
+        if (s._total === 0) { col = "grey"; pill = '<span class="syl-cpill grey">No lesson plan</span>'; }
         else if (s._lag > 0) { col = "red"; pill = '<span class="syl-cpill red"><i class="material-icons">schedule</i>' + s._lag + ' behind schedule</span>'; }
         else if (s._active > 0) { col = "amber"; pill = '<span class="syl-cpill amber">On track · in progress</span>'; }
         else { col = "green"; pill = '<span class="syl-cpill green"><i class="material-icons">check</i>On track</span>'; }
         var mini = s._total > 0 ? '<span class="syl-submini">' + s._done + '/' + s._total + ' done · ' + pct2(s._done, s._total) + '%</span>' : '';
-        body += '<div class="syl-subcard ' + col + '" data-pk="' + pk + '">' +
-          '<div class="syl-subcard-top"><span class="syl-subname">' + esc(s.subject) + '</span><i class="material-icons syl-chev">chevron_right</i></div>' +
+        var clickable = !!s._taskPlan;
+        body += '<div class="syl-subcard ' + col + (clickable ? '' : ' no-drill') + '" data-pk="' + pk + '" data-drill="' + (clickable ? '1' : '0') + '">' +
+          '<div class="syl-subcard-top"><span class="syl-subname">' + esc(s.subject) + '</span>' + (clickable ? '<i class="material-icons syl-chev">chevron_right</i>' : '') + '</div>' +
           '<div class="syl-subteacher">' + esc(s.teacherName || "No teacher assigned") + '</div>' +
           '<div class="syl-cpillrow">' + pill + mini + '</div></div>';
       });
@@ -443,7 +477,7 @@
     Array.prototype.forEach.call($("sylFilterSeg").querySelectorAll("button"), function (b) {
       b.addEventListener("click", function () { mgmtFilter = b.getAttribute("data-f"); renderReport(mgmtReport); });
     });
-    Array.prototype.forEach.call(host.querySelectorAll(".syl-subcard[data-pk]"), function (c) { c.addEventListener("click", function () { openDrill(c.getAttribute("data-pk")); }); });
+    Array.prototype.forEach.call(host.querySelectorAll('.syl-subcard[data-pk][data-drill="1"]'), function (c) { c.addEventListener("click", function () { openDrill(c.getAttribute("data-pk")); }); });
   }
   function pct2(d, t) { return t > 0 ? Math.round(d / t * 100) : 0; }
 
@@ -452,16 +486,17 @@
     $("sylDrillTitle").textContent = r.grade + " · " + r.subject;
     var d = r.completedLessonsCount || 0, a = r.inProgressLessonsCount || 0, t = r.totalLessonsCount || 0;
     var lag = subjLagging(r);
+    var taskPct = r.totalTasks > 0 ? pct2(r.completedTasks || 0, r.totalTasks) : 0;
     $("sylDrillMeta").innerHTML =
-      '<span class="syl-cpill green">' + d + ' done</span>' +
+      '<span class="syl-cpill green">' + d + ' lessons done</span>' +
       (a > 0 ? '<span class="syl-cpill amber">' + a + ' in progress</span>' : "") +
+      (r.totalTasks > 0 ? '<span class="syl-cpill grey">' + (r.completedTasks || 0) + '/' + r.totalTasks + ' tasks · ' + taskPct + '%</span>' : '') +
       (lag > 0 ? '<span class="syl-cpill red"><i class="material-icons">schedule</i>' + lag + ' behind schedule</span>'
                : '<span class="syl-cpill green"><i class="material-icons">check</i>On track</span>') +
-      '<span class="syl-cpill grey">' + t + ' total</span>';
+      '<span class="syl-cpill grey">' + t + ' lessons</span>';
     var lessons = r.lessonsList || [];
     var body = $("sylDrillBody");
     if (!lessons.length) { body.innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No lessons mapped.</div>'; P.openModal("sylDrillModal"); return; }
-    // group by month
     var by = {}; lessons.forEach(function (l) { var mk = normMonth(l.targetMonth); (by[mk] = by[mk] || []).push(l); });
     function sec(mk) {
       var arr = by[mk]; if (!arr || !arr.length) return "";
@@ -474,9 +509,11 @@
         var lbl = done ? "Done" : (overdue ? "Behind" : (active ? "In progress" : "Pending"));
         var dt = (done && l.completedOn && l.completedOn !== "-") ? '<span class="syl-dtag"><i class="material-icons">event_available</i>' + esc(l.completedOn) + '</span>' : "";
         var behindTag = overdue ? '<span class="syl-dtag behind"><i class="material-icons">warning</i>Past ' + esc(MONTH_LABEL[normMonth(l.targetMonth)] || l.targetMonth || "target") + '</span>' : "";
-        var meta = (dt || behindTag) ? '<div class="syl-drmeta">' + dt + behindTag + '</div>' : "";
-        return '<div class="syl-drillrow ' + st + '"><span class="syl-drno">' + esc(l.lessonNo || "-") + '</span>' +
-          '<div class="syl-drbody"><div class="syl-drname">' + esc(l.name || "") + '</div>' + meta + '</div>' +
+        var taskMeta = l.type === "AstraGen" ? '<span class="syl-dtag"><i class="material-icons">checklist</i>' + (l.completedTasks || 0) + '/' + (l.totalTasks || 0) + ' tasks</span>' : '';
+        var meta = (dt || behindTag || taskMeta) ? '<div class="syl-drmeta">' + dt + behindTag + taskMeta + '</div>' : "";
+        var action = l.type === "AstraGen" ? '<button class="syl-drill-open" data-mgmt-lesson="' + esc(l.name) + '"><i class="material-icons">visibility</i> View tasks</button>' : '';
+        return '<div class="syl-drillrow ' + st + (action ? ' has-action' : '') + '"><span class="syl-drno">' + esc(l.lessonNo || "-") + '</span>' +
+          '<div class="syl-drbody"><div class="syl-drname">' + esc(l.name || "") + '</div>' + meta + '</div>' + action +
           '<span class="syl-dstatus ' + st + '">' + lbl + '</span></div>';
       }).join("");
     }
@@ -485,7 +522,57 @@
     MONTH_ORDER.forEach(function (mk) { if (mk !== cur) html += sec(mk); });
     Object.keys(by).forEach(function (mk) { if (mk !== cur && MONTH_ORDER.indexOf(mk) < 0) html += sec(mk); });
     body.innerHTML = html;
+    Array.prototype.forEach.call(body.querySelectorAll("[data-mgmt-lesson]"), function (b) {
+      b.addEventListener("click", function (e) { e.stopPropagation(); openManagementTasks(r.grade, r.subject, b.getAttribute("data-mgmt-lesson")); });
+    });
     P.openModal("sylDrillModal");
+  }
+
+  function openManagementTasks(grade, subject, lessonName) {
+    var key = grade + "||" + subject + "||" + lessonName;
+    $("sylMgmtTaskTitle").textContent = lessonName;
+    $("sylMgmtTaskBody").innerHTML = '<div class="inline-loader"><i class="material-icons">sync</i>Loading tasks…</div>';
+    P.openModal("sylMgmtTaskModal");
+    if (mgmtTasksCache[key]) { renderManagementTasks(mgmtTasksCache[key]); return; }
+    P.api("getManagementLessonTasks", [grade, subject, lessonName], { text: "Loading tasks…" }).then(function (data) {
+      mgmtTasksCache[key] = data || {};
+      renderManagementTasks(mgmtTasksCache[key]);
+    }).catch(function (e) {
+      $("sylMgmtTaskBody").innerHTML = '<div class="syl-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>';
+    });
+  }
+
+  function renderManagementTasks(data) {
+    var body = $("sylMgmtTaskBody"), names = Object.keys(data || {}).sort(function (a, b) {
+      return (parseInt(String(a).replace(/\D/g, ""), 10) || 0) - (parseInt(String(b).replace(/\D/g, ""), 10) || 0);
+    });
+    if (!names.length) { body.innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No session tasks found for this lesson.</div>'; return; }
+    var tabs = '<div class="syl-tabs">' + names.map(function (n, i) {
+      var tasks = data[n] || [], done = tasks.filter(function (t) { return t.checked; }).length;
+      return '<button class="syl-tab ' + (i === 0 ? "active" : "") + '" data-mgtsess="' + encodeURIComponent(n) + '">' + esc(n) + ' <em>' + done + '/' + tasks.length + '</em></button>';
+    }).join("") + '</div><div id="sylMgmtTaskPanel"></div>';
+    body.innerHTML = tabs;
+    Array.prototype.forEach.call(body.querySelectorAll(".syl-tab"), function (b) { b.addEventListener("click", function () { renderManagementTaskTab(decodeURIComponent(b.getAttribute("data-mgtsess")), b, data); }); });
+    renderManagementTaskTab(names[0], body.querySelector(".syl-tab"), data);
+  }
+
+  function renderManagementTaskTab(name, chip, data) {
+    var body = $("sylMgmtTaskBody"), panel = $("sylMgmtTaskPanel");
+    if (!panel) return;
+    Array.prototype.forEach.call(body.querySelectorAll(".syl-tab"), function (c) { c.classList.remove("active"); });
+    if (chip) chip.classList.add("active");
+    var tasks = data[name] || [], done = tasks.filter(function (t) { return t.checked; }).length;
+    var html = '<div class="syl-sessbar"><span>' + esc(name) + ' · ' + done + '/' + tasks.length + ' done</span><span class="syl-readonly"><i class="material-icons">visibility</i> View only</span></div>';
+    tasks.forEach(function (t, i) {
+      var tel = t.telugu ? '<div class="syl-tel">' + esc(t.telugu) + '</div>' : '<div class="syl-tel empty">Telugu not translated yet.</div>';
+      html += '<div class="syl-task ' + (t.checked ? "checked" : "") + '">' +
+        '<div class="syl-task-top"><input type="checkbox" class="syl-check" disabled ' + (t.checked ? "checked" : "") + '>' +
+        '<span class="syl-tasknum">' + esc(t.taskNum || (i + 1)) + '</span>' +
+        '<div class="syl-task-body"><div class="syl-taskcontent">' + esc(t.content) + '</div>' + tel + '</div></div>' +
+        (t.notes ? '<div class="syl-mgmt-note"><i class="material-icons">notes</i>' + esc(t.notes) + '</div>' : '') +
+        '</div>';
+    });
+    panel.innerHTML = html;
   }
 
   /* ---------------- management: By Day (optional backend) ---------------- */
@@ -570,6 +657,12 @@
       '<div id="sylDrillBody" style="overflow-y:auto;flex-grow:1;padding-right:4px;"></div>' +
       '<button class="btn btn-secondary" data-close="sylDrillModal" style="margin-top:14px;">Close</button></div></div>';
   }
+  function managementTaskModal() {
+    return '<div class="modal-overlay" id="sylMgmtTaskModal"><div class="modal-content" style="max-width:720px;width:100%;max-height:88vh;display:flex;flex-direction:column;">' +
+      '<div class="modal-header-container"><h3 id="sylMgmtTaskTitle">Lesson tasks</h3><button class="modal-close-icon" data-close="sylMgmtTaskModal">&times;</button></div>' +
+      '<div id="sylMgmtTaskBody" style="overflow-y:auto;flex-grow:1;padding-right:4px;"></div>' +
+      '<button class="btn btn-secondary" data-close="sylMgmtTaskModal" style="margin-top:14px;">Close</button></div></div>';
+  }
   function dateDrillModal() { return ""; }
 
   function skeletons(n) { var h = '<div class="syl-grid">'; for (var i = 0; i < n; i++) h += '<div class="syl-card" style="animation:pulse 1.2s infinite;"><div class="syl-card-head"><span class="syl-no" style="color:transparent;">--</span><div class="syl-card-title-block"><div style="height:14px;width:70%;background:#e2e8f0;border-radius:6px;"></div></div></div><div style="height:6px;background:#eef2f7;border-radius:6px;margin:12px 0;"></div><div style="height:34px;background:#f1f5f9;border-radius:10px;"></div></div>'; return h + "</div>"; }
@@ -626,12 +719,12 @@
     ".syl-gradehead{display:flex;justify-content:space-between;align-items:center;gap:10px;font-family:var(--head);font-weight:800;color:var(--maroon);font-size:16px;margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}.syl-gradepct{font-size:12px;font-weight:700;color:var(--text-muted)}" +
     ".syl-subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}" +
     ".syl-subcard{background:#fff;border:1px solid var(--border);border-left:4px solid #cbd5e1;border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-sm);cursor:pointer;transition:all .18s ease}.syl-subcard:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}" +
-    ".syl-subcard.green{border-left-color:var(--success)}.syl-subcard.amber{border-left-color:var(--warning)}.syl-subcard.red{border-left-color:var(--danger)}" +
+    ".syl-subcard.green{border-left-color:var(--success)}.syl-subcard.amber{border-left-color:var(--warning)}.syl-subcard.red{border-left-color:var(--danger)}.syl-subcard.no-drill{cursor:default}.syl-subcard.no-drill:hover{box-shadow:var(--shadow-sm);transform:none}" +
     ".syl-subcard-top{display:flex;justify-content:space-between;align-items:center}.syl-subname{font-weight:800;font-size:15px;color:var(--text-main)}.syl-chev{color:var(--text-muted)}" +
     ".syl-subteacher{font-size:12px;color:var(--text-muted);margin:4px 0 8px}" +
     ".syl-cpillrow{display:flex;flex-wrap:wrap;gap:6px}.syl-cpill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}.syl-cpill.green{background:var(--success-light);color:#047857}.syl-cpill.amber{background:var(--warning-light);color:#92400e}.syl-cpill.red{background:var(--danger-light);color:#b91c1c}.syl-cpill.grey{background:#eef2f7;color:#475569}" +
     ".syl-drillmonth{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--maroon);margin:12px 0 6px}.syl-drillmonth i{font-size:15px;color:var(--accent)}" +
-    ".syl-drillrow{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border);border-left:4px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px;background:#fff}.syl-drillrow.done{border-left-color:var(--success);background:rgba(16,185,129,.04)}.syl-drillrow.active{border-left-color:var(--warning);background:rgba(245,158,11,.06)}.syl-drillrow.pending{border-left-color:var(--danger)}" +
+    ".syl-drillrow{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border);border-left:4px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px;background:#fff}.syl-drillrow.has-action{cursor:default}.syl-drill-open{flex:0 0 auto;border:1px solid var(--border);background:#f8fafc;color:var(--maroon);border-radius:8px;padding:7px 9px;font-size:11px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:4px}.syl-drill-open:hover{background:var(--primary-light);border-color:var(--maroon)}.syl-drill-open i{font-size:14px}.syl-drillrow.done{border-left-color:var(--success);background:rgba(16,185,129,.04)}.syl-drillrow.active{border-left-color:var(--warning);background:rgba(245,158,11,.06)}.syl-drillrow.pending{border-left-color:var(--danger)}" +
     ".syl-drno{flex:0 0 auto;min-width:30px;height:30px;border-radius:8px;background:#f1f5f9;color:var(--text-muted);font-weight:800;font-size:12px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}" +
     ".syl-drbody{flex:1 1 auto;min-width:0}.syl-drname{font-weight:700;font-size:14px;color:var(--text-main);line-height:1.35;word-break:break-word}.syl-drmeta{margin-top:5px}" +
     ".syl-dtag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--text-muted);background:#f1f5f9;border-radius:999px;padding:2px 9px}.syl-dtag i{font-size:13px}" +
@@ -656,7 +749,7 @@
     /* drill: behind state */
     ".syl-drillrow.behind{border-left-color:var(--danger);background:rgba(239,68,68,.05)}" +
     ".syl-dstatus.behind{background:var(--danger);color:#fff}" +
-    ".syl-dtag.behind{color:#b91c1c;background:#fee2e2}.syl-dtag.behind i{font-size:13px}" +
+    ".syl-dtag.behind{color:#b91c1c;background:#fee2e2}.syl-dtag.behind i{font-size:13px}.syl-readonly{display:inline-flex;align-items:center;gap:4px;color:var(--text-muted);font-size:11px;font-weight:700}.syl-readonly i{font-size:14px}.syl-mgmt-note{margin:7px 0 0 32px;padding:7px 9px;background:#f8fafc;border-left:2px solid #cbd5e1;border-radius:5px;color:#64748b;font-size:11.5px;line-height:1.45}" +
     "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}" +
     "@media(max-width:600px){.syl-grid{grid-template-columns:1fr}.syl-subgrid{grid-template-columns:1fr}.syl-drow{flex-direction:column;align-items:flex-start;gap:6px}.syl-clssub{min-width:0}}";
     var st = document.createElement("style"); st.id = "syl-css"; st.textContent = css; document.head.appendChild(st);
