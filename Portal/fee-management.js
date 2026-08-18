@@ -64,8 +64,7 @@
   }
 
   function classes(id) { var s = $(id); s.innerHTML = '<option>Loading…</option>'; P.api("feeGetClasses", [YEAR], { overlay: false }).then(function (cs) { s.innerHTML = '<option value="">Select class…</option>' + (cs || []).map(function (c) { return '<option>' + esc(c) + '</option>'; }).join(""); }).catch(function () { s.innerHTML = '<option>Failed</option>'; }); }
-  function students(clsId, stId) { var cls = $(clsId).value, s = $(stId); if (!cls) { s.disabled = true; s.innerHTML = '<option>Pick a class…</option>'; return; } s.disabled = true; s.innerHTML = '<option>Loading…</option>'; P.api("feeGetStudents", [YEAR, cls], { overlay: false }).then(function (list) { var rows = (list || []).slice().sort(feeStudentSort); s.disabled = false; s.innerHTML = '<option value="">Select student…</option>' + rows.map(function (x) {  return '<option value="' + esc(x.id) + '">' + esc(x.name) + (studentIsInactive(x) ? " · " + esc(studentStatus(x)) : "") + </option>';
-}).join("");
+  function students(clsId, stId) { var cls = $(clsId).value, s = $(stId); if (!cls) { s.disabled = true; s.innerHTML = '<option>Pick a class…</option>'; return; } s.disabled = true; s.innerHTML = '<option>Loading…</option>'; P.api("feeGetStudents", [YEAR, cls], { overlay: false }).then(function (list) { var rows = (list || []).slice().sort(feeStudentSort); s.disabled = false; s.innerHTML = '<option value="">Select student…</option>' + rows.map(function (x) {  return '<option value="' + esc(x.id) + '">' + esc(x.name) + (studentIsInactive(x) ? " · " + esc(studentStatus(x)) : "") + </option>';}).join("");
   function search(boxId, q, onPick, seq) {
     var box = $(boxId); q = (q || "").trim();
     if (!q) { box.innerHTML = ""; return; }
