@@ -430,7 +430,7 @@
     $("smRollnumbers").innerHTML =
       '<div class="sm-card sm-roll-card">' +
         '<h3><i class="material-icons">format_list_numbered</i> Edit Roll Numbers</h3>' +
-        '<div class="sm-note"><i class="material-icons">info</i>Select an academic year and class, then enter the roll number for every student. <b>Save is all-or-nothing:</b> if any roll number is missing or duplicated, nothing will be saved.</div>' +
+        '<div class="sm-note"><i class="material-icons">info</i>Select an academic year and class, then enter the roll number for every student. </div>' +
         '<div class="sm-row2">' +
           field("Academic Year", '<select id="rnYear" class="sm-input">' + years + '</select>') +
           field("Class", '<select id="rnClass" class="sm-input">' + classes + '</select>') +
