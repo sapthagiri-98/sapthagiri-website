@@ -153,26 +153,54 @@
     return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
   }
   function renderChrome(opts) {
-    opts = opts || {};
-    // Tag app (portal) pages so the mobile CSS can hide the marketing topbar,
-    // footer and WhatsApp FAB — giving a clean, native app shell. The login
-    // page (app:false) keeps the full marketing chrome.
-    if (opts.app) document.body.classList.add("pv2-app");
-    var right = opts.app
-      ? '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '"><i class="material-icons hicon">public</i><span class="hlabel">Website</span></a><span class="header-user profile-chip" title="' + esc(opts.userName || "") + '"><span class="avatar">' + esc(_initials(opts.userName)) + '</span><strong>' + esc(opts.userName || "") + '</strong></span><button class="header-logout" id="pv2Logout"><i class="material-icons hicon">logout</i><span class="hlabel">Log Out</span></button></div>'
-      : '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '">← Back to Website</a></div>';
-    var head = document.createElement("div");
-    head.innerHTML =
-      '<div class="site-topbar"><div class="wrap"><a href="tel:' + S.phone + '">📞 ' + S.phone + '</a><span class="tb-hide-mobile">' + esc(S.address) + '</span><span class="tb-spacer tb-hide-mobile"></span><a class="tb-hide-mobile" href="mailto:' + S.email + '">✉️ ' + S.email + '</a><a class="tb-wa" href="' + WA + '" target="_blank" rel="noopener">💬 WhatsApp</a></div></div>' +
-      '<header class="site-header"><div class="wrap"><a class="site-brand" href="' + CONFIG.WEBSITE_URL + '">' + _logo() + '</a>' + right + '</div></header>';
-    document.body.insertBefore(head, document.body.firstChild);
-    var foot = document.createElement("div");
-    foot.innerHTML =
-      '<footer class="site-footer"><div class="wrap"><div class="f-brand"><img class="f-logo" src="header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\';"><span class="f-fallback" style="display:none;align-items:center;gap:8px;"><i class="material-icons" style="color:#fff;">school</i>' + esc(S.name) + '</span></div><nav class="f-links"><a href="' + CONFIG.WEBSITE_URL + '">Home</a><a href="' + WA + '" target="_blank" rel="noopener">WhatsApp</a><a href="tel:' + S.phone + '">' + S.phone + '</a></nav><div class="f-copy">© <span>' + new Date().getFullYear() + '</span> ' + esc(S.name) + ', ' + esc(S.city) + '. Digital Portal.</div></div></footer>' +
-      '<a class="fab-wa" href="' + WA + '" target="_blank" rel="noopener" title="Chat on WhatsApp">💬</a>';
-    document.body.appendChild(foot);
-    var lo = document.getElementById("pv2Logout"); if (lo) lo.addEventListener("click", function () { Session.logout(); });
+  opts = opts || {};
+
+  /*
+   * Chrome must be a singleton.
+   * bootPage() can be called more than once during page/module
+   * initialisation. Remove any previously rendered chrome first,
+   * otherwise the school topbar/header gets duplicated.
+   */
+  var oldChrome = document.getElementById("pv2-site-chrome");
+  if (oldChrome) oldChrome.remove();
+
+  var oldFooter = document.getElementById("pv2-site-footer");
+  if (oldFooter) oldFooter.remove();
+
+  // Tag app (portal) pages so the mobile CSS can hide the marketing topbar,
+  // footer and WhatsApp FAB — giving a clean, native app shell. The login
+  // page (app:false) keeps the full marketing chrome.
+  if (opts.app) document.body.classList.add("pv2-app");
+
+  var right = opts.app
+    ? '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '"><i class="material-icons hicon">public</i><span class="hlabel">Website</span></a><span class="header-user profile-chip" title="' + esc(opts.userName || "") + '"><span class="avatar">' + esc(_initials(opts.userName)) + '</span><strong>' + esc(opts.userName || "") + '</strong></span><button class="header-logout" id="pv2Logout"><i class="material-icons hicon">logout</i><span class="hlabel">Log Out</span></button></div>'
+    : '<div class="header-actions"><a class="header-back" href="' + CONFIG.WEBSITE_URL + '">← Back to Website</a></div>';
+
+  var head = document.createElement("div");
+  head.id = "pv2-site-chrome";
+
+  head.innerHTML =
+    '<div class="site-topbar"><div class="wrap"><a href="tel:' + S.phone + '">📞 ' + S.phone + '</a><span class="tb-hide-mobile">' + esc(S.address) + '</span><span class="tb-spacer tb-hide-mobile"></span><a class="tb-hide-mobile" href="mailto:' + S.email + '">✉️ ' + S.email + '</a><a class="tb-wa" href="' + WA + '" target="_blank" rel="noopener">💬 WhatsApp</a></div></div>' +
+    '<header class="site-header"><div class="wrap"><a class="site-brand" href="' + CONFIG.WEBSITE_URL + '">' + _logo() + '</a>' + right + '</div></header>';
+
+  document.body.insertBefore(head, document.body.firstChild);
+
+  var foot = document.createElement("div");
+  foot.id = "pv2-site-footer";
+
+  foot.innerHTML =
+    '<footer class="site-footer"><div class="wrap"><div class="f-brand"><img class="f-logo" src="header-logo.png" alt="' + esc(S.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\';"><span class="f-fallback" style="display:none;align-items:center;gap:8px;"><i class="material-icons" style="color:#fff;">school</i>' + esc(S.name) + '</span></div><nav class="f-links"><a href="' + CONFIG.WEBSITE_URL + '">Home</a><a href="' + WA + '" target="_blank" rel="noopener">WhatsApp</a><a href="tel:' + S.phone + '">' + S.phone + '</a></nav><div class="f-copy">© <span>' + new Date().getFullYear() + '</span> ' + esc(S.name) + ', ' + esc(S.city) + '. Digital Portal.</div></div></footer>' +
+    '<a class="fab-wa" href="' + WA + '" target="_blank" rel="noopener" title="Chat on WhatsApp">💬</a>';
+
+  document.body.appendChild(foot);
+
+  var lo = document.getElementById("pv2Logout");
+  if (lo) {
+    lo.addEventListener("click", function () {
+      Session.logout();
+    });
   }
+}
 
   /* ---------------- navigation ----------------
      Real pages: attendance (+ attendance-month & attendance-report via sub-tabs),
