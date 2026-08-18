@@ -424,8 +424,8 @@
         '<div class="sm-row2">' + field("Student ID (optional)", inp("adId", "", "auto") + '<span id="adIdMsg" class="sm-idmsg"></span>') + field("Admission No", inp("adAdm", "")) + '</div>' +
         '<div class="sm-row2">' + field("Student Name *", inp("adName", "")) + field("Class *", inp("adClass", "", "e.g. 6")) + '</div>' +
         '<div class="sm-row2">' + field("Academic Year", inp("adYear", BOOT.currentYear)) + field("Admission Date", inp("adDate", "", "dd-mm-yyyy")) + '</div>' +
-        '<div class="sm-row2">' + field("Father Name", inp("adFather", "")) + field("Mother Name", inp("adMother", "")) + '</div>' +
-        '<div class="sm-row2">' + field("Phone 1", inp("adPhone1", "")) + field("Phone 2", inp("adPhone2", "")) + '</div>' +
+        '<div class="sm-row2">' + field("Father Name *", inp("adFather", "")) + field("Mother Name", inp("adMother", "")) + '</div>' +
+        '<div class="sm-row2">' + field("Contact Number *", inp("adPhone1", "")) + field("Phone 2", inp("adPhone2", "")) + '</div>' +
         '<div class="sm-row2">' + field("Date of Birth", inp("adDob", "", "dd-mm-yyyy")) + field("Gender", genderSelect("adGender", "")) + '</div>' +
         '<div class="sm-row2">' + field("Religion", inp("adReligion", "")) + field("Category", inp("adCategory", "")) + '</div>' +
         '<div class="sm-row2">' + field("Blood Group", inp("adBlood", "")) + '<div></div></div>' +
@@ -444,12 +444,20 @@
       }, 320);
     });
     $("adSave").addEventListener("click", function () {
-      var name = $("adName").value.trim(), cls = $("adClass").value.trim();
-      if (!name || !cls) { toast("Name and class are required.", "err"); return; }
+      var name = $("adName").value.trim();
+      var cls = $("adClass").value.trim();
+      var father = $("adFather").value.trim();
+      var phone1 = $("adPhone1").value.trim();
+
+      if (!name || !father || !phone1 || !cls) {
+        toast("Name, father name, contact number and class are required.", "err");
+        return;
+      }
+
       var p = {
         studentId: $("adId").value.trim(), admissionNo: $("adAdm").value, name: name, className: cls, year: $("adYear").value.trim(),
-        admissionDate: $("adDate").value.trim(), father: $("adFather").value, mother: $("adMother").value,
-        phone1: $("adPhone1").value, phone2: $("adPhone2").value, dob: $("adDob").value.trim(), gender: $("adGender").value,
+        admissionDate: $("adDate").value.trim(), father: father, mother: $("adMother").value,
+        phone1: phone1, phone2: $("adPhone2").value, dob: $("adDob").value.trim(), gender: $("adGender").value,
         religion: $("adReligion").value, category: $("adCategory").value, bloodGroup: $("adBlood").value,
         custom: collectCustom(BOOT.customFields, "ad_cf_")
       };
