@@ -2,70 +2,62 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <title>WhatsApp Setup · Sapthagiri Portal</title>
-
-  <link rel="icon" href="../logo-mark.jpg">
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap"
-    rel="stylesheet"
-  >
-
-  <link
-    href="https://fonts.googleapis.com/css2?family=Material+Icons"
-    rel="stylesheet"
-  >
-
-  <link rel="stylesheet" href="portal.css">
+  <title>WhatsApp Coexistence Onboarding</title>
 </head>
-
 <body>
+  <h2>Connect WhatsApp Business App (Coexistence)</h2>
+  <button onclick="launchWhatsAppSignup()" style="padding: 12px 24px; font-size: 16px; cursor: pointer;">
+    Connect Existing WhatsApp Number
+  </button>
 
-  <nav class="app-mobile-nav" id="mobileNav"></nav>
-
-  <div class="app-body">
-
-    <nav class="pv2-sidebar" id="nav"></nav>
-
-    <main class="app-main">
-      <div id="view"></div>
-    </main>
-
-  </div>
-
-  <!-- Portal configuration -->
-  <script src="config.js"></script>
-
-  <!-- Portal core -->
-  <script src="portal.js"></script>
-
-  <!--
-    Meta WhatsApp Embedded Signup configuration.
-    These are PUBLIC identifiers. Do NOT put META_APP_SECRET here.
-  -->
   <script>
-    window.META_APP_ID = "2972537683097915";
-    window.META_CONFIG_ID = "1670939950666179";
+    window.fbAsyncInit = function() {
+      FB.init({
+        appId            : '2972537683097915',
+        autoLogAppEvents : true,
+        xfbml            : true,
+        version          : 'v20.0'
+      });
+    };
 
-    /*
-     * IMPORTANT:
-     * This must exactly match the redirect URI configured
-     * in Meta for the Embedded Signup configuration.
-     */
-    window.META_REDIRECT_URI =
-      window.location.origin + "/Portal/whatsapp-connect.html";
+    (function(d, s, id){
+       var js, fjs = d.getElementsByTagName(s)[0];
+       if (d.getElementById(id)) {return;}
+       js = d.createElement(s); js.id = id;
+       js.src = "https://connect.facebook.net/en_US/sdk.js";
+       fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));
+
+    window.addEventListener('message', (event) => {
+      if (event.origin !== "https://www.facebook.com" && event.origin !== "https://web.facebook.com") {
+        return;
+      }
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'WA_EMBEDDED_SIGNUP') {
+          console.log('Embedded Signup Data:', data);
+        }
+      } catch (e) {}
+    });
+
+    function launchWhatsAppSignup() {
+      FB.login(function(response) {
+        if (response.authResponse) {
+          console.log('Login successful. Token:', response.authResponse.accessToken);
+        } else {
+          console.log('User cancelled login or did not fully authorize.');
+        }
+      }, {
+        scope: 'whatsapp_business_management,whatsapp_business_messaging',
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: {
+          setup: {},
+          featureType: '',
+          sessionInfoVersion: '3'
+        }
+      });
+    }
   </script>
-
-  <!-- Meta SDK must load before our WhatsApp code -->
-  <script src="https://connect.facebook.net/en_US/sdk.js"></script>
-
-  <!-- WhatsApp connection logic -->
-  <script src="whatsapp-connect.js"></script>
-
 </body>
 </html>
