@@ -23,7 +23,7 @@ window.PORTAL_CONFIG = {
   SUPABASE_FNS: ["validateLogin","getUsers","smBootstrap","smSearchStudents",
     "smGetStudent","smCheckStudentId","smAdmitStudent","smUpdateStudent",
     "smUpdateEnrollment","smDeleteStudent","smPromoteStudents","smPromoteClass",
-    "smLeaveStudent","smRejoinStudent","smBulkChangeClass","smAddCustomField",
+    "smLeaveStudent","smRejoinStudent","smBulkChangeClass","smAddCustomField", "smGetRollNumbers",
     "smExportStudents","smImportStudents","smChangeStudentId"],
   SUPABASE_ATT_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/attendance-api",
   SUPABASE_ATT_FNS: ["getClasses","getHolidaysForDate","getClassAttendanceSummary",
