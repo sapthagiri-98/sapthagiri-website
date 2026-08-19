@@ -215,29 +215,26 @@
        * same-document container. This gives html2canvas the actual DOM tree
        * and the receipt's own CSS while leaving the portal visually untouched.
        */
-      function buildPdfTarget() {
+        function buildPdfTarget() {
         var html = self.buildReceiptHtml(r);
         var parser = new DOMParser();
         var parsed = parser.parseFromString(html, "text/html");
 
         var holder = document.createElement("div");
 
+        // Keep container in-viewport but push off-screen horizontally without negative z-index
         holder.style.position = "fixed";
-        holder.style.left = "0";
+        holder.style.left = "-9999px";
         holder.style.top = "0";
         holder.style.width = "794px";
         holder.style.minHeight = "1123px";
         holder.style.background = "#ffffff";
-        holder.style.zIndex = "-2147483647";
         holder.style.pointerEvents = "none";
         holder.style.overflow = "visible";
         holder.style.visibility = "visible";
         holder.style.opacity = "1";
 
-        /*
-         * Copy the receipt's complete internal stylesheet into this document
-         * so the PDF rendering matches the existing receipt preview.
-         */
+        /* Copy styles directly into holder */
         Array.prototype.forEach.call(parsed.head.querySelectorAll("style"), function (styleNode) {
           var style = document.createElement("style");
           style.textContent = styleNode.textContent || "";
@@ -250,7 +247,6 @@
         }
 
         document.body.appendChild(holder);
-
         return holder;
       }
 
@@ -319,7 +315,10 @@
                   html2canvas: {
                     scale: 2,
                     useCORS: true,
-                    allowTaint: false,
+                    allowTaint: true,
+                    scrollX: 0,
+                    scrollY: 0,
+                    windowWidth: 794,
                     backgroundColor: "#ffffff",
                     logging: false
                   },
