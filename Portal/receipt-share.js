@@ -205,36 +205,85 @@
       }
 
       /*
-       * The receipt preview and the PDF must use the exact same HTML.
+       * IMPORTANT:
+       * The portal already has CSS/classes used by the receipt preview.
+       * Putting another .receipt-card/.grid-table/etc. directly into the
+       * portal document can let portal CSS alter the PDF DOM.
        *
-       * Do NOT render the PDF target inside an iframe. html2canvas can create
-       * a blank canvas when asked to capture an element belonging to another
-       * document, especially when that iframe is hidden/off-screen.
-       *
-       * Instead, parse the receipt HTML and render its <body> in a temporary
-       * same-document container. This gives html2canvas the actual DOM tree
-       * and the receipt's own CSS while leaving the portal visually untouched.
+       * The PDF renderer therefore gets a namespaced copy of the receipt.
        */
-        function buildPdfTarget() {
+      function buildPdfTarget() {
         var html = self.buildReceiptHtml(r);
         var parser = new DOMParser();
         var parsed = parser.parseFromString(html, "text/html");
 
+        var prefix = "pdfReceipt_";
+        var classNames = [
+          "receipt-card",
+          "hdr-logo-container",
+          "hdr-logo-img",
+          "rc-title-bar",
+          "grid-table",
+          "lbl",
+          "val",
+          "highlight",
+          "words-box",
+          "sec-hdr",
+          "hist-table",
+          "r",
+          "ftr-note"
+        ];
+
+        Array.prototype.forEach.call(parsed.querySelectorAll("[class]"), function (el) {
+          Array.prototype.forEach.call(el.classList, function (cls) {
+            if (classNames.indexOf(cls) !== -1) {
+              el.classList.replace(cls, prefix + cls);
+            }
+          });
+        });
+
+        /*
+         * Rename matching selectors in the copied stylesheet so the receipt
+         * keeps its original design without colliding with portal CSS.
+         */
+        Array.prototype.forEach.call(parsed.head.querySelectorAll("style"), function (styleNode) {
+          var css = styleNode.textContent || "";
+
+          classNames.forEach(function (cls) {
+            var escaped = cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            css = css.replace(
+              new RegExp("\\." + escaped + "(?![A-Za-z0-9_-])", "g"),
+              "." + prefix + cls
+            );
+          });
+
+          styleNode.textContent = css;
+        });
+
         var holder = document.createElement("div");
 
-        // Keep container in-viewport but push off-screen horizontally without negative z-index
+        /*
+         * A4 at 96 DPI is ~794px wide.
+         * With 10mm PDF margins the usable content width is ~718px.
+         * Rendering at that exact width avoids the narrow/clipped result
+         * caused by conflicting portal layout/scaling.
+         */
+        holder.setAttribute("data-receipt-pdf-render", "1");
         holder.style.position = "fixed";
-        holder.style.left = "-9999px";
+        holder.style.left = "-10000px";
         holder.style.top = "0";
-        holder.style.width = "794px";
-        holder.style.minHeight = "1123px";
+        holder.style.width = "718px";
+        holder.style.minHeight = "1040px";
+        holder.style.margin = "0";
+        holder.style.padding = "0";
         holder.style.background = "#ffffff";
         holder.style.pointerEvents = "none";
         holder.style.overflow = "visible";
         holder.style.visibility = "visible";
         holder.style.opacity = "1";
+        holder.style.fontFamily = "'Segoe UI', Arial, sans-serif";
+        holder.style.boxSizing = "border-box";
 
-        /* Copy styles directly into holder */
         Array.prototype.forEach.call(parsed.head.querySelectorAll("style"), function (styleNode) {
           var style = document.createElement("style");
           style.textContent = styleNode.textContent || "";
@@ -242,8 +291,18 @@
         });
 
         var body = parsed.body;
+
         while (body.firstChild) {
           holder.appendChild(body.firstChild);
+        }
+
+        var target = holder.querySelector(".pdfReceipt_receipt-card");
+
+        if (target) {
+          target.style.width = "718px";
+          target.style.maxWidth = "718px";
+          target.style.margin = "0";
+          target.style.boxSizing = "border-box";
         }
 
         document.body.appendChild(holder);
@@ -272,9 +331,6 @@
             img.addEventListener("load", done, { once: true });
             img.addEventListener("error", done, { once: true });
 
-            /*
-             * Do not allow one external image to hold up receipt generation.
-             */
             setTimeout(done, 2500);
           });
         }));
@@ -290,19 +346,21 @@
         }
 
         return new Promise(function (resolve, reject) {
-          /*
-           * Give the browser time to apply the copied receipt stylesheet and
-           * resolve the school logo before html2canvas takes its snapshot.
-           */
           setTimeout(function () {
             waitForImages(holder).then(function () {
-              var target = holder.querySelector(".receipt-card");
+              var target = holder.querySelector(".pdfReceipt_receipt-card");
 
               if (!target) {
                 holder.remove();
                 reject(new Error("Could not prepare the receipt for download."));
                 return;
               }
+
+              /*
+               * Force one layout pass after the namespaced stylesheet has
+               * been inserted before html2canvas measures the target.
+               */
+              void target.offsetWidth;
 
               html2pdf()
                 .set({
@@ -316,11 +374,11 @@
                     scale: 2,
                     useCORS: true,
                     allowTaint: true,
+                    backgroundColor: "#ffffff",
+                    logging: false,
                     scrollX: 0,
                     scrollY: 0,
-                    windowWidth: 794,
-                    backgroundColor: "#ffffff",
-                    logging: false
+                    windowWidth: 718
                   },
                   jsPDF: {
                     unit: "mm",
