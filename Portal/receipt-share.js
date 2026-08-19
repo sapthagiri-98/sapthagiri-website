@@ -161,7 +161,107 @@
     },
 
     share: function (r) {
-      this.print(r);
+      var self = this;
+
+      function loadHtml2Pdf() {
+        if (window.html2pdf) return Promise.resolve(window.html2pdf);
+
+        return new Promise(function (resolve, reject) {
+          var existing = document.querySelector('script[data-receipt-html2pdf="1"]');
+          if (existing) {
+            existing.addEventListener("load", function () { resolve(window.html2pdf); }, { once: true });
+            existing.addEventListener("error", function () { reject(new Error("Could not load the PDF generator.")); }, { once: true });
+            return;
+          }
+
+          var script = document.createElement("script");
+          script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+          script.async = true;
+          script.setAttribute("data-receipt-html2pdf", "1");
+          script.onload = function () {
+            if (window.html2pdf) resolve(window.html2pdf);
+            else reject(new Error("PDF generator loaded incorrectly."));
+          };
+          script.onerror = function () {
+            reject(new Error("Could not load the PDF generator."));
+          };
+          document.head.appendChild(script);
+        });
+      }
+
+      function waitForImages(doc) {
+        var images = Array.prototype.slice.call(doc.images || []);
+        if (!images.length) return Promise.resolve();
+
+        return Promise.all(images.map(function (img) {
+          if (img.complete) return Promise.resolve();
+          return new Promise(function (resolve) {
+            img.onload = resolve;
+            img.onerror = resolve;
+          });
+        }));
+      }
+
+      return loadHtml2Pdf().then(function (html2pdf) {
+        var holder = document.createElement("iframe");
+        holder.style.position = "fixed";
+        holder.style.left = "-100000px";
+        holder.style.top = "0";
+        holder.style.width = "794px";
+        holder.style.height = "1123px";
+        holder.style.border = "0";
+        holder.style.visibility = "hidden";
+        document.body.appendChild(holder);
+
+        var doc = holder.contentWindow.document;
+        doc.open();
+        doc.write(self.buildReceiptHtml(r));
+        doc.close();
+
+        return new Promise(function (resolve, reject) {
+          setTimeout(function () {
+            waitForImages(doc).then(function () {
+              var target = doc.querySelector(".receipt-card");
+              if (!target) {
+                holder.remove();
+                reject(new Error("Could not prepare the receipt for download."));
+                return;
+              }
+
+              html2pdf()
+                .set({
+                  margin: [10, 10, 10, 10],
+                  filename: "Fee-Receipt-" + String(r.receiptId || "Receipt") + ".pdf",
+                  image: { type: "jpeg", quality: 0.98 },
+                  html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: "#ffffff"
+                  },
+                  jsPDF: {
+                    unit: "mm",
+                    format: "a4",
+                    orientation: "portrait"
+                  },
+                  pagebreak: { mode: ["css", "legacy"] }
+                })
+                .from(target)
+                .save()
+                .then(function () {
+                  holder.remove();
+                  resolve();
+                })
+                .catch(function (err) {
+                  holder.remove();
+                  reject(err);
+                });
+            }).catch(function (err) {
+              holder.remove();
+              reject(err);
+            });
+          }, 150);
+        });
+      });
     },
 
     // ---------------------------------------------------------------------
