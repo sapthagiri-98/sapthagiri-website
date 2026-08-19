@@ -373,12 +373,9 @@
                   html2canvas: {
                     scale: 2,
                     useCORS: true,
-                    allowTaint: true,
+                    allowTaint: false,
                     backgroundColor: "#ffffff",
-                    logging: false,
-                    scrollX: 0,
-                    scrollY: 0,
-                    windowWidth: 718
+                    logging: false
                   },
                   jsPDF: {
                     unit: "mm",
