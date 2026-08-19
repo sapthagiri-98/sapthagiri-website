@@ -325,6 +325,13 @@
    * print/PDF flow. The user can choose "Save as PDF" and Chrome will use the
    * normal Downloads location. WhatsApp is opened immediately after.
    */
+  /*
+   * Receipt Share
+   * -------------
+   * Share must NOT use ReceiptShare.print() and must NOT use a local helper.
+   * The receipt preview stays inside this modal, while the Share button opens
+   * WhatsApp Desktop directly with the receipt-specific message pre-filled.
+   */
   function openReceiptSharePreviewModal(r) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
     var cleanPhone = String(phone || "").replace(/\D/g, "");
@@ -349,7 +356,7 @@
     ].join("\n");
 
     var waUrl = cleanPhone
-      ? "https://wa.me/91" + encodeURIComponent(cleanPhone) + "?text=" + encodeURIComponent(whatsappMessage)
+      ? "whatsapp://send?phone=91" + encodeURIComponent(cleanPhone) + "&text=" + encodeURIComponent(whatsappMessage)
       : "";
 
     var modalHtml =
@@ -363,7 +370,7 @@
             '<i class="material-icons">open_in_new</i> Open WhatsApp' +
           '</button>' +
         '</div>' +
-        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Open WhatsApp will open the existing receipt print/PDF window and prepare the parent chat message. Save the receipt as PDF, then attach it in WhatsApp and press Send.</div>' +
+        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">The receipt is shown below for review. Open WhatsApp will take you directly to the parent chat with the message ready to send.</div>' +
       '</div>' +
       '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
         '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
@@ -384,45 +391,23 @@
         btn.onclick = function () {
           if (!cleanPhone) return toast("Parent WhatsApp number is missing.", "err");
 
-          var note = $("receiptShareNote");
-          btn.disabled = true;
-          btn.innerHTML = '<i class="material-icons">sync</i> Opening…';
-
           /*
-           * Use the existing receipt generator. This is the same function used
-           * by the normal Print Receipt action, so there is only one receipt
-           * rendering implementation in the portal.
+           * This is intentionally a direct whatsapp:// launch.
+           * No helper, Node server, PowerShell, print window, or browser
+           * wa.me page is involved.
            */
           try {
-            ReceiptShare.print(r);
-          } catch (err) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="material-icons">open_in_new</i> Open WhatsApp';
-            if (note) note.textContent = "Could not open the receipt print window: " + (err.message || err);
-            return toast("Could not open receipt print window: " + (err.message || err), "err");
-          }
-
-          if (note) {
-            note.textContent = "Receipt opened in Chrome's print/PDF window. Choose Save as PDF, then WhatsApp will open with the message ready.";
-          }
-
-          /*
-           * wa.me is already the portal's direct WhatsApp mechanism. On a
-           * Windows machine with WhatsApp Desktop installed, Windows/Chrome
-           * can hand the WhatsApp link to the desktop application. If it is
-           * not registered, Chrome will open the normal WhatsApp destination.
-           */
-          try {
-            window.open(waUrl, "_blank");
-          } catch (_) {
             window.location.href = waUrl;
+          } catch (err) {
+            return toast("Could not open WhatsApp: " + (err.message || err), "err");
           }
 
-          setTimeout(function () {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
-            btn.style.background = "#059669";
-          }, 900);
+          var note = $("receiptShareNote");
+          if (note) note.textContent = "WhatsApp is opening the parent chat with the message ready to send.";
+
+          btn.disabled = true;
+          btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opening';
+          btn.style.background = "#059669";
         };
       }
     }, 40);
@@ -789,7 +774,7 @@
     $("pReports").innerHTML =
       '<div class="page-card reports-page">' +
         '<div class="page-card-head">' +
-          '<div><span class="eyebrow">FINANCE REPORTS</span><h2><i class="material-icons">assessment</i> Reports</h2><p>Class-wise student reports are available directly. School totals require a separate password.</p></div>' +
+          '<div><span class="eyebrow">FINANCE REPORTS</span><h2><i class="material-icons">assessment</i> Reports</h2><p>Class-wise student reports are available directly. School totals include current-year receivables and separately show dues from inactive / left students.</p></div>' +
           '<div class="report-stat"><i class="material-icons">account_balance_wallet</i><span id="repYearLabel">' + esc(YEAR) + '</span></div>' +
         '</div>' +
         '<div class="subt report-tabs" id="reportTabs">' +
@@ -1042,8 +1027,8 @@
     }).join("");
 
     var classBody = d.classRows.map(function (r) {
-      return '<tr>' +
-        '<td><b>' + esc(r.className) + '</b></td>' +
+      return '<tr class="' + (r.special ? 'report-inactive-row' : '') + '">' +
+        '<td><b>' + esc(r.className) + '</b>' + (r.special ? '<span class="subline">Previous-year / inactive receivable carried into current totals</span>' : '') + '</td>' +
         '<td class="r">' + r.students + '</td>' +
         '<td class="r">' + reportMoney(r.assigned) + '</td>' +
         '<td class="r">' + reportMoney(r.collected) + '</td>' +
@@ -1056,6 +1041,7 @@
         tot(reportMoney(d.outstanding), "TOTAL DUES", d.outstanding > 0 ? "red" : "green") +
         tot(reportMoney(d.collected), "TOTAL RECEIVED", "green") +
         tot(reportMoney(d.assigned), "TOTAL ASSIGNED", "") +
+        tot(reportMoney(d.inactiveDue || 0), "INACTIVE / LEFT DUE", (d.inactiveDue || 0) > 0 ? "amber" : "green") +
       '</div>' +
 
       '<div class="report-two-col">' +
