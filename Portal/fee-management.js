@@ -24,7 +24,7 @@
   }
 
   css();
-  var BOOT = null, YEAR = "";
+  var BOOT = null, YEAR = "", SCHOOL_TOTALS_PW = "";
   var L = { student: null, account: null, fin: null, stmt: null, view: "ALL", yview: "", perYear: [] };
   var PAY = { student: null, account: null, choice: "" };
   var SHEET = { data: null };
@@ -309,6 +309,45 @@
   // Shows the receipt preview first. When the user confirms, the local Windows helper
   // generates the PDF, opens WhatsApp Desktop, types the parent message, and leaves
   // the receipt selected in Explorer for the user to attach and send manually.
+  /*
+   * Receipt sharing is fully browser-side.
+   *
+   * Flow:
+   *   1. Show the real receipt preview.
+   *   2. On "Open WhatsApp", generate/download the receipt PDF in Chrome.
+   *   3. Open the parent's WhatsApp chat with the message pre-filled.
+   *
+   * No local helper, Node server, PowerShell, or WhatsApp API is used.
+   */
+  function loadHtml2Pdf() {
+    if (window.html2pdf) return Promise.resolve(window.html2pdf);
+    if (window._sapthagiriHtml2PdfPromise) return window._sapthagiriHtml2PdfPromise;
+
+    window._sapthagiriHtml2PdfPromise = new Promise(function (resolve, reject) {
+      var existing = document.querySelector('script[data-sapthagiri-html2pdf="1"]');
+      if (existing) {
+        existing.addEventListener("load", function () { resolve(window.html2pdf); });
+        existing.addEventListener("error", function () { reject(new Error("Could not load the browser PDF generator.")); });
+        return;
+      }
+
+      var script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+      script.async = true;
+      script.setAttribute("data-sapthagiri-html2pdf", "1");
+      script.onload = function () {
+        if (window.html2pdf) resolve(window.html2pdf);
+        else reject(new Error("Browser PDF generator loaded but is unavailable."));
+      };
+      script.onerror = function () {
+        reject(new Error("Could not load the browser PDF generator. Check the internet connection."));
+      };
+      document.head.appendChild(script);
+    });
+
+    return window._sapthagiriHtml2PdfPromise;
+  }
+
   function openReceiptSharePreviewModal(r) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
     var cleanPhone = String(phone || "").replace(/\D/g, "");
@@ -319,6 +358,7 @@
     var balance = Number(r.balance != null ? r.balance : (r.balanceAfter || 0));
     var studentName = r.studentName || (L.student ? L.student.name : "your child") || (PAY.student ? PAY.student.name : "your child");
     var feeType = r.feeType || "Fee";
+
     var whatsappMessage = [
       "Dear Parent,",
       "",
@@ -331,6 +371,13 @@
       "SAPTHAGIRI SCHOOL."
     ].join("\n");
 
+    var safeStudent = String(studentName || "Student").replace(/[\\/:*?"<>|]/g, "_").trim() || "Student";
+    var safeReceipt = String(r.receiptId || "Receipt").replace(/[\\/:*?"<>|]/g, "_").trim();
+    var filename = safeStudent + "_" + safeReceipt + ".pdf";
+    var waUrl = cleanPhone
+      ? "https://wa.me/91" + encodeURIComponent(cleanPhone) + "?text=" + encodeURIComponent(whatsappMessage)
+      : "";
+
     var modalHtml =
       '<div style="margin-bottom:12px;background:#f8fafc;padding:12px 14px;border-radius:10px;border:1px solid #e2e8f0;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
@@ -339,10 +386,10 @@
             '<div style="font-size:15px;font-weight:800;color:#1e293b;">📱 ' + (cleanPhone ? "+91 " + cleanPhone : '<span style="color:#b91c1c;">No Number Found</span>') + '</div>' +
           '</div>' +
           '<button class="btn btn-sm" id="btnModalSendWA" style="background:#166534;color:#fff;" ' + (!cleanPhone ? 'disabled' : '') + '>' +
-            '<i class="material-icons">open_in_new</i> Prepare WhatsApp + Receipt' +
+            '<i class="material-icons">open_in_new</i> Open WhatsApp' +
           '</button>' +
         '</div>' +
-        '<div id="localReceiptHelperNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. When ready, the local Windows helper will create the PDF, open WhatsApp Desktop, type the message, and select the PDF in Explorer.</div>' +
+        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Open WhatsApp will download the PDF and open the parent chat with the message ready. You will attach the downloaded PDF and press Send.</div>' +
       '</div>' +
       '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
         '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
@@ -363,43 +410,87 @@
         btn.onclick = function () {
           if (!cleanPhone) return toast("Parent WhatsApp number is missing.", "err");
 
+          var note = $("receiptShareNote");
           btn.disabled = true;
-          btn.innerHTML = '<i class="material-icons">sync</i> Preparing…';
+          btn.innerHTML = '<i class="material-icons">sync</i> Downloading…';
+          if (note) note.textContent = "Generating the receipt PDF in Chrome…";
 
-          var note = $("localReceiptHelperNote");
-          if (note) note.textContent = "Creating PDF and opening WhatsApp Desktop…";
+          /*
+           * Open the target window immediately while this click still has
+           * user activation. It is navigated to WhatsApp after the PDF is
+           * downloaded, avoiding popup blockers.
+           */
+          var waWindow = null;
+          try {
+            waWindow = window.open("about:blank", "_blank");
+            if (waWindow) {
+              try {
+                waWindow.document.title = "Opening WhatsApp…";
+                waWindow.document.body.innerHTML = '<div style="font-family:Segoe UI,Arial;padding:30px;font-size:16px;">Opening WhatsApp…</div>';
+              } catch (_) {}
+            }
+          } catch (_) {}
 
-          fetch("http://127.0.0.1:8765/prepare-receipt", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              phone: cleanPhone,
-              receipt: r,
-              receiptHtml: receiptIframeHtml,
-              whatsappMessage: whatsappMessage
+          loadHtml2Pdf()
+            .then(function (html2pdf) {
+              var f = $("receiptPreviewFrame");
+              if (!f || !f.contentDocument || !f.contentDocument.querySelector(".receipt-card")) {
+                throw new Error("Receipt preview is not ready.");
+              }
+
+              var card = f.contentDocument.querySelector(".receipt-card");
+
+              return html2pdf()
+                .set({
+                  margin: [8, 8, 8, 8],
+                  filename: filename,
+                  image: { type: "jpeg", quality: 0.98 },
+                  html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: "#ffffff",
+                    logging: false
+                  },
+                  jsPDF: {
+                    unit: "mm",
+                    format: "a4",
+                    orientation: "portrait"
+                  },
+                  pagebreak: {
+                    mode: ["css", "legacy"],
+                    avoid: ["tr"]
+                  }
+                })
+                .from(card)
+                .save();
             })
-          })
-          .then(function (res) {
-            return res.text().then(function (text) {
-              var data;
-              try { data = JSON.parse(text); }
-              catch (e) { throw new Error("Local helper returned an invalid response: " + text.slice(0, 200)); }
-              if (!res.ok || !data.ok) throw new Error(data.error || "Local receipt helper failed.");
-              return data;
+            .then(function () {
+              if (note) note.textContent = "Receipt PDF downloaded. Opening WhatsApp Desktop with the message ready…";
+              btn.innerHTML = '<i class="material-icons">open_in_new</i> Opening WhatsApp…';
+
+              if (waWindow && !waWindow.closed) {
+                waWindow.location.href = waUrl;
+              } else {
+                window.open(waUrl, "_blank");
+              }
+
+              setTimeout(function () {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
+                btn.style.background = "#059669";
+                if (note) note.textContent = "Receipt PDF downloaded. WhatsApp is open with the message ready. Attach the PDF from Downloads and press Send.";
+              }, 700);
+            })
+            .catch(function (err) {
+              if (waWindow && !waWindow.closed) {
+                try { waWindow.close(); } catch (_) {}
+              }
+
+              btn.disabled = false;
+              btn.innerHTML = '<i class="material-icons">open_in_new</i> Open WhatsApp';
+              if (note) note.textContent = "Could not create the PDF automatically: " + (err.message || err);
+              toast("Receipt PDF could not be downloaded: " + (err.message || err), "err");
             });
-          })
-          .then(function (data) {
-            if (note) note.textContent = "PDF saved: " + (data.filePath || "local receipt folder") + " · WhatsApp Desktop is ready with the message typed. Attach the PDF and press Send.";
-            toast("PDF prepared and WhatsApp Desktop message typed.", "ok");
-            btn.innerHTML = '<i class="material-icons">done</i> Prepared';
-            btn.style.background = "#059669";
-          })
-          .catch(function (err) {
-            if (note) note.textContent = "Helper error: " + (err.message || err) + " Start the local receipt helper first.";
-            toast("Local helper error: " + (err.message || err), "err");
-            btn.disabled = false;
-            btn.innerHTML = '<i class="material-icons">open_in_new</i> Prepare WhatsApp + Receipt';
-          });
         };
       }
     }, 40);
@@ -565,7 +656,7 @@
         '<div style="display:flex;align-items:center;gap:6px;">' +
           '<b style="color:#047857;">' + money(r.currentPayment || r.amount) + '</b> ' +
           '<button class="mini" onclick="window.printSingleReceipt(\'' + esc(r.receiptId) + '\')"><i class="material-icons" style="font-size:14px">print</i> Print</button>' +
-          '<button class="mini" id="waBtn_' + idx + '" style="color:#166534;border-color:#bbf7d0;" onclick="window.prepareSingleLocalReceipt(' + idx + ')"><i class="material-icons" style="font-size:14px">send</i> Prepare WhatsApp + Receipt</button>' +
+          '<button class="mini" id="waBtn_' + idx + '" style="color:#166534;border-color:#bbf7d0;" onclick="window.openSingleReceiptShare(' + idx + ')"><i class="material-icons" style="font-size:14px">send</i> Open WhatsApp</button>' +
         '</div>' +
       '</div>';
     }).join("");
@@ -577,7 +668,7 @@
       withReceipt(rid, function (rc) { ReceiptShare.print(rc); });
     };
 
-    window.prepareSingleLocalReceipt = function (idx) {
+    window.openSingleReceiptShare = function (idx) {
       var rc = window._multiReceiptCache[idx];
       if (rc) openReceiptSharePreviewModal(rc);
     };
@@ -804,11 +895,6 @@
   }
 
   function openSchoolTotalsGate() {
-    if (schoolTotalsGateActive()) {
-      showSchoolTotals();
-      return;
-    }
-
     var body =
       '<div class="note amber"><i class="material-icons">lock</i>School-wide fee totals are restricted. Enter the separate finance password.</div>' +
       '<div class="fld" style="margin-top:12px"><label>School Totals Password</label><input id="schoolTotalsPw" class="in" type="password" autocomplete="off"/></div>' +
@@ -830,6 +916,7 @@
         btn.innerHTML = '<i class="material-icons">sync</i> Verifying…';
         P.api("feeGetSchoolTotals", [$("repTY").value, pw], { overlay: false })
           .then(function (d) {
+            SCHOOL_TOTALS_PW = pw;
             sessionStorage.setItem(SCHOOL_TOTALS_GATE, JSON.stringify({ exp: Date.now() + 15 * 60000 }));
             REPORTS.totals = d;
             closeModal("mdl");
@@ -973,116 +1060,26 @@
     $("repYearLabel").textContent = y;
     $("repTB").innerHTML = mt("Calculating school totals…");
 
-    Promise.all([
-      P.api("feeGetClasses", [y], { overlay: false }),
-      P.api("feeCollectionByType", [y], { overlay: false }),
-      P.api("feeCollectionByClass", [y], { overlay: false })
-    ]).then(function (base) {
-      var classes = base[0] || [], byTypeResult = base[1] || { rows: [], total: 0 }, byClassResult = base[2] || { rows: [], total: 0 };
+    if (!SCHOOL_TOTALS_PW) {
+      openSchoolTotalsGate();
+      return;
+    }
 
-      return Promise.all(classes.map(function (cls) {
-        return P.api("feeGetFeeSheet", [y, cls], { overlay: false });
-      })).then(function (sheets) {
-        var assignedBy = {}, classRows = [], feeNames = {};
-
-        sheets.forEach(function (d) {
-          var clsAssigned = 0, rows = d.rows || [];
-          rows.forEach(function (r) {
-            var od = Number(r.oldDue) || 0;
-            assignedBy.OLD_DUE = (assignedBy.OLD_DUE || 0) + od;
-            clsAssigned += od;
-
-            (d.feeTypes || []).forEach(function (t) {
-              var amt = Number((r.fees || {})[t.code]) || 0;
-              assignedBy[t.code] = (assignedBy[t.code] || 0) + amt;
-              feeNames[t.code] = t.name;
-              clsAssigned += amt;
-            });
-          });
-          classRows.push({
-            className: d.className || "",
-            students: rows.length,
-            assigned: clsAssigned
-          });
-        });
-
-        var collectedBy = { OLD_DUE: 0 };
-        (byTypeResult.rows || []).forEach(function (r) {
-          var code = null;
-          var nm = reportNameKey(r.feeType);
-          if (nm === "OLDDUE") code = "OLD_DUE";
-          else {
-            Object.keys(feeNames).some(function (k) {
-              if (reportNameKey(feeNames[k]) === nm) { code = k; return true; }
-              return false;
-            });
-          }
-          if (!code) code = "NAME:" + nm;
-          collectedBy[code] = (collectedBy[code] || 0) + Number(r.amount || 0);
-        });
-
-        var feeRows = [];
-        feeRows.push({
-          code: "OLD_DUE",
-          name: "Old Due",
-          assigned: assignedBy.OLD_DUE || 0,
-          collected: collectedBy.OLD_DUE || 0
-        });
-
-        Object.keys(feeNames).forEach(function (code) {
-          feeRows.push({
-            code: code,
-            name: feeNames[code],
-            assigned: assignedBy[code] || 0,
-            collected: collectedBy[code] || 0
-          });
-        });
-
-        feeRows = feeRows.filter(function (r) {
-          return Math.abs(r.assigned) > 0.005 || Math.abs(r.collected) > 0.005;
-        });
-
-        feeRows.sort(function (a, b) {
-          var aw = reportFeeWeight(a), bw = reportFeeWeight(b);
-          return aw - bw || String(a.name || "").localeCompare(String(b.name || ""));
-        });
-
-        feeRows.forEach(function (r) {
-          r.due = Math.max(0, Number(r.assigned) - Number(r.collected));
-        });
-
-        var classCollected = {};
-        (byClassResult.rows || []).forEach(function (r) {
-          classCollected[reportNameKey(r.className)] = Number(r.amount || 0);
-        });
-
-        classRows.forEach(function (r) {
-          r.collected = classCollected[reportNameKey(r.className)] || 0;
-          r.outstanding = Math.max(0, r.assigned - r.collected);
-        });
-
-        classRows.sort(function (a, b) { return gradeWeightLocal(a.className) - gradeWeightLocal(b.className); });
-
-        var assigned = feeRows.reduce(function (s, r) { return s + r.assigned; }, 0);
-        var collected = feeRows.reduce(function (s, r) { return s + r.collected; }, 0);
-        var outstanding = feeRows.reduce(function (s, r) { return s + r.due; }, 0);
-
-        REPORTS.totals = {
-          year: y,
-          feeRows: feeRows,
-          classRows: classRows,
-          assigned: assigned,
-          collected: collected,
-          outstanding: outstanding,
-          byTypeTotal: Number(byTypeResult.total || collected),
-          byClassTotal: Number(byClassResult.total || collected)
-        };
-
-        renderReportTotals(REPORTS.totals);
+    P.api("feeGetSchoolTotals", [y, SCHOOL_TOTALS_PW], { overlay: false })
+      .then(function (d) {
+        REPORTS.totals = d;
+        renderReportTotals(d);
+      })
+      .catch(function (e) {
+        SCHOOL_TOTALS_PW = "";
+        try { sessionStorage.removeItem(SCHOOL_TOTALS_GATE); } catch (_) {}
+        openSchoolTotalsGate();
+        var er = $("schoolTotalsErr");
+        if (er) {
+          er.textContent = e.message || "Could not load school totals.";
+          er.style.display = "block";
+        }
       });
-    }).catch(function (e) {
-      $("repTB").innerHTML = eb(e);
-    });
   }
 
   function feeRowsLegacy(rows, mode) {
