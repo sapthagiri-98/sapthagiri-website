@@ -563,75 +563,101 @@
     }
 
     var payments = ledgerPayments(st.receipts || [], S.year, filter);
+    var label = selectedCharge ? selectedCharge.label : "All fee categories";
 
     /*
-     * For ALL, the statement uses every allocation to this academic year.
-     * For a category, it uses only allocations with the selected fee code.
+     * Mobile ledger is deliberately a vertical financial flow, not a table.
+     *
+     * 1. Assigned amount is established at the top.
+     * 2. Each payment is shown as a + amount.
+     * 3. The running balance is shown immediately after that payment.
+     * 4. The final closing balance is shown at the bottom.
+     *
+     * This makes the arithmetic readable with one thumb-scroll and avoids
+     * any horizontal scrolling on a phone.
      */
-    var rows = [];
     var running = assigned;
+    var flow = "";
 
-    payments.forEach(function (p) {
-      running = Math.max(0, running - p.amount);
-
-      rows.push(
-        '<div class="flv-ledger-row">' +
-          '<div class="flv-ledger-main">' +
-            '<div class="flv-ledger-date">' +
-              esc(P.prettyDate(p.date)) +
+    flow +=
+      '<div class="flv-flow-opening">' +
+        '<div class="flv-flow-node">' +
+          '<span class="flv-flow-dot assigned"><i class="material-icons">assignment</i></span>' +
+          '<span class="flv-flow-line"></span>' +
+        '</div>' +
+        '<div class="flv-flow-card opening-card">' +
+          '<div class="flv-flow-card-head">' +
+            '<div>' +
+              '<span class="flv-flow-kicker">ASSIGNED FEE</span>' +
+              '<b>' + esc(label) + '</b>' +
             '</div>' +
-            '<div class="flv-ledger-meta">' +
-              '<span>' + esc(p.mode || "Payment") + '</span>' +
-              '<span>Receipt ' + esc(p.receiptId || "—") + '</span>' +
-            '</div>' +
+            '<strong>' + money(assigned) + '</strong>' +
           '</div>' +
+          '<div class="flv-flow-sub">Starting amount for ' + esc(S.year) + '</div>' +
+        '</div>' +
+      '</div>';
 
-          '<div class="flv-ledger-paid">' +
-            '<small>Paid</small>' +
-            '<b>+' + money(p.amount) + '</b>' +
-          '</div>' +
-
-          '<div class="flv-ledger-balance">' +
-            '<small>Balance</small>' +
-            '<b class="' + (running > 0 ? "pending" : "cleared") + '">' +
-              money(running) +
-            '</b>' +
-          '</div>' +
-        '</div>'
-      );
-    });
-
-    /*
-     * If the backend has receipts but the selected category has no payment
-     * allocations, the category still remains visible with its assigned and
-     * pending values. That is much more useful than hiding the category.
-     */
-    if (!rows.length) {
-      rows =
-        '<div class="flv-ledger-empty">' +
-          '<i class="material-icons">payments</i>' +
+    if (!payments.length) {
+      flow +=
+        '<div class="flv-flow-empty">' +
+          '<div class="flv-flow-empty-icon"><i class="material-icons">payments</i></div>' +
           '<b>No payments recorded</b>' +
           '<span>' +
             (selectedCharge
-              ? 'No payment has been allocated to ' + esc(selectedCharge.label) + ' in this ledger.'
+              ? 'No payment has been allocated to ' + esc(selectedCharge.label) + ' yet.'
               : 'No payments have been allocated to ' + esc(S.year) + '.') +
           '</span>' +
         '</div>';
     } else {
-      /*
-       * If payments are already settled, show the closing balance explicitly.
-       * If not, the final row already communicates the balance.
-       */
-      rows +=
-        '<div class="flv-ledger-closing">' +
-          '<span>Closing balance</span>' +
-          '<b class="' + (balance > 0 ? "pending" : "cleared") + '">' +
-            money(balance) +
-          '</b>' +
+      payments.forEach(function (p, index) {
+        running = Math.max(0, running - p.amount);
+
+        flow +=
+          '<div class="flv-flow-payment">' +
+            '<div class="flv-flow-node">' +
+              '<span class="flv-flow-dot payment"><i class="material-icons">south</i></span>' +
+              '<span class="flv-flow-line"></span>' +
+            '</div>' +
+
+            '<div class="flv-flow-card payment-card">' +
+              '<div class="flv-flow-date">' +
+                esc(P.prettyDate(p.date)) +
+              '</div>' +
+
+              '<div class="flv-flow-payment-main">' +
+                '<div class="flv-flow-payment-info">' +
+                  '<b>' + esc(p.mode || "Payment") + '</b>' +
+                  '<span>Receipt ' + esc(p.receiptId || "—") + '</span>' +
+                '</div>' +
+                '<strong class="flv-positive">+' + money(p.amount) + '</strong>' +
+              '</div>' +
+
+              '<div class="flv-flow-balance">' +
+                '<span>Balance after payment</span>' +
+                '<b class="' + (running > 0 ? "pending" : "cleared") + '">' +
+                  money(running) +
+                '</b>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      });
+
+      flow +=
+        '<div class="flv-flow-closing">' +
+          '<div class="flv-flow-node">' +
+            '<span class="flv-flow-dot ' + (balance > 0 ? "pending-dot" : "cleared-dot") + '">' +
+              '<i class="material-icons">' + (balance > 0 ? "account_balance_wallet" : "check") + '</i>' +
+            '</span>' +
+          '</div>' +
+          '<div class="flv-flow-card closing-card">' +
+            '<span class="flv-flow-kicker">CLOSING BALANCE</span>' +
+            '<strong class="' + (balance > 0 ? "pending" : "cleared") + '">' +
+              money(balance) +
+            '</strong>' +
+            '<span>' + (balance > 0 ? "Amount still pending" : "Fee fully settled") + '</span>' +
+          '</div>' +
         '</div>';
     }
-
-    var label = selectedCharge ? selectedCharge.label : "All fee categories";
 
     body.innerHTML =
       '<div class="flv-ledger-category">' +
@@ -661,7 +687,9 @@
         '</div>' +
       '</div>' +
 
-      '<div class="flv-ledger-list">' + rows + '</div>';
+      '<div class="flv-flow" aria-label="Payment flow">' +
+        flow +
+      '</div>';
   }
 
   /*
@@ -783,168 +811,181 @@
     s.id = "flv-css";
 
     s.textContent = [
-      ".flv-page{max-width:980px;margin:0 auto;padding-bottom:28px;color:#202638}",
-
-      ".flv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}",
-      ".flv-head h1{margin:3px 0 5px;font-size:25px;letter-spacing:-.4px;color:var(--maroon);display:flex;align-items:center;gap:8px}",
-      ".flv-head h1 i{font-size:25px}",
-      ".flv-head p{margin:0;color:var(--text-muted);font-size:12.5px}",
-      ".flv-eyebrow{font-size:9.5px;font-weight:900;letter-spacing:1.05px;color:var(--maroon)}",
-
-      ".flv-live{display:inline-flex;align-items:center;gap:6px;padding:8px 11px;border-radius:999px;background:#ecfdf5;border:1px solid #ccefe0;color:#15803d;font-size:10.5px;font-weight:800;white-space:nowrap}",
+      ".flv-page{max-width:680px;margin:0 auto;padding:0 0 28px;color:#202638}",
+      ".flv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px}",
+      ".flv-head h1{margin:2px 0 4px;font-size:21px;line-height:1.15;letter-spacing:-.25px;color:var(--maroon);display:flex;align-items:center;gap:7px}",
+      ".flv-head h1 i{font-size:21px}",
+      ".flv-head p{margin:0;color:var(--text-muted);font-size:12px;line-height:1.35}",
+      ".flv-eyebrow{font-size:10px;font-weight:900;letter-spacing:.9px;color:var(--maroon)}",
+      ".flv-live{display:inline-flex;align-items:center;gap:5px;padding:7px 10px;border-radius:999px;background:#ecfdf5;border:1px solid #ccefe0;color:#15803d;font-size:10px;font-weight:800;white-space:nowrap}",
       ".flv-live i{font-size:16px}",
 
-      ".flv-search-card,.flv-student-card,.flv-section{background:#fff;border:1px solid var(--border);border-radius:17px;box-shadow:0 6px 20px rgba(15,23,42,.045)}",
-      ".flv-search-card{padding:14px;margin-bottom:14px}",
-
-      ".flv-search{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px}",
+      ".flv-search-card,.flv-student-card,.flv-section{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:0 5px 18px rgba(15,23,42,.045)}",
+      ".flv-search-card{padding:13px;margin-bottom:13px}",
+      ".flv-search{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1px solid #dfe5ec;border-radius:12px;padding:10px 11px;min-height:46px}",
       ".flv-search:focus-within{background:#fff;border-color:#c99b9b;box-shadow:0 0 0 3px rgba(138,22,24,.07)}",
-      ".flv-search>i{color:var(--maroon);font-size:20px}",
-      ".flv-search input{border:0;outline:0;background:transparent;flex:1;min-width:0;font:inherit;font-size:14px}",
-      ".flv-clear{border:0;background:#e2e8f0;color:#475569;width:25px;height:25px;border-radius:50%;font-size:18px;cursor:pointer}",
+      ".flv-search>i{color:var(--maroon);font-size:21px}",
+      ".flv-search input{border:0;outline:0;background:transparent;flex:1;min-width:0;font:inherit;font-size:15px;line-height:1.2}",
+      ".flv-clear{border:0;background:#e2e8f0;color:#475569;width:27px;height:27px;border-radius:50%;font-size:19px;cursor:pointer;flex:0 0 27px}",
 
       ".flv-results{margin-top:7px}",
-      ".flv-result{width:100%;display:grid;grid-template-columns:38px minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:9px;align-items:center;text-align:left;border:1px solid var(--border);background:#fff;border-radius:12px;padding:9px 10px;margin-top:6px;cursor:pointer;font:inherit}",
+      ".flv-result{width:100%;display:grid;grid-template-columns:40px minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:9px;align-items:center;text-align:left;border:1px solid var(--border);background:#fff;border-radius:12px;padding:10px;min-height:58px;margin-top:6px;cursor:pointer;font:inherit}",
       ".flv-result:hover{background:#fff8f8;border-color:#d7b2b2}",
-      ".flv-result-avatar{grid-row:1/3;width:34px;height:34px;border-radius:10px;background:#f7eeee;color:var(--maroon);display:grid;place-items:center;font-size:11px;font-weight:900}",
+      ".flv-result-avatar{grid-row:1/3;width:36px;height:36px;border-radius:10px;background:#f7eeee;color:var(--maroon);display:grid;place-items:center;font-size:12px;font-weight:900}",
       ".flv-result-main{min-width:0}",
-      ".flv-result-main b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".flv-result-main small{display:block;color:var(--text-muted);font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".flv-result-main b{display:block;font-size:13.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".flv-result-main small{display:block;color:var(--text-muted);font-size:10.5px;line-height:1.25;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".flv-result-due{grid-column:3;grid-row:1;font-size:11px;font-weight:900;justify-self:end}",
       ".flv-result-due.has-due{color:#dc2626}.flv-result-due.clear{color:#059669}",
-      ".flv-result-status{grid-column:3;grid-row:2;justify-self:end;font-size:9px;color:#64748b;font-weight:700}",
+      ".flv-result-status{grid-column:3;grid-row:2;justify-self:end;font-size:9.5px;color:#64748b;font-weight:700}",
 
-      ".flv-divider{display:flex;align-items:center;gap:8px;margin:12px 0 9px;color:#94a3b8;font-size:10px;font-weight:800}",
+      ".flv-divider{display:flex;align-items:center;gap:8px;margin:12px 0 9px;color:#94a3b8;font-size:10.5px;font-weight:800}",
       ".flv-divider:before,.flv-divider:after{content:'';height:1px;background:#e9edf2;flex:1}",
-
-      ".flv-pickers{display:grid;grid-template-columns:1fr 1fr 1.35fr;gap:9px}",
-      ".flv-picker{display:flex;flex-direction:column;gap:4px}",
-      ".flv-picker>span{font-size:10px;font-weight:800;color:#64748b}",
-      ".flv-picker select{width:100%;min-height:42px;padding:9px 10px;border:1px solid var(--border);border-radius:10px;background:#fff;color:#202638;font:inherit;font-size:12px;outline:none;cursor:pointer;appearance:auto;-webkit-appearance:auto;touch-action:manipulation}",
-      ".flv-picker select:focus{border-color:#c99b9b;box-shadow:0 0 0 3px rgba(138,22,24,.07)}",
+      ".flv-pickers{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:8px}",
+      ".flv-picker{display:flex;flex-direction:column;gap:5px}",
+      ".flv-picker>span{font-size:10.5px;font-weight:800;color:#64748b}",
+      ".flv-picker select,.flv-ledger-filter{width:100%;min-height:44px;padding:9px 10px;border:1px solid #dfe5ec;border-radius:10px;background:#fff;color:#202638;font:inherit;font-size:13px;line-height:1.2;outline:none;cursor:pointer;appearance:auto;-webkit-appearance:auto;touch-action:manipulation}",
+      "body.mobile-admin .flv-picker select,body.mobile-admin .flv-ledger-filter{pointer-events:auto !important;background:#fff !important;cursor:pointer !important}",
+      ".flv-picker select:focus,.flv-ledger-filter:focus{border-color:#b77979;box-shadow:0 0 0 3px rgba(138,22,24,.07)}",
       ".flv-picker select.flv-loading-select{color:#64748b}",
 
-      ".flv-empty,.flv-loading-card,.flv-error{background:#fff;border:1px dashed var(--border);border-radius:16px;padding:36px 18px;text-align:center;color:var(--text-muted);display:flex;flex-direction:column;align-items:center;gap:6px}",
-      ".flv-empty i{font-size:38px;color:#b77979}",
+      ".flv-empty,.flv-loading-card,.flv-error{background:#fff;border:1px dashed var(--border);border-radius:15px;padding:34px 18px;text-align:center;color:var(--text-muted);display:flex;flex-direction:column;align-items:center;gap:7px}",
+      ".flv-empty i{font-size:36px;color:#b77979}",
       ".flv-empty b{font-size:14px;color:#334155}",
-      ".flv-empty span,.flv-error span{font-size:11px}",
-      ".flv-loading-card{border-style:solid;min-height:120px;justify-content:center}",
-      ".flv-loading{padding:10px;color:#64748b;font-size:11px;font-weight:700;display:flex;align-items:center;gap:7px}",
-      ".flv-hint{padding:9px;color:#64748b;font-size:11px;font-weight:700}",
-      ".flv-spinner{width:17px;height:17px;border:2px solid #e5d5d5;border-top-color:var(--maroon);border-radius:50%;display:inline-block;animation:flvSpin .7s linear infinite}",
+      ".flv-empty span,.flv-error span{font-size:11.5px;line-height:1.4}",
+      ".flv-loading-card{border-style:solid;min-height:110px;justify-content:center}",
+      ".flv-loading{padding:10px;color:#64748b;font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px}",
+      ".flv-hint{padding:10px;color:#64748b;font-size:11.5px;font-weight:700}",
+      ".flv-spinner{width:18px;height:18px;border:2px solid #e5d5d5;border-top-color:var(--maroon);border-radius:50%;display:inline-block;animation:flvSpin .7s linear infinite}",
       "@keyframes flvSpin{to{transform:rotate(360deg)}}",
       ".flv-error{border-style:solid;border-color:#f0caca;background:#fffafa}",
-      ".flv-error i{font-size:32px;color:#b91c1c}",
+      ".flv-error i{font-size:30px;color:#b91c1c}",
       ".flv-error b{color:#991b1b;font-size:13px}",
 
-      ".flv-student-card{padding:14px 16px;margin-bottom:12px}",
-      ".flv-student-top{display:flex;align-items:center;gap:11px}",
-      ".flv-student-avatar{width:48px;height:48px;flex:0 0 48px;border-radius:14px;background:var(--maroon);color:#fff;display:grid;place-items:center;font-weight:900;font-size:14px}",
+      ".flv-student-card{padding:13px 14px;margin-bottom:12px}",
+      ".flv-student-top{display:flex;align-items:center;gap:10px}",
+      ".flv-student-avatar{width:46px;height:46px;flex:0 0 46px;border-radius:13px;background:var(--maroon);color:#fff;display:grid;place-items:center;font-weight:900;font-size:14px}",
       ".flv-student-copy{min-width:0;flex:1}",
-      ".flv-student-copy h2{margin:0 0 4px;font-size:18px;color:#202638;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".flv-student-meta{display:flex;gap:9px;flex-wrap:wrap;color:#64748b;font-size:10.5px}",
+      ".flv-student-copy h2{margin:0 0 4px;font-size:17px;line-height:1.2;color:#202638;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".flv-student-meta{display:flex;gap:7px;flex-wrap:wrap;color:#64748b;font-size:11px;line-height:1.25}",
       ".flv-student-meta span{display:inline-flex;align-items:center;gap:3px}",
       ".flv-student-meta i{font-size:14px;color:#9a5d5d}",
-      ".flv-father{margin-top:4px;color:#94a3b8;font-size:10px}",
+      ".flv-father{margin-top:4px;color:#64748b;font-size:10.5px}",
       ".flv-icon-btn{width:38px;height:38px;flex:0 0 38px;border:1px solid var(--border);background:#fff;border-radius:10px;color:var(--maroon);cursor:pointer;display:grid;place-items:center}",
 
       ".flv-yearbar{margin:0 0 12px}",
-      ".flv-section-label{font-size:9.5px;font-weight:900;letter-spacing:1px;color:#64748b;margin:0 0 6px}",
-      ".flv-years{display:flex;gap:6px;overflow:auto;padding-bottom:2px}",
-      ".flv-year{border:1px solid var(--border);background:#fff;border-radius:10px;padding:7px 10px;min-width:102px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;font:inherit;touch-action:manipulation}",
-      ".flv-year span{font-size:10.5px;font-weight:800;color:#334155}",
-      ".flv-year b{font-size:9.5px}",
+      ".flv-section-label{font-size:10px;font-weight:900;letter-spacing:.9px;color:#64748b;margin:0 0 6px}",
+      ".flv-years{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}",
+      ".flv-years::-webkit-scrollbar{display:none}",
+      ".flv-year{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 10px;min-width:108px;min-height:39px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;font:inherit;touch-action:manipulation}",
+      ".flv-year span{font-size:11px;font-weight:800;color:#334155}",
+      ".flv-year b{font-size:10px}",
       ".flv-year b.due{color:#dc2626}.flv-year b.clear{color:#059669}",
       ".flv-year.active{background:var(--maroon);border-color:var(--maroon)}",
       ".flv-year.active span,.flv-year.active b{color:#fff}",
 
-      ".flv-summary{display:grid;grid-template-columns:2fr 1fr 1fr 1.25fr;gap:8px;margin-bottom:14px}",
-      ".flv-due-card,.flv-stat{border:1px solid var(--border);border-radius:13px;background:#fff;padding:11px 12px;min-height:68px}",
+      ".flv-summary{display:grid;grid-template-columns:1.4fr 1fr 1fr 1.2fr;gap:7px;margin-bottom:13px}",
+      ".flv-due-card,.flv-stat{border:1px solid var(--border);border-radius:12px;background:#fff;padding:10px 11px;min-height:64px}",
       ".flv-due-card{display:flex;justify-content:space-between;align-items:center}",
-      ".flv-due-card span,.flv-stat span{display:block;font-size:9.5px;color:#64748b;font-weight:800}",
-      ".flv-due-card b{display:block;margin-top:2px;font-size:20px;color:#dc2626}",
+      ".flv-due-card span,.flv-stat span{display:block;font-size:10px;color:#64748b;font-weight:800}",
+      ".flv-due-card b{display:block;margin-top:3px;font-size:18px;line-height:1.1;color:#dc2626}",
       ".flv-due-card.clear b{color:#059669}",
-      ".flv-due-card small{font-size:9px;color:#94a3b8}",
-      ".flv-due-card>i{font-size:28px;color:#d8a3a3}",
+      ".flv-due-card small{font-size:9.5px;color:#94a3b8}",
+      ".flv-due-card>i{font-size:25px;color:#d8a3a3}",
       ".flv-due-card.clear>i{color:#86c9ad}",
-      ".flv-stat b{display:block;margin-top:5px;font-size:15px;color:#202638}",
+      ".flv-stat b{display:block;margin-top:5px;font-size:14px;line-height:1.1;color:#202638}",
       ".flv-stat b.green{color:#059669}.flv-stat b.red{color:#dc2626}",
 
-      ".flv-section{padding:14px;margin-bottom:12px}",
-      ".flv-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}",
-      ".flv-section-head h3{margin:2px 0 0;font-size:15px;color:#202638}",
-      ".flv-badge,.flv-count{font-size:9.5px;font-weight:800;color:var(--maroon);background:#faf0f0;border:1px solid #ead6d6;border-radius:999px;padding:5px 8px;white-space:nowrap}",
+      ".flv-section{padding:13px;margin-bottom:12px}",
+      ".flv-section-head{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:9px}",
+      ".flv-section-head h3{margin:2px 0 0;font-size:14px;line-height:1.2;color:#202638}",
+      ".flv-badge{font-size:10px;font-weight:800;color:var(--maroon);background:#faf0f0;border:1px solid #ead6d6;border-radius:999px;padding:5px 8px;white-space:nowrap}",
 
-      ".flv-fee-list{border:1px solid #edf0f3;border-radius:12px;overflow:hidden}",
-      ".flv-fee-row{display:grid;grid-template-columns:minmax(190px,1.7fr) repeat(3,minmax(75px,.7fr));align-items:center;gap:8px;padding:10px;border-bottom:1px solid #f0f2f5}",
+      ".flv-fee-list{border:1px solid #edf0f3;border-radius:11px;overflow:hidden}",
+      ".flv-fee-row{display:grid;grid-template-columns:minmax(150px,1.6fr) repeat(3,minmax(65px,.7fr));align-items:center;gap:6px;padding:10px;border-bottom:1px solid #f0f2f5}",
       ".flv-fee-row:last-child{border-bottom:0}",
-      ".flv-fee-name{display:flex;align-items:center;gap:8px;min-width:0}",
-      ".flv-fee-icon{width:30px;height:30px;border-radius:9px;background:#faf0f0;color:var(--maroon);display:grid;place-items:center;flex:0 0 30px}",
+      ".flv-fee-name{display:flex;align-items:center;gap:7px;min-width:0}",
+      ".flv-fee-icon{width:29px;height:29px;border-radius:8px;background:#faf0f0;color:var(--maroon);display:grid;place-items:center;flex:0 0 29px}",
       ".flv-fee-icon i{font-size:16px}",
-      ".flv-fee-name b{display:block;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".flv-fee-name small{display:block;margin-top:2px;font-size:8.5px}",
+      ".flv-fee-name b{display:block;font-size:11.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".flv-fee-name small{display:block;margin-top:2px;font-size:9.5px}",
       ".flv-fee-name small.pending{color:#dc2626}.flv-fee-name small.cleared{color:#059669}",
       ".flv-fee-num{text-align:right}",
-      ".flv-fee-num small{display:block;color:#94a3b8;font-size:8px;font-weight:700}",
-      ".flv-fee-num b{font-size:11px;color:#334155}",
+      ".flv-fee-num small{display:block;color:#94a3b8;font-size:8.5px;font-weight:700}",
+      ".flv-fee-num b{font-size:11.5px;color:#334155}",
       ".flv-fee-num.due-num b{color:#dc2626}",
 
-      ".flv-ledger-section{padding-bottom:12px}",
+      ".flv-ledger-section{padding-bottom:14px}",
       ".flv-ledger-head{align-items:flex-end}",
-      ".flv-ledger-filter{width:170px;min-height:38px;padding:7px 9px;border:1px solid #dfe5eb;border-radius:10px;background:#fff;color:#202638;font:inherit;font-size:11px;font-weight:700;cursor:pointer;outline:none}",
-      ".flv-ledger-filter:focus{border-color:#c99b9b;box-shadow:0 0 0 3px rgba(138,22,24,.07)}",
+      ".flv-ledger-filter{width:190px;min-height:42px;font-size:12.5px;font-weight:700}",
 
       ".flv-ledger-category{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#f8fafc;border:1px solid #e8edf2;border-radius:11px;padding:9px 10px;margin-bottom:8px}",
-      ".flv-ledger-category span{display:block;color:#94a3b8;font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}",
-      ".flv-ledger-category b{display:block;margin-top:2px;color:#334155;font-size:11px}",
-      ".flv-ledger-category-count{font-size:9px;font-weight:800;color:#64748b;white-space:nowrap}",
+      ".flv-ledger-category span{display:block;color:#94a3b8;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}",
+      ".flv-ledger-category b{display:block;margin-top:2px;color:#334155;font-size:12px;line-height:1.2}",
+      ".flv-ledger-category-count{font-size:10px;font-weight:800;color:#64748b;white-space:nowrap}",
 
-      ".flv-ledger-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:8px}",
-      ".flv-ledger-summary>div{background:#fff;border:1px solid #edf0f3;border-radius:10px;padding:8px 9px}",
-      ".flv-ledger-summary span{display:block;font-size:8.5px;color:#94a3b8;font-weight:800}",
-      ".flv-ledger-summary b{display:block;margin-top:3px;font-size:12px;color:#334155}",
+      ".flv-ledger-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px}",
+      ".flv-ledger-summary>div{background:#fff;border:1px solid #edf0f3;border-radius:10px;padding:9px}",
+      ".flv-ledger-summary span{display:block;font-size:9.5px;color:#94a3b8;font-weight:800}",
+      ".flv-ledger-summary b{display:block;margin-top:4px;font-size:13px;line-height:1.1;color:#334155}",
       ".flv-ledger-summary b.green{color:#059669}.flv-ledger-summary b.red{color:#dc2626}",
 
-      ".flv-ledger-list{border:1px solid #e7ebef;border-radius:12px;overflow:hidden;background:#fff}",
-      ".flv-ledger-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 11px;border-bottom:1px solid #edf0f3}",
-      ".flv-ledger-row:last-child{border-bottom:0}",
-      ".flv-ledger-date{font-size:10.5px;font-weight:800;color:#334155}",
-      ".flv-ledger-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:3px;color:#94a3b8;font-size:8px}",
-      ".flv-ledger-meta span+span:before{content:'•';margin-right:7px;color:#cbd5e1}",
-      ".flv-ledger-paid{text-align:right}",
-      ".flv-ledger-paid small,.flv-ledger-balance small{display:block;font-size:7.5px;color:#94a3b8;font-weight:800}",
-      ".flv-ledger-paid b{display:block;margin-top:2px;color:#059669;font-size:11.5px}",
-      ".flv-ledger-balance{text-align:right;min-width:64px}",
-      ".flv-ledger-balance b{display:block;margin-top:2px;font-size:10.5px}",
-      ".flv-ledger-balance b.pending{color:#dc2626}.flv-ledger-balance b.cleared{color:#059669}",
+      /* Vertical bank-statement flow */
+      ".flv-flow{position:relative;padding:0 1px}",
+      ".flv-flow-opening,.flv-flow-payment,.flv-flow-closing{display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:8px;position:relative}",
+      ".flv-flow-node{position:relative;display:flex;justify-content:center;min-height:100%}",
+      ".flv-flow-dot{width:27px;height:27px;border-radius:50%;display:grid;place-items:center;z-index:2;background:#fff;border:1px solid #dfe5ec}",
+      ".flv-flow-dot i{font-size:15px}",
+      ".flv-flow-dot.assigned{background:#f8eeee;border-color:#ead1d1;color:var(--maroon)}",
+      ".flv-flow-dot.payment{background:#ecfdf5;border-color:#ccefe0;color:#059669}",
+      ".flv-flow-dot.pending-dot{background:#fff7ed;border-color:#fed7aa;color:#c2410c}",
+      ".flv-flow-dot.cleared-dot{background:#ecfdf5;border-color:#ccefe0;color:#059669}",
+      ".flv-flow-line{position:absolute;top:27px;bottom:-8px;width:2px;background:#e7ebef;left:50%;transform:translateX(-50%)}",
+      ".flv-flow-card{min-width:0;border:1px solid #e5e9ee;border-radius:12px;background:#fff;padding:11px 12px;margin-bottom:9px}",
+      ".flv-flow-card.opening-card{background:#fffafa;border-color:#ead6d6}",
+      ".flv-flow-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}",
+      ".flv-flow-card-head b{display:block;margin-top:2px;font-size:13px;line-height:1.2;color:#334155}",
+      ".flv-flow-card-head strong{font-size:16px;line-height:1.1;color:#334155;white-space:nowrap}",
+      ".flv-flow-kicker{display:block;color:#94a3b8;font-size:9px;font-weight:900;letter-spacing:.7px}",
+      ".flv-flow-sub{margin-top:4px;color:#94a3b8;font-size:10px;line-height:1.3}",
+      ".flv-flow-date{font-size:12px;font-weight:900;color:#334155;margin-bottom:7px}",
+      ".flv-flow-payment-main{display:flex;align-items:center;justify-content:space-between;gap:10px}",
+      ".flv-flow-payment-info{min-width:0}",
+      ".flv-flow-payment-info b{display:block;font-size:12px;line-height:1.2;color:#475569}",
+      ".flv-flow-payment-info span{display:block;margin-top:3px;font-size:10px;line-height:1.25;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".flv-flow-payment-main strong{font-size:15px;line-height:1.1;white-space:nowrap}",
+      ".flv-positive{color:#059669}",
+      ".flv-flow-balance{display:flex;align-items:baseline;justify-content:space-between;gap:8px;border-top:1px solid #edf0f3;margin-top:9px;padding-top:8px}",
+      ".flv-flow-balance span{font-size:10px;color:#64748b;font-weight:700}",
+      ".flv-flow-balance b{font-size:13px}",
+      ".flv-flow-balance b.pending{color:#dc2626}.flv-flow-balance b.cleared{color:#059669}",
+      ".flv-flow-empty{margin:2px 0 10px 36px;padding:18px 12px;text-align:center;border:1px dashed #dfe5ec;border-radius:12px;color:#94a3b8}",
+      ".flv-flow-empty-icon{width:32px;height:32px;border-radius:50%;margin:0 auto 6px;background:#f8fafc;display:grid;place-items:center}",
+      ".flv-flow-empty-icon i{font-size:18px}",
+      ".flv-flow-empty b{display:block;font-size:11.5px;color:#475569}",
+      ".flv-flow-empty span{display:block;margin-top:3px;font-size:10px;line-height:1.35}",
+      ".flv-flow-closing .flv-flow-node{padding-top:0}",
+      ".flv-flow-closing .flv-flow-card{margin-bottom:0;background:#fafafa}",
+      ".flv-flow-closing .flv-flow-card>strong{display:block;margin-top:3px;font-size:18px;line-height:1.1}",
+      ".flv-flow-closing .flv-flow-card>strong.pending{color:#dc2626}.flv-flow-closing .flv-flow-card>strong.cleared{color:#059669}",
+      ".flv-flow-closing .flv-flow-card>span:last-child{display:block;margin-top:3px;font-size:10px;color:#64748b}",
 
-      ".flv-ledger-closing{display:flex;justify-content:space-between;align-items:center;padding:10px 11px;background:#fafafa;border-top:1px solid #e7ebef}",
-      ".flv-ledger-closing span{font-size:9px;font-weight:900;color:#64748b}",
-      ".flv-ledger-closing b{font-size:12px}",
-      ".flv-ledger-closing b.pending{color:#dc2626}.flv-ledger-closing b.cleared{color:#059669}",
-
-      ".flv-ledger-empty{padding:24px 14px;text-align:center;color:#94a3b8}",
-      ".flv-ledger-empty i{display:block;font-size:28px;margin-bottom:5px}",
-      ".flv-ledger-empty b{display:block;color:#475569;font-size:11px}",
-      ".flv-ledger-empty span{display:block;margin-top:3px;font-size:9px}",
-
-      ".flv-no-data{padding:22px;text-align:center;color:#94a3b8;font-size:10.5px}",
+      ".flv-no-data{padding:22px;text-align:center;color:#94a3b8;font-size:11px}",
       ".flv-no-data i{font-size:24px;display:block;margin-bottom:4px}",
-
-      ".flv-note{display:flex;align-items:center;gap:7px;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid #e8edf2;color:#64748b;font-size:9.5px}",
+      ".flv-note{display:flex;align-items:center;gap:7px;padding:10px 12px;border-radius:11px;background:#f8fafc;border:1px solid #e8edf2;color:#64748b;font-size:10px;line-height:1.35}",
       ".flv-note i{font-size:16px;color:#94a3b8}",
 
       "@media(max-width:760px){",
         ".flv-page{padding-bottom:22px}",
-        ".flv-head h1{font-size:21px}.flv-head h1 i{font-size:21px}.flv-head p{font-size:10.5px}",
+        ".flv-head h1{font-size:20px}.flv-head h1 i{font-size:20px}.flv-head p{font-size:11.5px}",
         ".flv-pickers{grid-template-columns:1fr 1fr}",
-        ".flv-summary{grid-template-columns:1fr 1fr}",
+        ".flv-summary{grid-template-columns:1.35fr 1fr 1fr}",
         ".flv-due-card{grid-column:1/-1}",
         ".flv-fee-row{grid-template-columns:1fr 1fr 1fr;gap:6px}",
         ".flv-fee-name{grid-column:1/-1}",
         ".flv-fee-num{text-align:left}",
         ".flv-fee-num.due-num{text-align:right}",
-        ".flv-ledger-row{grid-template-columns:minmax(0,1fr) auto auto;gap:7px}",
+        ".flv-ledger-row{grid-template-columns:1fr}",
       "}",
 
       "@media(max-width:430px){",
@@ -955,12 +996,11 @@
         ".flv-student-meta{gap:5px}",
         ".flv-student-meta span:nth-child(3){width:100%}",
         ".flv-ledger-head{align-items:flex-start;flex-direction:column}",
-        ".flv-ledger-filter{width:100%;min-height:40px}",
-        ".flv-ledger-row{grid-template-columns:minmax(0,1fr) auto;gap:7px}",
-        ".flv-ledger-balance{grid-column:2;grid-row:1/2}",
-        ".flv-ledger-paid{grid-column:2;grid-row:2}",
-        ".flv-ledger-meta{max-width:210px}",
-        ".flv-ledger-summary b{font-size:11px}",
+        ".flv-ledger-filter{width:100%;min-height:44px;font-size:13px}",
+        ".flv-flow-card{padding:11px}",
+        ".flv-flow-payment-main strong{font-size:14px}",
+        ".flv-flow-card-head strong{font-size:15px}",
+        ".flv-flow-empty{margin-left:0}",
       "}",
 
       "@media(min-width:900px){body{display:none!important}}",
