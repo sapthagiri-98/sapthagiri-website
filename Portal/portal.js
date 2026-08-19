@@ -233,7 +233,7 @@
     ],
     feemgmt: [
       { id: "feemgmt", label: "Fee Management", icon: "account_balance_wallet", href: "fee-management.html", mgmt: true },
-      { id: "feeview", label: "View Fees & Ledger", icon: "visibility", href: "fee-ledger-view.html", mgmt: true, mobileOnly: true }
+      { id: "feeview", label: "View Fees & Ledger", icon: "visibility", href: "fee-ledger-view.html", mgmt: true }
     ]
   };
   function _groupOf(activeId) {
@@ -251,7 +251,12 @@
       return true;
     });
   }
-  function _href(m) { return m.soon ? ("coming-soon.html?m=" + encodeURIComponent(m.label)) : m.href; }
+  function _href(m) {
+    if (m && m.id === "feemgmt" && isMobileAdmin(Session.get())) {
+      return "fee-ledger-view.html";
+    }
+    return m.soon ? ("coming-soon.html?m=" + encodeURIComponent(m.label)) : m.href;
+  }
   function renderNav(activeId, session) {
     var items = _visibleMenu(session);
     var eff = _groupOf(activeId) || activeId; // sub-tab pages highlight their group's sidebar item
@@ -279,26 +284,10 @@
     var isAttendanceEntry = String(session.name || "").trim().toLowerCase() === "attendance entry";
     // Attendance Entry is intentionally restricted to the Daily Entry page.
     // Do not expose Monthly Sheet / Report / Absentee tabs to this account.
-    /*
-     * View Fees & Ledger is a phone-only Admin view.
-     * Do not expose its navigation on desktop at all.
-     */
-    var isFeeView = group === "feemgmt" && activeId === "feeview";
-    if (isFeeView) {
-      var feeViewPhone = (window.innerWidth || document.documentElement.clientWidth || 9999) < 900;
-      var feeViewAdmin = String(session.role || "").toLowerCase() === "management" &&
-        String(session.name || "").trim().toLowerCase() === String((CONFIG.ADMIN_USER_NAME || "Admin")).trim().toLowerCase();
-      if (!feeViewPhone || !feeViewAdmin) return;
-    }
-
     var tabs = isAttendanceEntry
       ? SUBTABS[group].filter(function (t) { return t.id === "attendance"; })
       : SUBTABS[group].filter(function (t) {
-          if (group === "feemgmt" && t.id === "feeview") {
-            return isMgmt &&
-              String(session.name || "").trim().toLowerCase() === String((CONFIG.ADMIN_USER_NAME || "Admin")).trim().toLowerCase() &&
-              (window.innerWidth || document.documentElement.clientWidth || 9999) < 900;
-          }
+          if (isMobileAdmin(session) && t.id === "feemgmt") return false;
           return t.mgmt ? isMgmt : (t.teacherOnly ? !isMgmt : true);
         });
     if (tabs.length < 2) return; // nothing to switch between
@@ -345,17 +334,6 @@
 
   function bootPage(activeId) {
     var session = Session.require(); if (!session) return null;
-
-    // View Fees & Ledger is a Principal/Admin mobile-only page.
-    // Keep it inaccessible on desktop/PC even if its URL is entered directly.
-    if (activeId === "feeview") {
-      var isMobile = (window.innerWidth || document.documentElement.clientWidth) < MOBILE_ADMIN_BP;
-      if (session.role !== "Management" || !isMobile) {
-        window.location.replace("fee-management.html");
-        return null;
-      }
-    }
-
     renderChrome({ app: true, userName: session.name });
     renderNav(activeId, session); renderSubtabs(activeId, session);
     _applyReadOnlyClass(session);
