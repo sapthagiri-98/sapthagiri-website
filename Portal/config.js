@@ -74,7 +74,7 @@ window.PORTAL_CONFIG = {
     "feeGetStudentCharges","feeSetStudentCharges","feeSyncStudents",
     "feeDailyCollection","feeCollectionByRange","feeCollectionByType",
     "feeCollectionByClass","feeYearWiseCollection","feeOutstanding",
-    "feeReceiptRegister","feeLongPending","feeTotals","feeMigrationReport",
+    "feeReceiptRegister","feeLongPending","feeTotals","feeMigrationReport", "feeGetSchoolTotals",
     "feeAddFeeType","feeSetCurrentYear","feeSetMigrationYear","feeSetPassword",
     "feeChangeStudentId","feeGetFullAuditStatement","feeAssignCarryForwardOldDue", "feeDuesCallList", "feeVoidAllocation"
   ],
