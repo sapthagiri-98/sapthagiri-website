@@ -7,6 +7,22 @@
   if (!session) return;
   var esc = P.esc, $ = function (id) { return document.getElementById(id); };
   var ME = session.name || "Admin", GATE = "fin_gate_v3", SCHOOL_TOTALS_GATE = "school_totals_gate_v1";
+
+  /*
+   * MOBILE FINANCE ROUTE
+   * --------------------
+   * On mobile, Fee Management System is a read-only browsing module.
+   * Do not show the desktop Fee Management password gate.
+   * Send Management directly to the dedicated mobile Fees & Ledger page.
+   *
+   * Desktop behaviour remains completely unchanged.
+   */
+  var _financeViewport = window.innerWidth || document.documentElement.clientWidth || 9999;
+  if (_financeViewport < 900) {
+    location.replace("fee-ledger-view.html");
+    return;
+  }
+
   css();
   var BOOT = null, YEAR = "";
   var L = { student: null, account: null, fin: null, stmt: null, view: "ALL", yview: "", perYear: [] };
