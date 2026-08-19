@@ -168,9 +168,21 @@
 
         return new Promise(function (resolve, reject) {
           var existing = document.querySelector('script[data-receipt-html2pdf="1"]');
+
           if (existing) {
-            existing.addEventListener("load", function () { resolve(window.html2pdf); }, { once: true });
-            existing.addEventListener("error", function () { reject(new Error("Could not load the PDF generator.")); }, { once: true });
+            if (window.html2pdf) {
+              resolve(window.html2pdf);
+              return;
+            }
+
+            existing.addEventListener("load", function () {
+              resolve(window.html2pdf);
+            }, { once: true });
+
+            existing.addEventListener("error", function () {
+              reject(new Error("Could not load the PDF generator."));
+            }, { once: true });
+
             return;
           }
 
@@ -178,62 +190,118 @@
           script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
           script.async = true;
           script.setAttribute("data-receipt-html2pdf", "1");
+
           script.onload = function () {
             if (window.html2pdf) resolve(window.html2pdf);
             else reject(new Error("PDF generator loaded incorrectly."));
           };
+
           script.onerror = function () {
             reject(new Error("Could not load the PDF generator."));
           };
+
           document.head.appendChild(script);
         });
       }
 
-      function waitForImages(doc) {
-        var images = Array.prototype.slice.call(doc.images || []);
+      /*
+       * The receipt preview and the PDF must use the exact same HTML.
+       *
+       * Do NOT render the PDF target inside an iframe. html2canvas can create
+       * a blank canvas when asked to capture an element belonging to another
+       * document, especially when that iframe is hidden/off-screen.
+       *
+       * Instead, parse the receipt HTML and render its <body> in a temporary
+       * same-document container. This gives html2canvas the actual DOM tree
+       * and the receipt's own CSS while leaving the portal visually untouched.
+       */
+      function buildPdfTarget() {
+        var html = self.buildReceiptHtml(r);
+        var parser = new DOMParser();
+        var parsed = parser.parseFromString(html, "text/html");
+
+        var holder = document.createElement("div");
+
+        holder.style.position = "fixed";
+        holder.style.left = "0";
+        holder.style.top = "0";
+        holder.style.width = "794px";
+        holder.style.minHeight = "1123px";
+        holder.style.background = "#ffffff";
+        holder.style.zIndex = "-2147483647";
+        holder.style.pointerEvents = "none";
+        holder.style.overflow = "visible";
+        holder.style.visibility = "visible";
+        holder.style.opacity = "1";
+
+        /*
+         * Copy the receipt's complete internal stylesheet into this document
+         * so the PDF rendering matches the existing receipt preview.
+         */
+        Array.prototype.forEach.call(parsed.head.querySelectorAll("style"), function (styleNode) {
+          var style = document.createElement("style");
+          style.textContent = styleNode.textContent || "";
+          holder.appendChild(style);
+        });
+
+        var body = parsed.body;
+        while (body.firstChild) {
+          holder.appendChild(body.firstChild);
+        }
+
+        document.body.appendChild(holder);
+
+        return holder;
+      }
+
+      function waitForImages(root) {
+        var images = Array.prototype.slice.call(root.querySelectorAll("img"));
+
         if (!images.length) return Promise.resolve();
 
         return Promise.all(images.map(function (img) {
-          if (img.complete) return Promise.resolve();
+          if (img.complete && img.naturalWidth > 0) {
+            return Promise.resolve();
+          }
+
           return new Promise(function (resolve) {
-            img.onload = resolve;
-            img.onerror = resolve;
+            var settled = false;
+
+            function done() {
+              if (settled) return;
+              settled = true;
+              resolve();
+            }
+
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+
+            /*
+             * Do not allow one external image to hold up receipt generation.
+             */
+            setTimeout(done, 2500);
           });
         }));
       }
 
       return loadHtml2Pdf().then(function (html2pdf) {
-        var holder = document.createElement("iframe");
-        holder.style.position = "fixed";
-        holder.style.left = "-100000px";
-        holder.style.top = "0";
-        holder.style.width = "794px";
-        holder.style.height = "1123px";
-        holder.style.border = "0";
+        var holder;
 
-        /*
-         * IMPORTANT:
-         * Do not use visibility:hidden here.
-         *
-         * html2canvas/html2pdf can treat content inside a hidden iframe as
-         * non-renderable, which produces a valid but completely blank PDF.
-         * Keep the iframe rendered, but place it far outside the viewport.
-         */
-        holder.style.visibility = "visible";
-        holder.style.opacity = "1";
-        holder.style.pointerEvents = "none";
-        holder.style.zIndex = "-1";
-        document.body.appendChild(holder);
-
-        var doc = holder.contentWindow.document;
-        doc.open();
-        doc.write(self.buildReceiptHtml(r));
-        doc.close();
+        try {
+          holder = buildPdfTarget();
+        } catch (err) {
+          return Promise.reject(err);
+        }
 
         return new Promise(function (resolve, reject) {
+          /*
+           * Give the browser time to apply the copied receipt stylesheet and
+           * resolve the school logo before html2canvas takes its snapshot.
+           */
           setTimeout(function () {
-            waitForImages(doc).then(function () {
-              var target = doc.querySelector(".receipt-card");
+            waitForImages(holder).then(function () {
+              var target = holder.querySelector(".receipt-card");
+
               if (!target) {
                 holder.remove();
                 reject(new Error("Could not prepare the receipt for download."));
@@ -244,18 +312,25 @@
                 .set({
                   margin: [10, 10, 10, 10],
                   filename: "Fee-Receipt-" + String(r.receiptId || "Receipt") + ".pdf",
-                  image: { type: "jpeg", quality: 0.98 },
+                  image: {
+                    type: "jpeg",
+                    quality: 0.98
+                  },
                   html2canvas: {
                     scale: 2,
                     useCORS: true,
-                    backgroundColor: "#ffffff"
+                    allowTaint: false,
+                    backgroundColor: "#ffffff",
+                    logging: false
                   },
                   jsPDF: {
                     unit: "mm",
                     format: "a4",
                     orientation: "portrait"
                   },
-                  pagebreak: { mode: ["css", "legacy"] }
+                  pagebreak: {
+                    mode: ["css", "legacy"]
+                  }
                 })
                 .from(target)
                 .save()
@@ -275,6 +350,7 @@
         });
       });
     },
+
 
     // ---------------------------------------------------------------------
     // A4 MULTI-PAGE FULL AUDIT LEDGER (Split Subtables & Fee Type Closing)
