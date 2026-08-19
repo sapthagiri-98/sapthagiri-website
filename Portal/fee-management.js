@@ -325,13 +325,6 @@
    * print/PDF flow. The user can choose "Save as PDF" and Chrome will use the
    * normal Downloads location. WhatsApp is opened immediately after.
    */
-  /*
-   * Receipt Share
-   * -------------
-   * Share must NOT use ReceiptShare.print() and must NOT use a local helper.
-   * The receipt preview stays inside this modal, while the Share button opens
-   * WhatsApp Desktop directly with the receipt-specific message pre-filled.
-   */
   function openReceiptSharePreviewModal(r) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
     var cleanPhone = String(phone || "").replace(/\D/g, "");
@@ -356,7 +349,7 @@
     ].join("\n");
 
     var waUrl = cleanPhone
-      ? "whatsapp://send?phone=91" + encodeURIComponent(cleanPhone) + "&text=" + encodeURIComponent(whatsappMessage)
+      ? "https://wa.me/91" + encodeURIComponent(cleanPhone) + "?text=" + encodeURIComponent(whatsappMessage)
       : "";
 
     var modalHtml =
@@ -370,7 +363,7 @@
             '<i class="material-icons">open_in_new</i> Open WhatsApp' +
           '</button>' +
         '</div>' +
-        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">The receipt is shown below for review. Open WhatsApp will take you directly to the parent chat with the message ready to send.</div>' +
+        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Open WhatsApp will open the existing receipt print/PDF window and prepare the parent chat message. Save the receipt as PDF, then attach it in WhatsApp and press Send.</div>' +
       '</div>' +
       '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
         '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
@@ -391,23 +384,45 @@
         btn.onclick = function () {
           if (!cleanPhone) return toast("Parent WhatsApp number is missing.", "err");
 
+          var note = $("receiptShareNote");
+          btn.disabled = true;
+          btn.innerHTML = '<i class="material-icons">sync</i> Opening…';
+
           /*
-           * This is intentionally a direct whatsapp:// launch.
-           * No helper, Node server, PowerShell, print window, or browser
-           * wa.me page is involved.
+           * Use the existing receipt generator. This is the same function used
+           * by the normal Print Receipt action, so there is only one receipt
+           * rendering implementation in the portal.
            */
           try {
-            window.location.href = waUrl;
+            ReceiptShare.print(r);
           } catch (err) {
-            return toast("Could not open WhatsApp: " + (err.message || err), "err");
+            btn.disabled = false;
+            btn.innerHTML = '<i class="material-icons">open_in_new</i> Open WhatsApp';
+            if (note) note.textContent = "Could not open the receipt print window: " + (err.message || err);
+            return toast("Could not open receipt print window: " + (err.message || err), "err");
           }
 
-          var note = $("receiptShareNote");
-          if (note) note.textContent = "WhatsApp is opening the parent chat with the message ready to send.";
+          if (note) {
+            note.textContent = "Receipt opened in Chrome's print/PDF window. Choose Save as PDF, then WhatsApp will open with the message ready.";
+          }
 
-          btn.disabled = true;
-          btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opening';
-          btn.style.background = "#059669";
+          /*
+           * wa.me is already the portal's direct WhatsApp mechanism. On a
+           * Windows machine with WhatsApp Desktop installed, Windows/Chrome
+           * can hand the WhatsApp link to the desktop application. If it is
+           * not registered, Chrome will open the normal WhatsApp destination.
+           */
+          try {
+            window.open(waUrl, "_blank");
+          } catch (_) {
+            window.location.href = waUrl;
+          }
+
+          setTimeout(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
+            btn.style.background = "#059669";
+          }, 900);
         };
       }
     }, 40);
@@ -774,7 +789,7 @@
     $("pReports").innerHTML =
       '<div class="page-card reports-page">' +
         '<div class="page-card-head">' +
-          '<div><span class="eyebrow">FINANCE REPORTS</span><h2><i class="material-icons">assessment</i> Reports</h2><p>Class-wise student reports are available directly. School totals include current-year receivables and separately show dues from inactive / left students.</p></div>' +
+          '<div><span class="eyebrow">FINANCE REPORTS</span><h2><i class="material-icons">assessment</i> Reports</h2><p>Class-wise student reports are available directly. School totals require a separate password.</p></div>' +
           '<div class="report-stat"><i class="material-icons">account_balance_wallet</i><span id="repYearLabel">' + esc(YEAR) + '</span></div>' +
         '</div>' +
         '<div class="subt report-tabs" id="reportTabs">' +
@@ -1017,23 +1032,80 @@
   }
 
   function renderReportTotals(d) {
-    var feeBody = d.feeRows.map(function (r) {
-      return '<tr>' +
-        '<td><b>' + esc(r.name) + '</b></td>' +
-        '<td class="r">' + reportMoney(r.assigned) + '</td>' +
-        '<td class="r">' + reportMoney(r.collected) + '</td>' +
-        '<td class="r"><b class="' + (r.due > 0 ? 'due' : 'ok') + '">' + reportMoney(r.due) + '</b></td>' +
-      '</tr>';
-    }).join("");
+    var dueRows = d.totalDueRows || d.feeRows || [];
+    var collectionRows = d.totalCollectionRows || d.feeRows || [];
 
-    var classBody = d.classRows.map(function (r) {
-      return '<tr class="' + (r.special ? 'report-inactive-row' : '') + '">' +
-        '<td><b>' + esc(r.className) + '</b>' + (r.special ? '<span class="subline">Previous-year / inactive receivable carried into current totals</span>' : '') + '</td>' +
-        '<td class="r">' + r.students + '</td>' +
-        '<td class="r">' + reportMoney(r.assigned) + '</td>' +
-        '<td class="r">' + reportMoney(r.collected) + '</td>' +
-        '<td class="r"><b class="' + (r.outstanding > 0 ? 'due' : 'ok') + '">' + reportMoney(r.outstanding) + '</b></td>' +
-      '</tr>';
+    function legacyRows(rows, valueKey) {
+      return rows.map(function (r) {
+        var value = Number(r[valueKey]) || 0;
+        return '<tr class="' + (r.special ? 'report-inactive-row' : '') + '">' +
+          '<td><b>' + esc(r.name) + '</b>' +
+            (r.special ? '<span class="subline">Previous-year / inactive receivable</span>' : '') +
+          '</td><td class="r">' + reportMoney(value) + '</td></tr>';
+      }).join("");
+    }
+
+    function classFeeCodes() {
+      var seen = {}, rows = [];
+      (d.classFeeRows || []).forEach(function (c) {
+        (c.feeRows || []).forEach(function (r) {
+          if (!seen[r.code]) { seen[r.code] = true; rows.push({ code: r.code, name: r.name }); }
+        });
+      });
+      (d.feeRows || []).forEach(function (r) {
+        if (!seen[r.code]) { seen[r.code] = true; rows.push({ code: r.code, name: r.name }); }
+      });
+      return rows.sort(function (a, b) { return reportFeeWeight(a) - reportFeeWeight(b); });
+    }
+
+    var feeOptions = classFeeCodes();
+    var defaultFee = feeOptions.find(function (x) { return x.code !== "OLD_DUE"; }) || feeOptions[0] || null;
+
+    function classSummaryHtml(feeCode) {
+      if (!feeCode) return '<div class="empty"><i class="material-icons">payments</i>Select a fee type to see the class-wise breakdown.</div>';
+
+      if (feeCode === "OLD_DUE") {
+        var activeRows = (d.classFeeRows || []).map(function (c) {
+          var fr = (c.feeRows || []).find(function (r) { return String(r.code) === "OLD_DUE"; });
+          if (!fr) fr = { assigned: 0, collected: 0, due: 0 };
+          return { className: c.className, previousClass: c.previousClass || "Mixed", assigned: Number(fr.assigned) || 0, collected: Number(fr.collected) || 0, due: Number(fr.due) || 0 };
+        }).filter(function (r) { return r.assigned > 0.005 || r.collected > 0.005 || r.due > 0.005; });
+
+        var inactiveRows = d.inactiveOldDueRows || [];
+        var activeTotal = activeRows.reduce(function (a, r) { a.assigned += r.assigned; a.collected += r.collected; a.due += r.due; return a; }, { assigned: 0, collected: 0, due: 0 });
+        var inactiveTotal = inactiveRows.reduce(function (a, r) { a.assigned += Number(r.assigned) || 0; a.collected += Number(r.collected) || 0; a.due += Number(r.due) || 0; return a; }, { assigned: 0, collected: 0, due: 0 });
+        var activeHtml = activeRows.length ? activeRows.map(function (r) {
+          return '<tr><td><b>' + esc(r.className) + '</b></td><td>' + esc(r.previousClass) + '</td><td class="r">' + reportMoney(r.assigned) + '</td><td class="r">' + reportMoney(r.collected) + '</td><td class="r"><b class="' + (r.due > 0 ? 'due' : 'ok') + '">' + reportMoney(r.due) + '</b></td></tr>';
+        }).join("") + '<tr class="grand"><th>TOTAL ACTIVE OLD DUE</th><th></th><th class="r">' + reportMoney(activeTotal.assigned) + '</th><th class="r">' + reportMoney(activeTotal.collected) + '</th><th class="r">' + reportMoney(activeTotal.due) + '</th></tr>' : '<tr><td colspan="5" class="mut">No active-student Old Due.</td></tr>';
+        var inactiveHtml = inactiveRows.length ? inactiveRows.map(function (r) {
+          return '<tr class="report-inactive-row"><td>' + esc(r.leavingYear || d.previousYear || "") + '</td><td><b>' + esc(r.previousClass || "Unknown") + '</b></td><td>' + esc(r.status || "Inactive / Left") + '</td><td class="r">' + reportMoney(r.assigned) + '</td><td class="r">' + reportMoney(r.collected) + '</td><td class="r"><b class="' + (Number(r.due) > 0 ? 'due' : 'ok') + '">' + reportMoney(r.due) + '</b></td></tr>';
+        }).join("") + '<tr class="grand"><th>TOTAL INACTIVE OLD DUE</th><th></th><th></th><th class="r">' + reportMoney(inactiveTotal.assigned) + '</th><th class="r">' + reportMoney(inactiveTotal.collected) + '</th><th class="r">' + reportMoney(inactiveTotal.due) + '</th></tr>' : '<tr><td colspan="6" class="mut">No inactive / passed-out Old Due.</td></tr>';
+
+        return '<div class="report-two-col" style="margin-top:14px">' +
+          '<section class="report-box"><div class="report-box-head"><div><span class="eyebrow">ACTIVE STUDENTS</span><h3>Old Due · Active</h3><p>Previous class → current class</p></div></div>' +
+          '<div class="tw"><table class="tbl report-table"><thead><tr><th>Current Class</th><th>Previous Class</th><th class="r">Assigned</th><th class="r">Received</th><th class="r">Due</th></tr></thead><tbody>' + activeHtml + '</tbody></table></div></section>' +
+          '<section class="report-box"><div class="report-box-head"><div><span class="eyebrow">INACTIVE / LEFT</span><h3>Old Due · Inactive</h3><p>Previous-year students whose balance remains collectible</p></div></div>' +
+          '<div class="tw"><table class="tbl report-table"><thead><tr><th>Leaving Year</th><th>Last Class</th><th>Status</th><th class="r">Assigned</th><th class="r">Received</th><th class="r">Due</th></tr></thead><tbody>' + inactiveHtml + '</tbody></table></div></section>' +
+        '</div>';
+      }
+
+      var rows = (d.classFeeRows || []).map(function (c) {
+        var fr = (c.feeRows || []).find(function (r) { return String(r.code) === String(feeCode); });
+        return { className: c.className, assigned: fr ? Number(fr.assigned) || 0 : 0, collected: fr ? Number(fr.collected) || 0 : 0, due: fr ? Number(fr.due) || 0 : 0 };
+      });
+      var body = rows.map(function (r) {
+        return '<tr><td><b>' + esc(r.className) + '</b></td><td class="r">' + reportMoney(r.assigned) + '</td><td class="r">' + reportMoney(r.collected) + '</td><td class="r"><b class="' + (r.due > 0 ? 'due' : 'ok') + '">' + reportMoney(r.due) + '</b></td></tr>';
+      }).join("");
+      var total = rows.reduce(function (a, r) { a.assigned += r.assigned; a.collected += r.collected; a.due += r.due; return a; }, { assigned: 0, collected: 0, due: 0 });
+      var label = feeOptions.find(function (x) { return String(x.code) === String(feeCode); });
+      return '<section class="report-box" style="margin-top:14px"><div class="report-box-head"><div><span class="eyebrow">CLASS SUMMARY</span><h3>' + esc(label ? label.name : feeCode) + ' · Class-wise</h3><p>Assigned, received and remaining due for each active class.</p></div></div>' +
+        '<div class="tw"><table class="tbl report-table"><thead><tr><th>Class</th><th class="r">Assigned</th><th class="r">Received</th><th class="r">Due</th></tr></thead><tbody>' +
+        (body || '<tr><td colspan="4" class="mut">No class data.</td></tr>') +
+        '<tr class="grand"><th>TOTAL</th><th class="r">' + reportMoney(total.assigned) + '</th><th class="r">' + reportMoney(total.collected) + '</th><th class="r">' + reportMoney(total.due) + '</th></tr></tbody></table></div></section>';
+    }
+
+    var feeOptionsHtml = feeOptions.map(function (x) {
+      return '<option value="' + esc(x.code) + '"' + (defaultFee && x.code === defaultFee.code ? ' selected' : '') + '>' + esc(x.name) + '</option>';
     }).join("");
 
     $("repTB").innerHTML =
@@ -1041,53 +1113,69 @@
         tot(reportMoney(d.outstanding), "TOTAL DUES", d.outstanding > 0 ? "red" : "green") +
         tot(reportMoney(d.collected), "TOTAL RECEIVED", "green") +
         tot(reportMoney(d.assigned), "TOTAL ASSIGNED", "") +
-        tot(reportMoney(d.inactiveDue || 0), "INACTIVE / LEFT DUE", (d.inactiveDue || 0) > 0 ? "amber" : "green") +
       '</div>' +
-
       '<div class="report-two-col">' +
-        '<section class="report-box legacy-box">' +
-          '<div class="legacy-box-title">TOTAL DUES</div>' +
-          '<div class="tw"><table class="tbl report-legacy-table"><tbody>' +
-            feeRowsLegacy(d.feeRows, "due") +
-            '<tr class="grand"><td><b>TOTAL DUES</b></td><td class="r"><b>' + reportMoney(d.outstanding) + '</b></td></tr>' +
-          '</tbody></table></div>' +
-        '</section>' +
-
-        '<section class="report-box legacy-box">' +
-          '<div class="legacy-box-title">TOTAL COLLECTION</div>' +
-          '<div class="tw"><table class="tbl report-legacy-table"><tbody>' +
-            feeRowsLegacy(d.feeRows, "collected") +
-            '<tr class="grand"><td><b>TOTAL RECEIVED AMOUNT</b></td><td class="r"><b>' + reportMoney(d.collected) + '</b></td></tr>' +
-          '</tbody></table></div>' +
-        '</section>' +
+        '<section class="report-box legacy-box"><div class="legacy-box-title">TOTAL DUES</div><div class="tw"><table class="tbl report-legacy-table"><tbody>' +
+          legacyRows(dueRows, "due") +
+          '<tr class="grand"><td><b>TOTAL DUES</b></td><td class="r"><b>' + reportMoney(d.outstanding) + '</b></td></tr>' +
+        '</tbody></table></div></section>' +
+        '<section class="report-box legacy-box"><div class="legacy-box-title">TOTAL COLLECTION</div><div class="tw"><table class="tbl report-legacy-table"><tbody>' +
+          legacyRows(collectionRows, "collected") +
+          '<tr class="grand"><td><b>TOTAL RECEIVED AMOUNT</b></td><td class="r"><b>' + reportMoney(d.collected) + '</b></td></tr>' +
+        '</tbody></table></div></section>' +
       '</div>' +
+      '<section class="report-box" style="margin-top:14px">' +
+        '<div class="report-box-head"><div><span class="eyebrow">CLASS SUMMARY</span><h3>Class-wise Fee Breakdown</h3><p>Select one fee type to compare assigned, received and due class by class.</p></div>' +
+        '<div style="min-width:220px">' + selc("payments", "Fee Type", '<select id="schoolClassFeeType" class="in">' + feeOptionsHtml + '</select>') + '</div></div>' +
+        '<div id="schoolClassFeeSummary">' + classSummaryHtml(defaultFee ? defaultFee.code : "") + '</div>' +
+      '</section>';
 
-      '<section class="report-box">' +
-        '<div class="report-box-head"><div><span class="eyebrow">CLASS SUMMARY</span><h3>Class-wise Totals</h3><p>Students, assigned fees, received amount and remaining due.</p></div></div>' +
-        '<div class="tw"><table class="tbl report-table"><thead><tr><th>Class</th><th class="r">Students</th><th class="r">Assigned</th><th class="r">Received</th><th class="r">Due</th></tr></thead><tbody>' +
-          (classBody || '<tr><td colspan="5" class="mut">No class data.</td></tr>') +
-        '</tbody></table></div>' +
-      '</section>' +
-
-      '';
+    var feeSel = $("schoolClassFeeType");
+    if (feeSel) feeSel.onchange = function () { $("schoolClassFeeSummary").innerHTML = classSummaryHtml(this.value); };
   }
 
   function printReportTotals() {
     if (!REPORTS.totals) return toast("Load the totals report first.", "err");
     var d = REPORTS.totals;
-    var rows = d.feeRows.map(function (r) {
-      return '<tr><td>' + esc(r.name) + '</td><td class="amount">' + reportMoney(r.assigned) + '</td><td class="amount">' + reportMoney(r.collected) + '</td><td class="amount">' + reportMoney(r.due) + '</td></tr>';
+    var dueRows = d.totalDueRows || d.feeRows || [];
+    var collectionRows = d.totalCollectionRows || d.feeRows || [];
+    var feeCode = REPORTS.selectedSchoolFeeType || "";
+
+    var rows = dueRows.map(function (r) {
+      return '<tr><td>' + esc(r.name) + '</td><td class="amount">' + reportMoney(r.assigned) + '</td><td class="amount">' + reportMoney(r.due) + '</td></tr>';
     }).join("");
-    var classRows = d.classRows.map(function (r) {
-      return '<tr><td>' + esc(r.className) + '</td><td>' + r.students + '</td><td class="amount">' + reportMoney(r.assigned) + '</td><td class="amount">' + reportMoney(r.collected) + '</td><td class="amount">' + reportMoney(r.outstanding) + '</td></tr>';
+    var collectionRowsHtml = collectionRows.map(function (r) {
+      return '<tr><td>' + esc(r.name) + '</td><td class="amount">' + reportMoney(r.collected) + '</td></tr>';
     }).join("");
+
+    var classRows = (d.classFeeRows || []).map(function (c) {
+      var fr = (c.feeRows || []).find(function (r) { return String(r.code) === String(feeCode); });
+      return '<tr><td>' + esc(c.className) + '</td><td class="amount">' + reportMoney(fr ? fr.assigned : 0) + '</td><td class="amount">' + reportMoney(fr ? fr.collected : 0) + '</td><td class="amount">' + reportMoney(fr ? fr.due : 0) + '</td></tr>';
+    }).join("");
+
+    var detail = '';
+    if (feeCode === "OLD_DUE") {
+      var activeOldRows = (d.classFeeRows || []).map(function (c) {
+        var fr = (c.feeRows || []).find(function (r) { return String(r.code) === "OLD_DUE"; });
+        if (!fr || ((Number(fr.assigned) || 0) <= 0.005 && (Number(fr.collected) || 0) <= 0.005 && (Number(fr.due) || 0) <= 0.005)) return "";
+        return '<tr><td>' + esc(c.className) + '</td><td>' + esc(c.previousClass || "Mixed") + '</td><td class="amount">' + reportMoney(fr.assigned) + '</td><td class="amount">' + reportMoney(fr.collected) + '</td><td class="amount">' + reportMoney(fr.due) + '</td></tr>';
+      }).join("");
+      var inactiveOldRows = (d.inactiveOldDueRows || []).map(function (r) {
+        return '<tr><td>' + esc(r.leavingYear || d.previousYear || "") + '</td><td>' + esc(r.previousClass || "Unknown") + '</td><td>' + esc(r.status || "Inactive / Left") + '</td><td class="amount">' + reportMoney(r.assigned) + '</td><td class="amount">' + reportMoney(r.collected) + '</td><td class="amount">' + reportMoney(r.due) + '</td></tr>';
+      }).join("");
+      detail = '<h3 style="margin-top:18px">Old Due · Active Students</h3><table><thead><tr><th>Current Class</th><th>Previous Class</th><th>Assigned</th><th>Received</th><th>Due</th></tr></thead><tbody>' + (activeOldRows || '<tr><td colspan="5">No active Old Due.</td></tr>') + '</tbody></table>' +
+        '<h3 style="margin-top:18px">Old Due · Inactive / Left Students</h3><table><thead><tr><th>Leaving Year</th><th>Last Class</th><th>Status</th><th>Assigned</th><th>Received</th><th>Due</th></tr></thead><tbody>' + (inactiveOldRows || '<tr><td colspan="6">No inactive Old Due.</td></tr>') + '</tbody></table>';
+    } else {
+      var label = (d.feeRows || []).find(function (r) { return String(r.code) === String(feeCode); });
+      detail = '<h3 style="margin-top:18px">' + esc(label ? label.name : feeCode) + ' · Class-wise</h3><table><thead><tr><th>Class</th><th>Assigned</th><th>Received</th><th>Due</th></tr></thead><tbody>' + classRows + '</tbody></table>';
+    }
+
     var html =
       '<div class="print-logo"><img src="receipt-header-logo.png" alt="School logo" onerror="this.style.display=none"/></div>' +
       '<div class="print-title">FEE TOTALS REPORT</div><div class="print-meta">' + esc(d.year) + '</div>' +
-      '<h3>Fee Type Totals</h3><table><thead><tr><th>Fee Type</th><th>Assigned</th><th>Received</th><th>Remaining Due</th></tr></thead><tbody>' +
-      rows + '<tr><th>TOTAL</th><th class="amount">' + reportMoney(d.assigned) + '</th><th class="amount">' + reportMoney(d.collected) + '</th><th class="amount">' + reportMoney(d.outstanding) + '</th></tr></tbody></table>' +
-      '<h3 style="margin-top:18px">Class-wise Totals</h3><table><thead><tr><th>Class</th><th>Students</th><th>Assigned</th><th>Received</th><th>Due</th></tr></thead><tbody>' +
-      classRows + '</tbody></table><div class="print-foot">Printed on ' + esc(new Date().toLocaleString("en-IN")) + '</div>';
+      '<h3>Total Dues</h3><table><thead><tr><th>Fee Type</th><th>Assigned</th><th>Due</th></tr></thead><tbody>' + rows + '<tr><th>TOTAL DUES</th><th class="amount">' + reportMoney(d.assigned) + '</th><th class="amount">' + reportMoney(d.outstanding) + '</th></tr></tbody></table>' +
+      '<h3 style="margin-top:18px">Total Collection</h3><table><thead><tr><th>Fee Type</th><th>Received</th></tr></thead><tbody>' + collectionRowsHtml + '<tr><th>TOTAL RECEIVED AMOUNT</th><th class="amount">' + reportMoney(d.collected) + '</th></tr></tbody></table>' +
+      detail + '<div class="print-foot">Printed on ' + esc(new Date().toLocaleString("en-IN")) + '</div>';
     printHtml("Fee Totals Report", html);
   }
 
@@ -1301,11 +1389,20 @@
   function exportReportTotals() {
     if (!REPORTS.totals) return toast("Load the totals report first.", "err");
     var d = REPORTS.totals, rows = [["Fee Type", "Assigned", "Received", "Remaining Due"]];
-    d.feeRows.forEach(function (r) { rows.push([r.name, r.assigned, r.collected, r.due]); });
+    (d.totalDueRows || d.feeRows || []).forEach(function (r) { rows.push([r.name, r.assigned, r.collected, r.due]); });
     rows.push(["TOTAL", d.assigned, d.collected, d.outstanding]);
     rows.push([]);
-    rows.push(["CLASS", "STUDENTS", "ASSIGNED", "RECEIVED", "OUTSTANDING"]);
-    d.classRows.forEach(function (r) { rows.push([r.className, r.students, r.assigned, r.collected, r.outstanding]); });
+    var feeCode = REPORTS.selectedSchoolFeeType || "";
+    rows.push(["CLASS", "ASSIGNED", "RECEIVED", "DUE"]);
+    (d.classFeeRows || []).forEach(function (c) {
+      var fr = (c.feeRows || []).find(function (r) { return String(r.code) === String(feeCode); });
+      rows.push([c.className, fr ? fr.assigned : 0, fr ? fr.collected : 0, fr ? fr.due : 0]);
+    });
+    if (feeCode === "OLD_DUE") {
+      rows.push([]);
+      rows.push(["INACTIVE / LEFT OLD DUE", "ASSIGNED", "RECEIVED", "DUE"]);
+      (d.inactiveOldDueRows || []).forEach(function (r) { rows.push([String(r.leavingYear || d.previousYear || ""), String(r.previousClass || "") + " · " + String(r.status || ""), r.assigned, r.collected, r.due]); });
+    }
     downloadCsv("fee-totals-" + d.year + ".csv", rows);
   }
 
