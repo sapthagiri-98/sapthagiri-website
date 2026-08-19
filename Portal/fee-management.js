@@ -307,14 +307,50 @@
 
   function withReceipt(rid, year, cb) { P.api("feeGetReceipt", [rid, year], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
 
-  // LOCAL WINDOWS RECEIPT WORKFLOW
-  // Generates/saves the PDF through the local helper, opens the parent chat,
-  // types the WhatsApp message into the chat, and opens Explorer with the PDF selected.
+  /*
+   * Receipt sharing uses the EXISTING ReceiptShare receipt generator.
+   *
+   * Flow:
+   *   1. Show the real receipt preview using ReceiptShare.buildReceiptHtml().
+   *   2. Open the existing ReceiptShare.print() window so Chrome renders the
+   *      exact same receipt for Print / Save as PDF.
+   *   3. Open the parent's WhatsApp chat with the message pre-filled.
+   *
+   * There is deliberately NO html2pdf, local helper, Node server, PowerShell,
+   * Explorer automation, or WhatsApp API here.
+   *
+   * Browser limitation:
+   * Chrome does not allow a normal webpage to silently save a generated PDF
+   * into Downloads. ReceiptShare.print() therefore uses the browser's native
+   * print/PDF flow. The user can choose "Save as PDF" and Chrome will use the
+   * normal Downloads location. WhatsApp is opened immediately after.
+   */
   function openReceiptSharePreviewModal(r) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
     var cleanPhone = String(phone || "").replace(/\D/g, "");
 
-    var receiptIframeHtml = ReceiptShare.buildReceiptHtml(r);
+    var receiptHtml = ReceiptShare.buildReceiptHtml(r);
+
+    var amount = Number(r.currentPayment != null ? r.currentPayment : (r.amount || 0));
+    var balance = Number(r.balance != null ? r.balance : (r.balanceAfter || 0));
+    var studentName = r.studentName || (L.student ? L.student.name : "your child") || (PAY.student ? PAY.student.name : "your child");
+    var feeType = r.feeType || "Fee";
+
+    var whatsappMessage = [
+      "Dear Parent,",
+      "",
+      "We have received Rs. " + amount.toLocaleString("en-IN") + " towards " + feeType + " for " + studentName + ".",
+      "Remaining Balance: Rs. " + balance.toLocaleString("en-IN"),
+      "",
+      "Thank you.",
+      "",
+      "- PRINCIPAL,",
+      "SAPTHAGIRI SCHOOL."
+    ].join("\n");
+
+    var waUrl = cleanPhone
+      ? "https://wa.me/91" + encodeURIComponent(cleanPhone) + "?text=" + encodeURIComponent(whatsappMessage)
+      : "";
 
     var modalHtml =
       '<div style="margin-bottom:12px;background:#f8fafc;padding:12px 14px;border-radius:10px;border:1px solid #e2e8f0;">' +
@@ -324,10 +360,10 @@
             '<div style="font-size:15px;font-weight:800;color:#1e293b;">📱 ' + (cleanPhone ? "+91 " + cleanPhone : '<span style="color:#b91c1c;">No Number Found</span>') + '</div>' +
           '</div>' +
           '<button class="btn btn-sm" id="btnModalSendWA" style="background:#166534;color:#fff;" ' + (!cleanPhone ? 'disabled' : '') + '>' +
-            '<i class="material-icons">open_in_new</i> Prepare WhatsApp + Receipt' +
+            '<i class="material-icons">open_in_new</i> Open WhatsApp' +
           '</button>' +
         '</div>' +
-        '<div id="localReceiptHelperNote" style="margin-top:8px;font-size:12px;color:#64748b;">The local Windows helper will create the PDF, type the message in WhatsApp Desktop, and open the PDF selected in Explorer.</div>' +
+        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Open WhatsApp will open the existing receipt print/PDF window and prepare the parent chat message. Save the receipt as PDF, then attach it in WhatsApp and press Send.</div>' +
       '</div>' +
       '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
         '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
@@ -339,7 +375,7 @@
       var frame = $("receiptPreviewFrame");
       if (frame && frame.contentWindow) {
         frame.contentWindow.document.open();
-        frame.contentWindow.document.write(receiptIframeHtml);
+        frame.contentWindow.document.write(receiptHtml);
         frame.contentWindow.document.close();
       }
 
@@ -348,53 +384,45 @@
         btn.onclick = function () {
           if (!cleanPhone) return toast("Parent WhatsApp number is missing.", "err");
 
+          var note = $("receiptShareNote");
           btn.disabled = true;
-          btn.innerHTML = '<i class="material-icons">sync</i> Preparing…';
+          btn.innerHTML = '<i class="material-icons">sync</i> Opening…';
 
-          var note = document.getElementById("localReceiptHelperNote");
-          if (note) note.textContent = "Creating PDF and opening WhatsApp…";
-
-          fetch("http://127.0.0.1:8765/prepare-receipt", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              phone: cleanPhone,
-              receipt: r,
-              receiptHtml: receiptIframeHtml,
-              whatsappMessage: [
-                "Dear Parent,",
-                "",
-                "We have received Rs. " + Number(r.currentPayment != null ? r.currentPayment : r.amount || 0).toLocaleString("en-IN") +
-                  " towards " + (r.feeType || "Fee") + " for " + (r.studentName || "your child") + ".",
-                "",
-                "Thank you.",
-                "",
-                "- PRINCIPAL,",
-                "SAPTHAGIRI SCHOOL."
-              ].join(String.fromCharCode(10))
-            })
-          })
-          .then(function (res) {
-            return res.text().then(function (text) {
-              var data;
-              try { data = JSON.parse(text); }
-              catch (e) { throw new Error("Local helper returned an invalid response: " + text.slice(0, 200)); }
-              if (!res.ok || !data.ok) throw new Error(data.error || "Local receipt helper failed.");
-              return data;
-            });
-          })
-          .then(function (data) {
-            if (note) note.textContent = "PDF saved: " + data.filePath + " · WhatsApp message typed. Drag the selected PDF into the chat and press Send.";
-            toast("PDF saved and WhatsApp message prepared.", "ok");
-            btn.innerHTML = '<i class="material-icons">done</i> Prepared';
-            btn.style.background = "#059669";
-          })
-          .catch(function (err) {
-            if (note) note.textContent = "Helper error: " + (err.message || err);
-            toast("Local helper error: " + (err.message || err), "err");
+          /*
+           * Use the existing receipt generator. This is the same function used
+           * by the normal Print Receipt action, so there is only one receipt
+           * rendering implementation in the portal.
+           */
+          try {
+            ReceiptShare.print(r);
+          } catch (err) {
             btn.disabled = false;
-            btn.innerHTML = '<i class="material-icons">open_in_new</i> Prepare WhatsApp + Receipt';
-          });
+            btn.innerHTML = '<i class="material-icons">open_in_new</i> Open WhatsApp';
+            if (note) note.textContent = "Could not open the receipt print window: " + (err.message || err);
+            return toast("Could not open receipt print window: " + (err.message || err), "err");
+          }
+
+          if (note) {
+            note.textContent = "Receipt opened in Chrome's print/PDF window. Choose Save as PDF, then WhatsApp will open with the message ready.";
+          }
+
+          /*
+           * wa.me is already the portal's direct WhatsApp mechanism. On a
+           * Windows machine with WhatsApp Desktop installed, Windows/Chrome
+           * can hand the WhatsApp link to the desktop application. If it is
+           * not registered, Chrome will open the normal WhatsApp destination.
+           */
+          try {
+            window.open(waUrl, "_blank");
+          } catch (_) {
+            window.location.href = waUrl;
+          }
+
+          setTimeout(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
+            btn.style.background = "#059669";
+          }, 900);
         };
       }
     }, 40);
@@ -562,7 +590,7 @@
         '<div style="display:flex;align-items:center;gap:6px;">' +
           '<b style="color:#047857;">' + money(r.currentPayment || r.amount) + '</b> ' +
           '<button class="mini" onclick="window.printSingleReceipt(\'' + esc(r.receiptId) + '\')"><i class="material-icons" style="font-size:14px">print</i> Print</button>' +
-          '<button class="mini" id="waBtn_' + idx + '" style="color:#166534;border-color:#bbf7d0;" onclick="window.prepareSingleLocalReceipt(' + idx + ')"><i class="material-icons" style="font-size:14px">open_in_new</i> Prepare WhatsApp + Receipt</button>' +
+          '<button class="mini" id="waBtn_' + idx + '" style="color:#166534;border-color:#bbf7d0;" onclick="window.openSingleReceiptShare(' + idx + ')"><i class="material-icons" style="font-size:14px">send</i> Open WhatsApp</button>' +
         '</div>' +
       '</div>';
     }).join("");
@@ -574,7 +602,7 @@
       withReceipt(rid, function (rc) { ReceiptShare.print(rc); });
     };
 
-    window.prepareSingleLocalReceipt = function (idx) {
+    window.openSingleReceiptShare = function (idx) {
       var rc = window._multiReceiptCache[idx];
       if (rc) openReceiptSharePreviewModal(rc);
     };
