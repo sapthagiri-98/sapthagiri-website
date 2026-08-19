@@ -4,23 +4,47 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Fees &amp; Ledger · View</title>
+
+  <!--
+    IMPORTANT:
+    portal.js renders navigation icons using:
+      <i class="material-icons">assignment_turned_in</i>
+    Attendance.html already loads the Material Icons stylesheet.
+    This page must load the same stylesheet before portal.js runs.
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
+
   <link rel="stylesheet" href="portal.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="app-sidebar" id="nav"></aside>
+
     <main class="app-main">
       <div id="view"></div>
     </main>
   </div>
+
   <nav class="mobile-bottom-nav" id="mobileNav"></nav>
+
   <script src="config.js"></script>
+
   <script>
     (function () {
+      /*
+       * Fee ledger view is the mobile-only entry point.
+       * Desktop users are redirected to the normal management page.
+       */
       var w = window.innerWidth || document.documentElement.clientWidth || 9999;
-      if (w >= 900) location.replace("fee-management.html");
+      if (w >= 900) {
+        location.replace("fee-management.html");
+        return;
+      }
     })();
   </script>
+
   <script src="portal.js"></script>
   <script src="fee-ledger-view.js"></script>
 </body>
