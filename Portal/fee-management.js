@@ -284,6 +284,7 @@
                 if (res.success) {
                   toast("Fee assignment updated.", "ok");
                   closeModal("mdl");
+                  REPORTS.totals = null;
                   L.stmt = null;
                   refresh();
                 } else {
@@ -306,53 +307,29 @@
 
   function withReceipt(rid, year, cb) { P.api("feeGetReceipt", [rid, year], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
 
-  // Shows the receipt preview first. When the user confirms, the local Windows helper
-  // generates the PDF, opens WhatsApp Desktop, types the parent message, and leaves
-  // the receipt selected in Explorer for the user to attach and send manually.
   /*
-   * Receipt sharing is fully browser-side.
+   * Receipt sharing uses the EXISTING ReceiptShare receipt generator.
    *
    * Flow:
-   *   1. Show the real receipt preview.
-   *   2. On "Open WhatsApp", generate/download the receipt PDF in Chrome.
+   *   1. Show the real receipt preview using ReceiptShare.buildReceiptHtml().
+   *   2. Open the existing ReceiptShare.print() window so Chrome renders the
+   *      exact same receipt for Print / Save as PDF.
    *   3. Open the parent's WhatsApp chat with the message pre-filled.
    *
-   * No local helper, Node server, PowerShell, or WhatsApp API is used.
+   * There is deliberately NO html2pdf, local helper, Node server, PowerShell,
+   * Explorer automation, or WhatsApp API here.
+   *
+   * Browser limitation:
+   * Chrome does not allow a normal webpage to silently save a generated PDF
+   * into Downloads. ReceiptShare.print() therefore uses the browser's native
+   * print/PDF flow. The user can choose "Save as PDF" and Chrome will use the
+   * normal Downloads location. WhatsApp is opened immediately after.
    */
-  function loadHtml2Pdf() {
-    if (window.html2pdf) return Promise.resolve(window.html2pdf);
-    if (window._sapthagiriHtml2PdfPromise) return window._sapthagiriHtml2PdfPromise;
-
-    window._sapthagiriHtml2PdfPromise = new Promise(function (resolve, reject) {
-      var existing = document.querySelector('script[data-sapthagiri-html2pdf="1"]');
-      if (existing) {
-        existing.addEventListener("load", function () { resolve(window.html2pdf); });
-        existing.addEventListener("error", function () { reject(new Error("Could not load the browser PDF generator.")); });
-        return;
-      }
-
-      var script = document.createElement("script");
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
-      script.async = true;
-      script.setAttribute("data-sapthagiri-html2pdf", "1");
-      script.onload = function () {
-        if (window.html2pdf) resolve(window.html2pdf);
-        else reject(new Error("Browser PDF generator loaded but is unavailable."));
-      };
-      script.onerror = function () {
-        reject(new Error("Could not load the browser PDF generator. Check the internet connection."));
-      };
-      document.head.appendChild(script);
-    });
-
-    return window._sapthagiriHtml2PdfPromise;
-  }
-
   function openReceiptSharePreviewModal(r) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
     var cleanPhone = String(phone || "").replace(/\D/g, "");
 
-    var receiptIframeHtml = ReceiptShare.buildReceiptHtml(r);
+    var receiptHtml = ReceiptShare.buildReceiptHtml(r);
 
     var amount = Number(r.currentPayment != null ? r.currentPayment : (r.amount || 0));
     var balance = Number(r.balance != null ? r.balance : (r.balanceAfter || 0));
@@ -371,9 +348,6 @@
       "SAPTHAGIRI SCHOOL."
     ].join("\n");
 
-    var safeStudent = String(studentName || "Student").replace(/[\\/:*?"<>|]/g, "_").trim() || "Student";
-    var safeReceipt = String(r.receiptId || "Receipt").replace(/[\\/:*?"<>|]/g, "_").trim();
-    var filename = safeStudent + "_" + safeReceipt + ".pdf";
     var waUrl = cleanPhone
       ? "https://wa.me/91" + encodeURIComponent(cleanPhone) + "?text=" + encodeURIComponent(whatsappMessage)
       : "";
@@ -389,7 +363,7 @@
             '<i class="material-icons">open_in_new</i> Open WhatsApp' +
           '</button>' +
         '</div>' +
-        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Open WhatsApp will download the PDF and open the parent chat with the message ready. You will attach the downloaded PDF and press Send.</div>' +
+        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Open WhatsApp will open the existing receipt print/PDF window and prepare the parent chat message. Save the receipt as PDF, then attach it in WhatsApp and press Send.</div>' +
       '</div>' +
       '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
         '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
@@ -401,7 +375,7 @@
       var frame = $("receiptPreviewFrame");
       if (frame && frame.contentWindow) {
         frame.contentWindow.document.open();
-        frame.contentWindow.document.write(receiptIframeHtml);
+        frame.contentWindow.document.write(receiptHtml);
         frame.contentWindow.document.close();
       }
 
@@ -412,85 +386,43 @@
 
           var note = $("receiptShareNote");
           btn.disabled = true;
-          btn.innerHTML = '<i class="material-icons">sync</i> Downloading…';
-          if (note) note.textContent = "Generating the receipt PDF in Chrome…";
+          btn.innerHTML = '<i class="material-icons">sync</i> Opening…';
 
           /*
-           * Open the target window immediately while this click still has
-           * user activation. It is navigated to WhatsApp after the PDF is
-           * downloaded, avoiding popup blockers.
+           * Use the existing receipt generator. This is the same function used
+           * by the normal Print Receipt action, so there is only one receipt
+           * rendering implementation in the portal.
            */
-          var waWindow = null;
           try {
-            waWindow = window.open("about:blank", "_blank");
-            if (waWindow) {
-              try {
-                waWindow.document.title = "Opening WhatsApp…";
-                waWindow.document.body.innerHTML = '<div style="font-family:Segoe UI,Arial;padding:30px;font-size:16px;">Opening WhatsApp…</div>';
-              } catch (_) {}
-            }
-          } catch (_) {}
+            ReceiptShare.print(r);
+          } catch (err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="material-icons">open_in_new</i> Open WhatsApp';
+            if (note) note.textContent = "Could not open the receipt print window: " + (err.message || err);
+            return toast("Could not open receipt print window: " + (err.message || err), "err");
+          }
 
-          loadHtml2Pdf()
-            .then(function (html2pdf) {
-              var f = $("receiptPreviewFrame");
-              if (!f || !f.contentDocument || !f.contentDocument.querySelector(".receipt-card")) {
-                throw new Error("Receipt preview is not ready.");
-              }
+          if (note) {
+            note.textContent = "Receipt opened in Chrome's print/PDF window. Choose Save as PDF, then WhatsApp will open with the message ready.";
+          }
 
-              var card = f.contentDocument.querySelector(".receipt-card");
+          /*
+           * wa.me is already the portal's direct WhatsApp mechanism. On a
+           * Windows machine with WhatsApp Desktop installed, Windows/Chrome
+           * can hand the WhatsApp link to the desktop application. If it is
+           * not registered, Chrome will open the normal WhatsApp destination.
+           */
+          try {
+            window.open(waUrl, "_blank");
+          } catch (_) {
+            window.location.href = waUrl;
+          }
 
-              return html2pdf()
-                .set({
-                  margin: [8, 8, 8, 8],
-                  filename: filename,
-                  image: { type: "jpeg", quality: 0.98 },
-                  html2canvas: {
-                    scale: 2,
-                    useCORS: true,
-                    backgroundColor: "#ffffff",
-                    logging: false
-                  },
-                  jsPDF: {
-                    unit: "mm",
-                    format: "a4",
-                    orientation: "portrait"
-                  },
-                  pagebreak: {
-                    mode: ["css", "legacy"],
-                    avoid: ["tr"]
-                  }
-                })
-                .from(card)
-                .save();
-            })
-            .then(function () {
-              if (note) note.textContent = "Receipt PDF downloaded. Opening WhatsApp Desktop with the message ready…";
-              btn.innerHTML = '<i class="material-icons">open_in_new</i> Opening WhatsApp…';
-
-              if (waWindow && !waWindow.closed) {
-                waWindow.location.href = waUrl;
-              } else {
-                window.open(waUrl, "_blank");
-              }
-
-              setTimeout(function () {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
-                btn.style.background = "#059669";
-                if (note) note.textContent = "Receipt PDF downloaded. WhatsApp is open with the message ready. Attach the PDF from Downloads and press Send.";
-              }, 700);
-            })
-            .catch(function (err) {
-              if (waWindow && !waWindow.closed) {
-                try { waWindow.close(); } catch (_) {}
-              }
-
-              btn.disabled = false;
-              btn.innerHTML = '<i class="material-icons">open_in_new</i> Open WhatsApp';
-              if (note) note.textContent = "Could not create the PDF automatically: " + (err.message || err);
-              toast("Receipt PDF could not be downloaded: " + (err.message || err), "err");
-            });
+          setTimeout(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
+            btn.style.background = "#059669";
+          }, 900);
         };
       }
     }, 40);
@@ -525,6 +457,7 @@
           .then(function (res) {
             if (res.success) {
               toast("Allocation for " + code + " voided.", "ok");
+              REPORTS.totals = null;
               L.stmt = null;
               refresh();
             }
@@ -623,6 +556,7 @@
         }
         toast("Recorded successfully.", "ok");
         
+        REPORTS.totals = null;
         var sid = PAY.account.studentId;
         var wasMulti = !!(res.multiReceipts && res.multiReceipts.length);
         if (wasMulti) {
@@ -833,6 +767,7 @@
 
     P.api("feeSaveFeeSheet", [d.year, d.className, rows, ME], { text: "Saving…" })
       .then(function (res) {
+        REPORTS.totals = null;
         toast("Saved " + (res.changed || 0) + " change(s)." + (res.errors && res.errors.length ? " " + res.errors.length + " blocked." : ""), res.errors && res.errors.length ? "err" : "ok");
         b.disabled = false;
         b.innerHTML = '<i class="material-icons">save</i> Save Fee Sheet';
@@ -919,7 +854,8 @@
             SCHOOL_TOTALS_PW = pw;
             sessionStorage.setItem(SCHOOL_TOTALS_GATE, JSON.stringify({ exp: Date.now() + 15 * 60000 }));
             REPORTS.totals = d;
-            closeModal("mdl");
+            var totalsModal = $("mdl");
+            if (totalsModal) totalsModal.classList.remove("show");
             renderReportTotals(d);
             Array.prototype.forEach.call($("reportTabs").querySelectorAll("button"), function (b) {
               b.classList.toggle("active", b.getAttribute("data-rv") === "totals");
@@ -1058,7 +994,13 @@
     var y = $("repTY").value;
     REPORTS.year = y;
     $("repYearLabel").textContent = y;
-    $("repTB").innerHTML = mt("Calculating school totals…");
+
+    if (REPORTS.totals && REPORTS.totals.year === y) {
+      renderReportTotals(REPORTS.totals);
+      return;
+    }
+
+    $("repTB").innerHTML = mt("Loading school totals…");
 
     if (!SCHOOL_TOTALS_PW) {
       openSchoolTotalsGate();
