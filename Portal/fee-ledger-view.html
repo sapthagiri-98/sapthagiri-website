@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Fees &amp; Ledger · View</title>
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="app-sidebar" id="nav"></aside>
+    <main class="app-main">
+      <div id="view"></div>
+    </main>
+  </div>
+  <nav class="mobile-bottom-nav" id="mobileNav"></nav>
+  <script src="config.js"></script>
+  <script>
+    (function () {
+      var w = window.innerWidth || document.documentElement.clientWidth || 9999;
+      if (w >= 900) location.replace("fee-management.html");
+    })();
+  </script>
+  <script src="portal.js"></script>
+  <script src="fee-ledger-view.js"></script>
+</body>
+</html>
