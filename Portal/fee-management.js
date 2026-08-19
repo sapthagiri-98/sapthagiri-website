@@ -308,22 +308,22 @@
   function withReceipt(rid, year, cb) { P.api("feeGetReceipt", [rid, year], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
 
   /*
-   * Receipt sharing uses the EXISTING ReceiptShare receipt generator.
+   * Receipt sharing:
    *
-   * Flow:
-   *   1. Show the real receipt preview using ReceiptShare.buildReceiptHtml().
-   *   2. Open the existing ReceiptShare.print() window so Chrome renders the
-   *      exact same receipt for Print / Save as PDF.
-   *   3. Open the parent's WhatsApp chat with the message pre-filled.
-   *
-   * There is deliberately NO html2pdf, local helper, Node server, PowerShell,
-   * Explorer automation, or WhatsApp API here.
+   * 1. Keep the receipt preview inside the portal modal.
+   * 2. DO NOT call ReceiptShare.print() here. That intentionally opens
+   *    Chrome's print/PDF preview and was causing the popup conflict.
+   * 3. Open one blank tab synchronously from the user's click so Chrome
+   *    allows it.
+   * 4. Use ReceiptShare.share() to generate/download the same A4 receipt
+   *    as a PDF without opening the print preview.
+   * 5. Navigate the already-approved tab to WhatsApp after the PDF is ready.
    *
    * Browser limitation:
-   * Chrome does not allow a normal webpage to silently save a generated PDF
-   * into Downloads. ReceiptShare.print() therefore uses the browser's native
-   * print/PDF flow. The user can choose "Save as PDF" and Chrome will use the
-   * normal Downloads location. WhatsApp is opened immediately after.
+   * WhatsApp cannot be given a local PDF file as an attachment by a normal
+   * webpage. The PDF is therefore downloaded automatically, while WhatsApp
+   * opens with the message ready. The user only needs to attach the downloaded
+   * PDF and press Send.
    */
   function openReceiptSharePreviewModal(r) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
@@ -360,10 +360,10 @@
             '<div style="font-size:15px;font-weight:800;color:#1e293b;">📱 ' + (cleanPhone ? "+91 " + cleanPhone : '<span style="color:#b91c1c;">No Number Found</span>') + '</div>' +
           '</div>' +
           '<button class="btn btn-sm" id="btnModalSendWA" style="background:#166534;color:#fff;" ' + (!cleanPhone ? 'disabled' : '') + '>' +
-            '<i class="material-icons">open_in_new</i> Open WhatsApp' +
+            '<i class="material-icons">open_in_new</i> Download PDF + Open WhatsApp' +
           '</button>' +
         '</div>' +
-        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Open WhatsApp will open the existing receipt print/PDF window and prepare the parent chat message. Save the receipt as PDF, then attach it in WhatsApp and press Send.</div>' +
+        '<div id="receiptShareNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. Clicking the button will download the PDF automatically and open WhatsApp with the message ready.</div>' +
       '</div>' +
       '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
         '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
@@ -386,43 +386,55 @@
 
           var note = $("receiptShareNote");
           btn.disabled = true;
-          btn.innerHTML = '<i class="material-icons">sync</i> Opening…';
+          btn.innerHTML = '<i class="material-icons">sync</i> Preparing PDF…';
 
           /*
-           * Use the existing receipt generator. This is the same function used
-           * by the normal Print Receipt action, so there is only one receipt
-           * rendering implementation in the portal.
+           * IMPORTANT:
+           * Open exactly one blank tab during the user click.
+           * This avoids Chrome treating the later WhatsApp navigation as
+           * a second popup after the asynchronous PDF generation.
            */
+          var waWindow = null;
           try {
-            ReceiptShare.print(r);
-          } catch (err) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="material-icons">open_in_new</i> Open WhatsApp';
-            if (note) note.textContent = "Could not open the receipt print window: " + (err.message || err);
-            return toast("Could not open receipt print window: " + (err.message || err), "err");
-          }
-
-          if (note) {
-            note.textContent = "Receipt opened in Chrome's print/PDF window. Choose Save as PDF, then WhatsApp will open with the message ready.";
-          }
+            waWindow = window.open("", "_blank");
+          } catch (_) {}
 
           /*
-           * wa.me is already the portal's direct WhatsApp mechanism. On a
-           * Windows machine with WhatsApp Desktop installed, Windows/Chrome
-           * can hand the WhatsApp link to the desktop application. If it is
-           * not registered, Chrome will open the normal WhatsApp destination.
+           * ReceiptShare.share() uses the same receipt HTML but generates the
+           * PDF directly with html2pdf. It does NOT call window.print().
            */
-          try {
-            window.open(waUrl, "_blank");
-          } catch (_) {
-            window.location.href = waUrl;
-          }
+          ReceiptShare.share(r).then(function () {
+            if (note) {
+              note.textContent = "Receipt PDF downloaded. Opening WhatsApp with the message ready. Attach the downloaded PDF and press Send.";
+            }
 
-          setTimeout(function () {
+            if (waWindow && !waWindow.closed) {
+              waWindow.location.href = waUrl;
+            } else {
+              /*
+               * If the browser blocked the blank tab, use the current tab
+               * rather than attempting another popup.
+               */
+              window.location.href = waUrl;
+            }
+
+            setTimeout(function () {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
+              btn.style.background = "#059669";
+            }, 900);
+          }).catch(function (err) {
+            if (waWindow && !waWindow.closed) waWindow.close();
+
             btn.disabled = false;
-            btn.innerHTML = '<i class="material-icons">done</i> WhatsApp Opened';
-            btn.style.background = "#059669";
-          }, 900);
+            btn.innerHTML = '<i class="material-icons">open_in_new</i> Download PDF + Open WhatsApp';
+
+            if (note) {
+              note.textContent = "Could not download the receipt: " + (err.message || err);
+            }
+
+            toast("Could not download the receipt: " + (err.message || err), "err");
+          });
         };
       }
     }, 40);
