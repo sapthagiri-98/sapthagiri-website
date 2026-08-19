@@ -210,7 +210,19 @@
         holder.style.width = "794px";
         holder.style.height = "1123px";
         holder.style.border = "0";
-        holder.style.visibility = "hidden";
+
+        /*
+         * IMPORTANT:
+         * Do not use visibility:hidden here.
+         *
+         * html2canvas/html2pdf can treat content inside a hidden iframe as
+         * non-renderable, which produces a valid but completely blank PDF.
+         * Keep the iframe rendered, but place it far outside the viewport.
+         */
+        holder.style.visibility = "visible";
+        holder.style.opacity = "1";
+        holder.style.pointerEvents = "none";
+        holder.style.zIndex = "-1";
         document.body.appendChild(holder);
 
         var doc = holder.contentWindow.document;
@@ -259,7 +271,7 @@
               holder.remove();
               reject(err);
             });
-          }, 150);
+          }, 300);
         });
       });
     },
