@@ -306,24 +306,43 @@
 
   function withReceipt(rid, year, cb) { P.api("feeGetReceipt", [rid, year], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
 
-  // Shows the receipt preview modal with live Send WhatsApp button
+  // Shows the receipt preview first. When the user confirms, the local Windows helper
+  // generates the PDF, opens WhatsApp Desktop, types the parent message, and leaves
+  // the receipt selected in Explorer for the user to attach and send manually.
   function openReceiptSharePreviewModal(r) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
     var cleanPhone = String(phone || "").replace(/\D/g, "");
 
     var receiptIframeHtml = ReceiptShare.buildReceiptHtml(r);
 
+    var amount = Number(r.currentPayment != null ? r.currentPayment : (r.amount || 0));
+    var balance = Number(r.balance != null ? r.balance : (r.balanceAfter || 0));
+    var studentName = r.studentName || (L.student ? L.student.name : "your child") || (PAY.student ? PAY.student.name : "your child");
+    var feeType = r.feeType || "Fee";
+    var whatsappMessage = [
+      "Dear Parent,",
+      "",
+      "We have received Rs. " + amount.toLocaleString("en-IN") + " towards " + feeType + " for " + studentName + ".",
+      "Remaining Balance: Rs. " + balance.toLocaleString("en-IN"),
+      "",
+      "Thank you.",
+      "",
+      "- PRINCIPAL,",
+      "SAPTHAGIRI SCHOOL."
+    ].join("\n");
+
     var modalHtml =
-      '<div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;padding:10px 14px;border-radius:10px;border:1px solid #e2e8f0;">' +
-        '<div>' +
-          '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Recipient Mobile</span>' +
-          '<div style="font-size:15px;font-weight:800;color:#1e293b;">📱 ' + (cleanPhone ? "+91 " + cleanPhone : '<span style="color:#b91c1c;">No Number Found</span>') + '</div>' +
-        '</div>' +
-        '<div>' +
+      '<div style="margin-bottom:12px;background:#f8fafc;padding:12px 14px;border-radius:10px;border:1px solid #e2e8f0;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
+          '<div>' +
+            '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Recipient Mobile</span>' +
+            '<div style="font-size:15px;font-weight:800;color:#1e293b;">📱 ' + (cleanPhone ? "+91 " + cleanPhone : '<span style="color:#b91c1c;">No Number Found</span>') + '</div>' +
+          '</div>' +
           '<button class="btn btn-sm" id="btnModalSendWA" style="background:#166534;color:#fff;" ' + (!cleanPhone ? 'disabled' : '') + '>' +
-            '<i class="material-icons">send</i> Send to WhatsApp' +
+            '<i class="material-icons">open_in_new</i> Prepare WhatsApp + Receipt' +
           '</button>' +
         '</div>' +
+        '<div id="localReceiptHelperNote" style="margin-top:8px;font-size:12px;color:#64748b;">Review the receipt below. When ready, the local Windows helper will create the PDF, open WhatsApp Desktop, type the message, and select the PDF in Explorer.</div>' +
       '</div>' +
       '<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;max-height:55vh;overflow-y:auto;">' +
         '<iframe id="receiptPreviewFrame" style="width:100%;height:450px;border:none;display:block;"></iframe>' +
@@ -342,34 +361,44 @@
       var btn = $("btnModalSendWA");
       if (btn) {
         btn.onclick = function () {
-          btn.disabled = true;
-          btn.innerHTML = '<i class="material-icons">sync</i> Sending…';
+          if (!cleanPhone) return toast("Parent WhatsApp number is missing.", "err");
 
-          fetch("https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/whatsapp-api", {
+          btn.disabled = true;
+          btn.innerHTML = '<i class="material-icons">sync</i> Preparing…';
+
+          var note = $("localReceiptHelperNote");
+          if (note) note.textContent = "Creating PDF and opening WhatsApp Desktop…";
+
+          fetch("http://127.0.0.1:8765/prepare-receipt", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              action: "sendReceiptWhatsApp",
               phone: cleanPhone,
-              receipt: r
+              receipt: r,
+              receiptHtml: receiptIframeHtml,
+              whatsappMessage: whatsappMessage
             })
           })
-          .then(function (res) { return res.json(); })
-          .then(function (resData) {
-            if (resData.ok) {
-              toast("Receipt sent to parent's WhatsApp!", "ok");
-              btn.innerHTML = '<i class="material-icons">done</i> Sent';
-              btn.style.background = "#059669";
-            } else {
-              toast("Failed: " + (resData.error || "Could not send"), "err");
-              btn.disabled = false;
-              btn.innerHTML = '<i class="material-icons">send</i> Retry WhatsApp';
-            }
+          .then(function (res) {
+            return res.text().then(function (text) {
+              var data;
+              try { data = JSON.parse(text); }
+              catch (e) { throw new Error("Local helper returned an invalid response: " + text.slice(0, 200)); }
+              if (!res.ok || !data.ok) throw new Error(data.error || "Local receipt helper failed.");
+              return data;
+            });
+          })
+          .then(function (data) {
+            if (note) note.textContent = "PDF saved: " + (data.filePath || "local receipt folder") + " · WhatsApp Desktop is ready with the message typed. Attach the PDF and press Send.";
+            toast("PDF prepared and WhatsApp Desktop message typed.", "ok");
+            btn.innerHTML = '<i class="material-icons">done</i> Prepared';
+            btn.style.background = "#059669";
           })
           .catch(function (err) {
-            toast("API Error: " + (err.message || err), "err");
+            if (note) note.textContent = "Helper error: " + (err.message || err) + " Start the local receipt helper first.";
+            toast("Local helper error: " + (err.message || err), "err");
             btn.disabled = false;
-            btn.innerHTML = '<i class="material-icons">send</i> Retry WhatsApp';
+            btn.innerHTML = '<i class="material-icons">open_in_new</i> Prepare WhatsApp + Receipt';
           });
         };
       }
@@ -481,7 +510,12 @@
       '<div class="tw"><table class="tbl"><thead><tr><th>Fee</th><th class="r">Assigned</th><th class="r">Collected</th><th class="r">Balance</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<div class="pc"><h3><i class="material-icons">payments</i> Collect a Payment</h3>' + (a.canPay ? '<div class="note"><i class="material-icons">info</i>Enter amount — auto-allocates: Study Materials → Old Due → Misc → Tuition → Transport.</div><div class="prow"><div class="fld"><label>Amount Received</label><input id="cA" class="in big" type="number" min="1" inputmode="numeric"/></div><div class="fld"><label>Mode</label><select id="cM" class="in">' + (BOOT.modes || []).map(function (m) { return '<option>' + m + '</option>'; }).join("") + '</select></div><div class="fld"><label>Date</label><input id="cD" class="in" value="' + today() + '"/></div></div><div class="fld"><label>Remarks (optional)</label><input id="cRm" class="in"/></div><button class="btn btn-maroon" id="cPv"><i class="material-icons">visibility</i> Preview Allocation</button><div id="cCh"></div><div id="cPr"></div>' : '<div class="note ok"><i class="material-icons">verified</i>All dues cleared for ' + esc(a.year) + '.</div>') + '</div></div>';
     Array.prototype.forEach.call($("cB").querySelectorAll(".yc"), function (b) { b.onclick = function () { P.api("feeGetAccount", [b.getAttribute("data-y"), s.id], { overlay: false }).then(function (ac) { PAY.account = ac; PAY.choice = ""; renderCollect(perYear, ac.year); }); }; });
-    if (a.canPay) { $("cPv").onclick = preview; $("cA").addEventListener("keydown", function (e) { if (e.key === "Enter") preview(); }); setTimeout(function () { $("cA").focus(); }, 50); }
+    if (a.canPay) {
+      $("cPv").onclick = preview;
+      $("cA").addEventListener("keydown", function (e) { if (e.key === "Enter") preview(); });
+      $("cA").addEventListener("wheel", function (e) { e.preventDefault(); }, { passive: false });
+      setTimeout(function () { $("cA").focus(); }, 50);
+    }
   }
   function preview() { var amt = Number($("cA").value); if (!amt || amt <= 0) return toast("Enter a valid amount.", "err"); P.api("feePreviewPayment", [{ year: PAY.account.year, studentId: PAY.account.studentId, amount: amt, transportChoice: PAY.choice }], { text: "Calculating…" }).then(function (p) { if (p.needsChoice) return choice(p); showPrev(amt, p); }).catch(function (e) { toast(e.message || e, "err"); }); }
   function choice(p) { $("cCh").innerHTML = '<div class="note amber"><i class="material-icons">help</i>Reaches current-year fees and <b>Transport is also open</b>. Apply remaining ' + money(p.reachesCurrent) + ' to which first?</div><div class="seg"><button data-c="TUITION">Tuition first</button><button data-c="TRANSPORT">Transport first</button></div>'; Array.prototype.forEach.call($("cCh").querySelectorAll("[data-c]"), function (b) { b.onclick = function () { PAY.choice = b.getAttribute("data-c"); preview(); }; }); }
@@ -531,7 +565,7 @@
         '<div style="display:flex;align-items:center;gap:6px;">' +
           '<b style="color:#047857;">' + money(r.currentPayment || r.amount) + '</b> ' +
           '<button class="mini" onclick="window.printSingleReceipt(\'' + esc(r.receiptId) + '\')"><i class="material-icons" style="font-size:14px">print</i> Print</button>' +
-          '<button class="mini" id="waBtn_' + idx + '" style="color:#166534;border-color:#bbf7d0;" onclick="window.sendSingleApiReceipt(' + idx + ')"><i class="material-icons" style="font-size:14px">send</i> Send API</button>' +
+          '<button class="mini" id="waBtn_' + idx + '" style="color:#166534;border-color:#bbf7d0;" onclick="window.prepareSingleLocalReceipt(' + idx + ')"><i class="material-icons" style="font-size:14px">send</i> Prepare WhatsApp + Receipt</button>' +
         '</div>' +
       '</div>';
     }).join("");
@@ -543,7 +577,7 @@
       withReceipt(rid, function (rc) { ReceiptShare.print(rc); });
     };
 
-    window.sendSingleApiReceipt = function (idx) {
+    window.prepareSingleLocalReceipt = function (idx) {
       var rc = window._multiReceiptCache[idx];
       if (rc) openReceiptSharePreviewModal(rc);
     };
@@ -1580,6 +1614,7 @@
   function eb(e) { return '<div class="empty"><i class="material-icons">error_outline</i>' + esc(e && e.message ? e.message : e) + '</div>'; }
   function modalHost() { return '<div class="mdl" id="mdl"><div class="mc"><div class="mh"><span id="mTt"></span><button id="mx">&times;</button></div><div class="mb" id="mb"></div><div class="mf"><button class="btn btn-outline" id="mc2">Close</button></div></div></div>'; }
   function openModal(t, b) { var h = $("mdl"); $("mTt").innerHTML = t; $("mb").innerHTML = b; h.classList.add("show"); $("mx").onclick = $("mc2").onclick = function () { h.classList.remove("show"); }; h.onclick = function (e) { if (e.target === h) h.classList.remove("show"); }; }
+  function closeModal(id) { var h = $(id || "mdl"); if (h) h.classList.remove("show"); }
   function toast(msg, kind) { var t = $("ft"); if (!t) { t = document.createElement("div"); t.id = "ft"; document.body.appendChild(t); } t.className = kind || ""; t.innerHTML = '<i class="material-icons">' + (kind === "err" ? "error" : kind === "ok" ? "check_circle" : "info") + '</i>' + esc(msg); void t.offsetWidth; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 2600); }
 
   function css() {
@@ -1664,4 +1699,3 @@
     document.head.appendChild(s);
   }
 })();
-
