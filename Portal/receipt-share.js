@@ -270,25 +270,30 @@
          */
         holder.setAttribute("data-receipt-pdf-render", "1");
         /*
-         * IMPORTANT:
-         * Do NOT move the live render target far outside the viewport.
-         * html2canvas can calculate an empty capture for fixed elements at
-         * large negative coordinates, which produces a completely blank PDF.
+         * Render into a real A4-sized CSS pixel canvas.
          *
-         * Keep the temporary holder at the viewport origin but invisible to
-         * the user. html2canvas's onclone callback below makes the cloned
-         * version visible for the actual canvas render.
+         * A4 at 96 CSS DPI is approximately:
+         *   794px x 1123px
+         *
+         * The receipt's print CSS uses 10mm page margins. We reproduce those
+         * margins explicitly here instead of asking html2pdf to add another
+         * set of margins. This prevents the receipt from being scaled twice
+         * and makes the downloaded PDF match the normal browser print layout.
+         *
+         * The live holder is invisible. html2canvas's onclone callback makes
+         * only the cloned holder visible while it is being rasterized.
          */
         holder.style.position = "fixed";
         holder.style.left = "0";
         holder.style.top = "0";
-        holder.style.width = "718px";
-        holder.style.minHeight = "1040px";
+        holder.style.width = "794px";
+        holder.style.height = "1123px";
+        holder.style.minHeight = "1123px";
         holder.style.margin = "0";
         holder.style.padding = "0";
         holder.style.background = "#ffffff";
         holder.style.pointerEvents = "none";
-        holder.style.overflow = "visible";
+        holder.style.overflow = "hidden";
         holder.style.visibility = "visible";
         holder.style.opacity = "0";
         holder.style.zIndex = "-2147483647";
@@ -310,9 +315,13 @@
         var target = holder.querySelector(".pdfReceipt_receipt-card");
 
         if (target) {
+          /*
+           * 794px A4 width - 2 x 10mm (≈38px) = ≈718px usable width.
+           * This is the same geometry used by the browser's print layout.
+           */
           target.style.width = "718px";
           target.style.maxWidth = "718px";
-          target.style.margin = "0";
+          target.style.margin = "38px auto 0";
           target.style.boxSizing = "border-box";
         }
 
@@ -375,7 +384,12 @@
 
               html2pdf()
                 .set({
-                  margin: [10, 10, 10, 10],
+                  /*
+                   * The A4 shell already contains the 10mm print margins.
+                   * Keep html2pdf at zero margin so it does not scale the
+                   * receipt a second time.
+                   */
+                  margin: 0,
                   filename: "Fee-Receipt-" + String(r.receiptId || "Receipt") + ".pdf",
                   image: {
                     type: "jpeg",
@@ -396,12 +410,15 @@
                         /*
                          * The live holder is opacity:0 so it never flashes
                          * over the portal. Make only the html2canvas clone
-                         * visible and keep it at (0,0) inside the capture.
+                         * visible and preserve the exact A4 shell geometry.
                          */
                         clonedHolder.style.opacity = "1";
                         clonedHolder.style.visibility = "visible";
                         clonedHolder.style.left = "0";
                         clonedHolder.style.top = "0";
+                        clonedHolder.style.width = "794px";
+                        clonedHolder.style.height = "1123px";
+                        clonedHolder.style.minHeight = "1123px";
                         clonedHolder.style.zIndex = "1";
                       }
                     }
