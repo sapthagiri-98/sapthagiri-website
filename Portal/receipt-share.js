@@ -51,7 +51,7 @@
     .receipt-card { border: 2px solid #8a1618; padding: 16px 20px; max-width: 780px; margin: 0 auto; box-sizing: border-box; }
     
     .hdr-logo-container { text-align: center; margin-bottom: 8px; border-bottom: 1.5px solid #8a1618; padding-bottom: 8px; }
-    .hdr-logo-img { width: 100%; max-height: 85px; object-fit: contain; display: block; margin: 0 auto; }
+    .hdr-logo-img { width: 100%;   height: auto; max-height: none; object-fit: contain; display: block; margin: 0 auto; }
     
     .rc-title-bar { color: #808080; font-size: 13px; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 12px; }
     
