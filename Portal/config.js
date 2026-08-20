@@ -13,71 +13,241 @@ window.PORTAL_CONFIG = {
   SUPABASE_WA_ONBOARD_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/whatsapp-onboarding",
   CLASS_TTL_MS: 30 * 60 * 1000,
   MONTH_TTL_MS: 90 * 1000,
+
   SCHOOL: {
-    name: "Sapthagiri High School E/M", city: "Karimnagar",
-    phone: "9381118421", whatsapp: "919381118421",
-    email: "sapthagiri.98@gmail.com", address: "Karimnagar"
+    name: "Sapthagiri High School E/M",
+    city: "Karimnagar",
+    phone: "9381118421",
+    whatsapp: "919381118421",
+    email: "sapthagiri.98@gmail.com",
+    address: "Karimnagar"
   },
-  SUPABASE_FN_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/student-api",
-  SUPABASE_ANON: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlbm1kb25rYm1jbXFmeGx1bnB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxODAzMzYsImV4cCI6MjEwMTc1NjMzNn0.afDstbxNeOzkCCdx5GqUdedJAsQYSgZajYQlDoaIDWk",
-  SUPABASE_FNS: ["validateLogin","getUsers","smBootstrap","smSearchStudents",
-    "smGetStudent","smCheckStudentId","smAdmitStudent","smUpdateStudent",
-    "smUpdateEnrollment","smDeleteStudent","smPromoteStudents","smPromoteClass",
-    "smLeaveStudent","smRejoinStudent","smBulkChangeClass","smAddCustomField", "smGetRollNumbers", "smSaveRollNumbers",
-    "smExportStudents","smImportStudents","smChangeStudentId"],
-  SUPABASE_ATT_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/attendance-api",
-  SUPABASE_ATT_FNS: ["getClasses","getHolidaysForDate","getClassAttendanceSummary",
-    "loadStudents","saveAttendance","getMonthlyAttendanceMatrix","saveMonthlyAttendanceMatrix",
-    "attMonthlyReport","attAbsentees",
-    "addHolidayEntry","getAllHolidays","deleteHolidayRow"],
-  SUPABASE_HW_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/homework-api",
+
+  SUPABASE_FN_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/student-api",
+
+  SUPABASE_ANON:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlbm1kb25rYm1jbXFmeGx1bnB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxODAzMzYsImV4cCI6MjEwMTc1NjMzNn0.afDstbxNeOzkCCdx5GqUdedJAsQYSgZajYQlDoaIDWk",
+
+  SUPABASE_FNS: [
+    "validateLogin",
+    "getUsers",
+    "smBootstrap",
+    "smSearchStudents",
+    "smGetStudent",
+    "smCheckStudentId",
+    "smAdmitStudent",
+    "smUpdateStudent",
+    "smUpdateEnrollment",
+    "smDeleteStudent",
+    "smPromoteStudents",
+    "smPromoteClass",
+    "smLeaveStudent",
+    "smRejoinStudent",
+    "smBulkChangeClass",
+    "smAddCustomField",
+    "smGetRollNumbers",
+    "smSaveRollNumbers",
+    "smExportStudents",
+    "smImportStudents",
+    "smChangeStudentId"
+  ],
+
+  SUPABASE_ATT_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/attendance-api",
+
+  SUPABASE_ATT_FNS: [
+    "getClasses",
+    "getHolidaysForDate",
+    "getClassAttendanceSummary",
+    "loadStudents",
+    "saveAttendance",
+    "getMonthlyAttendanceMatrix",
+    "saveMonthlyAttendanceMatrix",
+    "attMonthlyReport",
+    "attAbsentees",
+    "addHolidayEntry",
+    "getAllHolidays",
+    "deleteHolidayRow"
+  ],
+
+  SUPABASE_HW_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/homework-api",
+
   SUPABASE_HW_FNS: [
-    "getHomeworkHolidayStatus","getManagementOverview","getAssignmentsByDate",
-    "getExistingHomework","enhanceHomeworkText","saveHomework","deleteHomework",
-    "globalMarkTeacherLeave"],
-  SUPABASE_TT_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/timetable-api",
-  SUPABASE_TT_FNS: ["ttBootstrap","ttGetGrid","ttSaveGrid","ttCopyDay","ttClearDay"],
-  SUPABASE_USERS_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/users-api",
-  SUPABASE_USERS_FNS: ["userModuleKeys","usersList","userGet","userCreate",
-    "userUpdate","userSetPermissions","userResetPassword","userDeactivate",
-    "userReactivate","syncTeacherPhones",
-    "getCanonicalTeachers","getUnlinkedTeacherNames","linkTeacherName","unlinkTeacherName"],
-  SUPABASE_SA_BASE: "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/staff-attendance-api",
-  SUPABASE_SA_FNS: ["getTimesheetData","getManagementMonthlyBulkPayload",
-    "getTeacherAvailableSalarySlips"],
-  SUPABASE_SYL_BASE: "https://denmdonkbmcmqfxlunpy.functions.supabase.co/syllabus-api",
+    "getHomeworkHolidayStatus",
+    "getManagementOverview",
+    "getAssignmentsByDate",
+    "getExistingHomework",
+    "enhanceHomeworkText",
+    "saveHomework",
+    "deleteHomework",
+    "globalMarkTeacherLeave"
+  ],
+
+  SUPABASE_TT_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/timetable-api",
+
+  SUPABASE_TT_FNS: [
+    "ttBootstrap",
+    "ttGetGrid",
+    "ttSaveGrid",
+    "ttCopyDay",
+    "ttClearDay"
+  ],
+
+  SUPABASE_USERS_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/users-api",
+
+  SUPABASE_USERS_FNS: [
+    "userModuleKeys",
+    "usersList",
+    "userGet",
+    "userCreate",
+    "userUpdate",
+    "userSetPermissions",
+    "userResetPassword",
+    "userDeactivate",
+    "userReactivate",
+    "syncTeacherPhones",
+    "getCanonicalTeachers",
+    "getUnlinkedTeacherNames",
+    "linkTeacherName",
+    "unlinkTeacherName"
+  ],
+
+  SUPABASE_SA_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/staff-attendance-api",
+
+  SUPABASE_SA_FNS: [
+    "getTimesheetData",
+    "getManagementMonthlyBulkPayload",
+    "getTeacherAvailableSalarySlips"
+  ],
+
+  /* =========================================================================
+     PAYROLL / SALARY MANAGEMENT
+     ========================================================================= */
+
+  SUPABASE_PAYROLL_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/payroll-api",
+
+  SUPABASE_PAYROLL_FNS: [
+    "payrollStaffList",
+    "payrollBootstrap",
+    "payrollSaveAssignment",
+    "payrollAdjustLeave",
+    "payrollSaveRow",
+    "payrollMarkPaid",
+    "payrollMySalary"
+  ],
+
+  SUPABASE_SYL_BASE:
+    "https://denmdonkbmcmqfxlunpy.functions.supabase.co/syllabus-api",
+
   SUPABASE_SYL_FNS: [
-    "getTeacherClassSubjects","getSyllabusAndPlansCatalog","extractTasksFromDrivePDF",
-    "saveTaskProgress","regenerateTeluguForTask","getManagementLessonTasks", "getSessionDetailedExplanation",
+    "getTeacherClassSubjects",
+    "getSyllabusAndPlansCatalog",
+    "extractTasksFromDrivePDF",
+    "saveTaskProgress",
+    "regenerateTeluguForTask",
+    "getManagementLessonTasks",
+    "getSessionDetailedExplanation",
     "getManagementTimelineAuditReport"
   ],
-  SUPABASE_EXAM_BASE: "https://denmdonkbmcmqfxlunpy.functions.supabase.co/exams-api",
+
+  SUPABASE_EXAM_BASE:
+    "https://denmdonkbmcmqfxlunpy.functions.supabase.co/exams-api",
+
   SUPABASE_EXAM_FNS: [
-    "getAdminExamSummaryStats","getAdminExamCalendarPayload","getAdminExamsForDate",
-    "examGetScheduleFilters","examGetScheduleTable","examBulkSaveSchedule",
-    "getExamNamePresets","getAdminSubjectsForGrade","getSyllabusMasterLessons",
-    "createAdminExam","updateAdminExam","deleteAdminExam","getAdminExamById",
-    "marksGetTeacherExamOptions","marksGetGrid","marksSaveBulk","marksSetLock",
-    "marksGetHighSchoolClasses","marksGetAdminExamOptions","marksGetClassGrid",
-    "getHolisticBuckets","getHolisticAssignments","getHolisticStudents",
-    "saveHolisticMarks","getHolisticLockState","holisticSetLock","runHolisticAutoAttendance", "saveHolisticResponsibilityMatrix", "saveHolisticHealthData",
-    "getTeacherUpcomingExamsSummary","getTeacherExamCalendarPayload",
-    "getTeacherAssignedExamsForSyllabus","teacherAddExamSyllabus",
-    "progressGetClasses","progressGetBucketList","locksGetMatrix", "locksSetBucket", "progressGetClassData"
+    "getAdminExamSummaryStats",
+    "getAdminExamCalendarPayload",
+    "getAdminExamsForDate",
+    "examGetScheduleFilters",
+    "examGetScheduleTable",
+    "examBulkSaveSchedule",
+    "getExamNamePresets",
+    "getAdminSubjectsForGrade",
+    "getSyllabusMasterLessons",
+    "createAdminExam",
+    "updateAdminExam",
+    "deleteAdminExam",
+    "getAdminExamById",
+    "marksGetTeacherExamOptions",
+    "marksGetGrid",
+    "marksSaveBulk",
+    "marksSetLock",
+    "marksGetHighSchoolClasses",
+    "marksGetAdminExamOptions",
+    "marksGetClassGrid",
+    "getHolisticBuckets",
+    "getHolisticAssignments",
+    "getHolisticStudents",
+    "saveHolisticMarks",
+    "getHolisticLockState",
+    "holisticSetLock",
+    "runHolisticAutoAttendance",
+    "saveHolisticResponsibilityMatrix",
+    "saveHolisticHealthData",
+    "getTeacherUpcomingExamsSummary",
+    "getTeacherExamCalendarPayload",
+    "getTeacherAssignedExamsForSyllabus",
+    "teacherAddExamSyllabus",
+    "progressGetClasses",
+    "progressGetBucketList",
+    "locksGetMatrix",
+    "locksSetBucket",
+    "progressGetClassData"
   ],
-  SUPABASE_FEE_BASE: "https://denmdonkbmcmqfxlunpy.functions.supabase.co/fees-api",
+
+  SUPABASE_FEE_BASE:
+    "https://denmdonkbmcmqfxlunpy.functions.supabase.co/fees-api",
+
   SUPABASE_FEE_FNS: [
-    "feeVerifyPassword","feeBootstrap","feeGetClasses","feeGetStudents",
-    "feeSearchStudents","feeGetStudentFinance","feeGetAccount","feePreviewPayment",
-    "feeRecordPayment","feeGetReceipt","feeVoidPayment","feeEditPayment",
-    "feeGetStatement","feeGetFeeSheet","feeSaveFeeSheet",
-    "feeGetStudentCharges","feeSetStudentCharges","feeSyncStudents",
-    "feeDailyCollection","feeCollectionByRange","feeCollectionByType",
-    "feeCollectionByClass","feeYearWiseCollection","feeOutstanding",
-    "feeReceiptRegister","feeLongPending","feeTotals","feeMigrationReport", "feeGetSchoolTotals",
-    "feeAddFeeType","feeSetCurrentYear","feeSetMigrationYear","feeSetPassword",
-    "feeChangeStudentId","feeGetFullAuditStatement","feeAssignCarryForwardOldDue", "feeDuesCallList", "feeVoidAllocation"
+    "feeVerifyPassword",
+    "feeBootstrap",
+    "feeGetClasses",
+    "feeGetStudents",
+    "feeSearchStudents",
+    "feeGetStudentFinance",
+    "feeGetAccount",
+    "feePreviewPayment",
+    "feeRecordPayment",
+    "feeGetReceipt",
+    "feeVoidPayment",
+    "feeEditPayment",
+    "feeGetStatement",
+    "feeGetFeeSheet",
+    "feeSaveFeeSheet",
+    "feeGetStudentCharges",
+    "feeSetStudentCharges",
+    "feeSyncStudents",
+    "feeDailyCollection",
+    "feeCollectionByRange",
+    "feeCollectionByType",
+    "feeCollectionByClass",
+    "feeYearWiseCollection",
+    "feeOutstanding",
+    "feeReceiptRegister",
+    "feeLongPending",
+    "feeTotals",
+    "feeMigrationReport",
+    "feeGetSchoolTotals",
+    "feeAddFeeType",
+    "feeSetCurrentYear",
+    "feeSetMigrationYear",
+    "feeSetPassword",
+    "feeChangeStudentId",
+    "feeGetFullAuditStatement",
+    "feeAssignCarryForwardOldDue",
+    "feeDuesCallList",
+    "feeVoidAllocation"
   ],
-  SUPABASE_DASH_BASE: "https://denmdonkbmcmqfxlunpy.functions.supabase.co/dashboard-api",
-  SUPABASE_DASH_FNS: ["getManagementDashboard"],
+
+  SUPABASE_DASH_BASE:
+    "https://denmdonkbmcmqfxlunpy.functions.supabase.co/dashboard-api",
+
+  SUPABASE_DASH_FNS: [
+    "getManagementDashboard"
+  ]
 };

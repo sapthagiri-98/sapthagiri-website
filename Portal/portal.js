@@ -210,7 +210,7 @@
   var MENU = [
     { id: "attendance",  label: "Student Attendance",       icon: "assignment_turned_in", href: "attendance.html",           perm: "Daily Student Attendance", desc: "Daily attendance · Monthly sheets · Reports" },
     { id: "homework",    label: "Digital Homework Diary",   icon: "menu_book",            href: "homework.html",             perm: "Digital Homework Diary", desc: "Assign homework · Review submissions" },
-    { id: "attlog",      label: "My Attendance Log",        icon: "pending_actions",      href: "attendance-log.html",       perm: "My Attendance Log", teacherOnly: true, desc: "Your punches · Monthly timesheet" },
+    { id: "attlog",      label: "My Attendance Log",        icon: "pending_actions",      href: "staff-attendance.html",       perm: "My Attendance Log", teacherOnly: true, desc: "Your punches · Monthly timesheet" },
     { id: "stafftrack",  label: "Staff Attendance",         icon: "groups",               href: "staff-attendance.html",     perm: "Staff Attendance Tracker", mgmt: true, desc: "Monitor punches · Attendance summary" },
     { id: "holidays",    label: "Holidays Management",       icon: "event_busy",           href: "holidays.html",             perm: "Holidays Management", mgmt: true, desc: "Holiday calendar · Add & manage" },
     { id: "syllabus",    label: "Syllabus Tracker",         icon: "fact_check",           href: "syllabus.html",             perm: "Syllabus Tracker", desc: "Lesson progress · Completion tracking" },
@@ -220,6 +220,7 @@
     { id: "studentmgmt", label: "Student Management",        icon: "badge",                  href: "student-management.html", perm: "Student Management", mgmt: true, desc: "Central student database · Admissions · Promotions" },
     { id: "usermgmt",    label: "User Management",           icon: "manage_accounts",        href: "user-management.html",    perm: "User Management", mgmt: true, desc: "Logins · Shift profiles · Campus & module access" },
     { id: "dashboard",   label: "Management Dashboard",     icon: "dashboard",            href: "management-dashboard.html", perm: "Management Dashboard", mgmt: true, desc: "Live school-wide overview" },
+    { id: "payroll", label: "Payroll Management", icon: "payments", href: "salary-management.html", perm: "Payroll Management", mgmt: true, desc: "Salary assignments · Monthly payroll · Salary slips" },
     { id: "timetable", label: "Timetable Management", icon: "calendar_view_week", href: "timetable.html", perm: "Timetable Management", mgmt: true, desc: "Master class timetable · Drives Homework & Exams" }
   ];
 
