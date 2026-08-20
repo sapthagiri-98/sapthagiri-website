@@ -269,8 +269,18 @@
          * caused by conflicting portal layout/scaling.
          */
         holder.setAttribute("data-receipt-pdf-render", "1");
+        /*
+         * IMPORTANT:
+         * Do NOT move the live render target far outside the viewport.
+         * html2canvas can calculate an empty capture for fixed elements at
+         * large negative coordinates, which produces a completely blank PDF.
+         *
+         * Keep the temporary holder at the viewport origin but invisible to
+         * the user. html2canvas's onclone callback below makes the cloned
+         * version visible for the actual canvas render.
+         */
         holder.style.position = "fixed";
-        holder.style.left = "-10000px";
+        holder.style.left = "0";
         holder.style.top = "0";
         holder.style.width = "718px";
         holder.style.minHeight = "1040px";
@@ -280,7 +290,8 @@
         holder.style.pointerEvents = "none";
         holder.style.overflow = "visible";
         holder.style.visibility = "visible";
-        holder.style.opacity = "1";
+        holder.style.opacity = "0";
+        holder.style.zIndex = "-2147483647";
         holder.style.fontFamily = "'Segoe UI', Arial, sans-serif";
         holder.style.boxSizing = "border-box";
 
@@ -375,7 +386,25 @@
                     useCORS: true,
                     allowTaint: false,
                     backgroundColor: "#ffffff",
-                    logging: false
+                    logging: false,
+                    scrollX: 0,
+                    scrollY: 0,
+                    onclone: function (clonedDoc) {
+                      var clonedHolder = clonedDoc.querySelector('[data-receipt-pdf-render="1"]');
+
+                      if (clonedHolder) {
+                        /*
+                         * The live holder is opacity:0 so it never flashes
+                         * over the portal. Make only the html2canvas clone
+                         * visible and keep it at (0,0) inside the capture.
+                         */
+                        clonedHolder.style.opacity = "1";
+                        clonedHolder.style.visibility = "visible";
+                        clonedHolder.style.left = "0";
+                        clonedHolder.style.top = "0";
+                        clonedHolder.style.zIndex = "1";
+                      }
+                    }
                   },
                   jsPDF: {
                     unit: "mm",
