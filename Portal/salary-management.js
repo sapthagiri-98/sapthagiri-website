@@ -717,9 +717,9 @@
   }
 
   function sectionHeader(doc, title, y, left, width, colors) {
-    fillRect(doc, left, y, width, 9, colors.gray);
-    text(doc, title, left + 5, y + 6.0, 8.8, colors.ink, "bold");
-    return y + 9;
+    text(doc, title, left, y + 5.5, 8.8, colors.maroon, "bold");
+    hLine(doc, left, y + 8.5, left + width, y + 8.5, colors.maroon, 0.45);
+    return y + 11;
   }
 
   window.generateSalarySlipPDF = async function (row, month) {
@@ -751,28 +751,28 @@
     var right = 195;
     var width = right - left;
 
-    /* Professional restrained palette: dark maroon + orange accent + neutral gray. */
+    /* Salary-slip palette only. Payroll Management UI is untouched. */
     var colors = {
       maroon: "#7A151A",
       maroonDark: "#5D1115",
-      orange: "#B85A1B",
-      ink: "#202020",
-      muted: "#555555",
-      gray: "#F0F0F0",
-      gray2: "#F7F7F7",
-      border: "#AFAFAF",
-      white: "#FFFFFF",
-      deduction: "#202020"
+      orange: "#C76524",
+      ink: "#222222",
+      muted: "#5F6368",
+      gray: "#F5F5F5",
+      gray2: "#FAFAFA",
+      border: "#C9C9C9",
+      white: "#FFFFFF"
     };
 
     var name = String((row.staff && row.staff.name) || row.name || "");
     var role = String((row.staff && row.staff.role) || row.role || "");
+
     var payDate = row.payDate != null ? row.payDate : (row.pay_date || "");
     var payMode = row.paymentMode != null ? row.paymentMode : (row.payment_mode || "Bank Transfer");
-    var payReference = row.paymentReference != null ? row.paymentReference : (row.payment_reference || "");
-    var comment = row.paymentComment != null ? row.paymentComment : (row.payment_comment || "");
-    /* Never print historical migration/internal payroll notes on employee slips. */
-    if (/historical\s+.*payroll\s+migration/i.test(String(comment))) comment = "";
+    var payReference = row.paymentReference != null
+      ? row.paymentReference
+      : (row.payment_reference || "");
+
     var salary = row.salary != null ? row.salary : row.monthly_salary;
     var deduction = row.totalDeduction != null ? row.totalDeduction : row.total_deduction;
     var net = row.netSalary != null ? row.netSalary : row.net_salary;
@@ -780,21 +780,48 @@
     var balance = row.paidLeaveBalance != null ? row.paidLeaveBalance : row.paid_leave_balance;
     var opening = row.paidLeaveOpening != null ? row.paidLeaveOpening : row.paid_leave_opening;
     var unpaid = row.unpaidLeave != null ? row.unpaidLeave : row.unpaid_leave;
-    var joiningDays = Number(row.joiningDaysUnpaid != null ? row.joiningDaysUnpaid : (row.joining_days_unpaid || 0));
 
-    /* If the API does not send beginning balance, derive it correctly. */
     if (opening == null) {
       opening = Number(balance || 0) + Number(used || 0);
     }
 
-    /* -------------------------------------------------------------------
-       PAGE
-       ------------------------------------------------------------------- */
+    /*
+     * Employee ID is a display/payroll identifier only.
+     * It deliberately does not expose the internal Users-table user ID.
+     * The existing payroll userId is used only to generate the display
+     * sequence SHS-EMP-001, SHS-EMP-002, etc.
+     */
+    var rawEmployeeId = row.employeeId != null
+      ? row.employeeId
+      : (row.employee_id != null ? row.employee_id : row.userId);
+
+    var employeeId = "";
+    if (rawEmployeeId != null && rawEmployeeId !== "") {
+      var employeeNumber = Number(rawEmployeeId);
+      if (Number.isFinite(employeeNumber) && employeeNumber > 0) {
+        employeeId = "SHS-EMP-" + String(Math.floor(employeeNumber)).padStart(3, "0");
+      } else {
+        employeeId = "SHS-EMP-" + String(rawEmployeeId).replace(/[^a-z0-9]/gi, "").slice(-6);
+      }
+    }
+
+    /*
+     * June and July 2026 were already transferred before transaction
+     * references were introduced, so their reference is intentionally
+     * displayed as Not available.
+     * From August 2026 onward the transaction reference is displayed.
+     */
+    var payrollKey = String(month || "").slice(0, 7);
+    var transactionReference = "Not available";
+    if (payrollKey >= "2026-08") {
+      transactionReference = String(payReference || "").trim() || "Not available";
+    }
+
     fillRect(doc, 0, 0, pageW, pageH, colors.white);
 
-    /* Fine outer frame. It is intentionally subtle and printer-safe. */
+    /* Subtle printable outer frame. */
     doc.setDrawColor(colors.border);
-    doc.setLineWidth(0.35);
+    doc.setLineWidth(0.3);
     doc.rect(10, 9, 190, 278, "S");
 
     /* -------------------------------------------------------------------
@@ -802,106 +829,115 @@
        ------------------------------------------------------------------- */
     var logo = await loadHeaderLogo();
     if (logo) {
-      /* Complete official header-logo. No duplicate school name is drawn. */
+      /* The supplied logo already contains the logo + school name. */
       doc.addImage(logo, "PNG", left, 13, 111, 19.2, undefined, "FAST");
     }
 
-    text(doc, "PAYSLIP FOR THE MONTH", right, 18.5, 7.8, colors.muted, "normal", { align: "right" });
-    text(doc, slipMonthShort(month), right, 25, 11.5, colors.ink, "bold", { align: "right" });
+    text(doc, "SALARY SLIP", right, 18.5, 10.5, colors.maroon, "bold", { align: "right" });
+    text(doc, slipMonthShort(month), right, 25.2, 9.2, colors.ink, "bold", { align: "right" });
 
     hLine(doc, left, 37, right, 37, colors.maroon, 0.8);
     hLine(doc, left, 38.5, right, 38.5, colors.orange, 0.45);
 
+    /* School contact / statutory details. No duplicate school name. */
+    text(doc, "8-3-311/3, Vemulawada By-Pass Road, Sapthagiri Colony, Karimnagar - 505001",
+      left, 44.5, 7.6, colors.ink, "normal");
+    text(doc, "9381118421  |  sapthagiri.98@gmail.com  |  www.sapthagirischool.in",
+      left, 49.2, 7.5, colors.ink, "normal");
+    text(doc, "UDISE Code: 36130790563   |   School Code: 22227   |   PAN: AAEAS6450K",
+      left, 53.9, 7.4, colors.muted, "normal");
+
+    var y = 61;
+
     /* -------------------------------------------------------------------
-       DOCUMENT TITLE + SUMMARY
+       TITLE
        ------------------------------------------------------------------- */
-    var y = 44;
+    text(doc, "SALARY SLIP", pageW / 2, y, 13, colors.maroon, "bold", { align: "center" });
+    text(doc, "Payroll Period: " + slipMonth(month), pageW / 2, y + 5.5, 8.4, colors.muted, "normal", { align: "center" });
+    y += 12;
 
-    fillRect(doc, left, y, width, 10, colors.gray);
-    text(doc, "EMPLOYEE SALARY SLIP", pageW / 2, y + 6.7, 10.5, colors.ink, "bold", { align: "center" });
-    y += 10;
-
-    fillRect(doc, left, y, width, 7.5, colors.gray);
-    text(doc, "SUMMARY", pageW / 2, y + 5.3, 8.8, colors.ink, "bold", { align: "center" });
-    y += 7.8;
+    /* -------------------------------------------------------------------
+       EMPLOYEE INFORMATION
+       ------------------------------------------------------------------- */
+    y = sectionHeader(doc, "EMPLOYEE INFORMATION", y, left, width, colors);
 
     var summary = tableDefaults(colors);
     summary.startY = y;
     summary.margin = { left: left, right: pageW - right };
     summary.body = [
       ["Employee Name", name || "—", "Designation", role || "—"],
-      ["Pay Date", slipDate(payDate) || "—", "Mode", payMode || "—"]
+      ["Employee ID", employeeId || "—", "Payroll Month", slipMonth(month)],
+      ["Pay Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—"]
     ];
     summary.columnStyles = {
-      0: { cellWidth: 31, fontStyle: "bold" },
+      0: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
       1: { cellWidth: 59 },
-      2: { cellWidth: 31, fontStyle: "bold" },
+      2: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
       3: { cellWidth: 59 }
     };
-    summary.styles.cellPadding = { top: 5.0, right: 5, bottom: 5.0, left: 5 };
+    summary.styles.cellPadding = { top: 4.5, right: 5, bottom: 4.5, left: 5 };
     doc.autoTable(summary);
-    y = doc.lastAutoTable.finalY + 8;
+    y = doc.lastAutoTable.finalY + 7;
 
     /* -------------------------------------------------------------------
-       LEAVE INFORMATION
+       LEAVE SUMMARY
        ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "LEAVE INFORMATION", y, left, width, colors);
+    y = sectionHeader(doc, "LEAVE SUMMARY", y, left, width, colors);
 
     var leave = tableDefaults(colors);
     leave.startY = y;
     leave.margin = { left: left, right: pageW - right };
     leave.body = [
-      ["Paid Leave Balance (Beginning of Month)", slipNum(opening), "Utilised Paid Leaves", slipNum(used)],
-      ["Paid Leave Balance (End of Month)", slipNum(balance), "Unpaid Leaves", slipNum(unpaid)]
+      ["Opening Paid Leave Balance", slipNum(opening), "Paid Leave Used", slipNum(used)],
+      ["Closing Paid Leave Balance", slipNum(balance), "Unpaid Leave", slipNum(unpaid)]
     ];
     leave.columnStyles = {
-      0: { cellWidth: 63, fontStyle: "bold" },
+      0: { cellWidth: 63, fontStyle: "bold", fillColor: [245,245,245] },
       1: { cellWidth: 27, halign: "right", fontStyle: "bold" },
-      2: { cellWidth: 63, fontStyle: "bold" },
+      2: { cellWidth: 63, fontStyle: "bold", fillColor: [245,245,245] },
       3: { cellWidth: 27, halign: "right", fontStyle: "bold" }
     };
     doc.autoTable(leave);
-    y = doc.lastAutoTable.finalY + 8;
+    y = doc.lastAutoTable.finalY + 7;
 
     /* -------------------------------------------------------------------
-       SALARY BREAK-UP
+       SALARY DETAILS
        ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "SALARY BREAK-UP", y, left, width, colors);
+    y = sectionHeader(doc, "SALARY DETAILS", y, left, width, colors);
 
     var salaryTable = tableDefaults(colors);
     salaryTable.startY = y;
     salaryTable.margin = { left: left, right: pageW - right };
     salaryTable.body = [
-      ["Actual Salary", slipMoney(salary), "Unpaid Leaves Deduction", slipMoney(deduction)]
+      ["Monthly Salary", slipMoney(salary)],
+      ["Unpaid Leave Deduction", slipMoney(deduction)]
     ];
     salaryTable.columnStyles = {
-      0: { cellWidth: 31, fontStyle: "bold" },
-      1: { cellWidth: 59, halign: "right", fontStyle: "bold" },
-      2: { cellWidth: 63, fontStyle: "bold" },
-      3: { cellWidth: 27, halign: "right", fontStyle: "bold" }
+      0: { cellWidth: 120, fontStyle: "bold", fillColor: [245,245,245] },
+      1: { cellWidth: 60, halign: "right", fontStyle: "bold" }
     };
-    salaryTable.styles.cellPadding = { top: 5.5, right: 5, bottom: 5.5, left: 5 };
-    salaryTable.didParseCell = function (data) {
-      if (data.column.index === 3) data.cell.styles.fontStyle = "bold";
-    };
+    salaryTable.styles.cellPadding = { top: 5, right: 5, bottom: 5, left: 5 };
     doc.autoTable(salaryTable);
-    y = doc.lastAutoTable.finalY;
+    y = doc.lastAutoTable.finalY + 1;
 
-    /* Net salary as a formal table row, not a decorative dashboard card. */
+    /* Prominent net salary line without a dashboard-style coloured box. */
     var netTable = tableDefaults(colors);
     netTable.startY = y;
     netTable.margin = { left: left, right: pageW - right };
     netTable.body = [
-      ["Net Salary for Current Month\n(Actual Salary - Deduction)", slipMoney(net)]
+      ["NET SALARY PAYABLE", slipMoney(net)]
     ];
     netTable.columnStyles = {
-      0: { cellWidth: 90, fontStyle: "bold", halign: "center", valign: "middle" },
-      1: { cellWidth: 90, halign: "right", fontStyle: "bold", fontSize: 11.2 }
+      0: { cellWidth: 120, fontStyle: "bold", fontSize: 10.2 },
+      1: { cellWidth: 60, halign: "right", fontStyle: "bold", fontSize: 11.5 }
     };
-    netTable.styles.cellPadding = { top: 6.5, right: 5.5, bottom: 6.5, left: 5.5 };
+    netTable.styles.cellPadding = { top: 6.2, right: 5, bottom: 6.2, left: 5 };
     netTable.didParseCell = function (data) {
-      if (data.column.index === 1) data.cell.styles.textColor = colors.ink;
-      if (data.column.index === 0) data.cell.styles.textColor = colors.ink;
+      if (data.row.index === 0) {
+        data.cell.styles.lineWidth = 0.5;
+        data.cell.styles.lineColor = [122,21,26];
+        data.cell.styles.textColor = [122,21,26];
+      }
     };
     doc.autoTable(netTable);
     y = doc.lastAutoTable.finalY;
@@ -909,39 +945,103 @@
     /* -------------------------------------------------------------------
        AMOUNT IN WORDS
        ------------------------------------------------------------------- */
-    var words = amountWords(net);
+    y += 5;
     var wordsTable = tableDefaults(colors);
     wordsTable.startY = y;
     wordsTable.margin = { left: left, right: pageW - right };
-    wordsTable.body = [["In Words:", words]];
+    wordsTable.body = [["Amount in Words", amountWords(net)]];
     wordsTable.columnStyles = {
-      0: { cellWidth: 31, fontStyle: "bold" },
+      0: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
       1: { cellWidth: 149 }
     };
-    wordsTable.styles.cellPadding = { top: 5.0, right: 5, bottom: 5.0, left: 5 };
+    wordsTable.styles.cellPadding = { top: 5, right: 5, bottom: 5, left: 5 };
     doc.autoTable(wordsTable);
-    y = doc.lastAutoTable.finalY;
-
-    /* Payment information is optional and appears only when actual payment
-       reference/comment data exists. Internal migration notes are never shown. */
-    if (payReference || comment) {
-      y += 6;
-      y = sectionHeader(doc, "PAYMENT DETAILS", y, left, width, colors);
-
-      var details = [];
-      if (payReference) details.push("Payment Reference: " + String(payReference));
-      if (comment) details.push("Note: " + String(comment));
-
-      var detailText = doc.splitTextToSize(details.join("  |  "), width - 8);
-      text(doc, detailText, left + 5, y + 5, 8.2, colors.ink, "normal");
-      y += Math.max(1, detailText.length) * 4 + 7;
-    }
+    y = doc.lastAutoTable.finalY + 7;
 
     /* -------------------------------------------------------------------
-       FOOTER
+       PAYMENT INFORMATION
        ------------------------------------------------------------------- */
-    hLine(doc, left, pageH - 19, right, pageH - 19, colors.border, 0.3);
-    text(doc, "Computer-generated salary slip • No signature required", pageW / 2, pageH - 12, 7.6, colors.muted, "normal", { align: "center" });
+    y = sectionHeader(doc, "PAYMENT INFORMATION", y, left, width, colors);
+
+    var payment = tableDefaults(colors);
+    payment.startY = y;
+    payment.margin = { left: left, right: pageW - right };
+    payment.body = [
+      ["Payment Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—"],
+      ["Transaction Reference", transactionReference, "", ""]
+    ];
+    payment.columnStyles = {
+      0: { cellWidth: 35, fontStyle: "bold", fillColor: [245,245,245] },
+      1: { cellWidth: 55 },
+      2: { cellWidth: 35, fontStyle: "bold", fillColor: [245,245,245] },
+      3: { cellWidth: 55 }
+    };
+    payment.didParseCell = function (data) {
+      if (data.row.index === 1 && data.column.index === 2) {
+        data.cell.colSpan = 0;
+        data.cell.text = "";
+        data.cell.styles.fillColor = [255,255,255];
+        data.cell.styles.lineWidth = 0;
+      }
+      if (data.row.index === 1 && data.column.index === 3) {
+        data.cell.text = "";
+        data.cell.styles.lineWidth = 0;
+      }
+    };
+    doc.autoTable(payment);
+    y = doc.lastAutoTable.finalY + 8;
+
+    /* -------------------------------------------------------------------
+       DOCUMENT CONTROL
+       ------------------------------------------------------------------- */
+    y = sectionHeader(doc, "DOCUMENT CONTROL", y, left, width, colors);
+
+    var generatedDate = new Date();
+    var generatedOn =
+      String(generatedDate.getDate()).padStart(2, "0") + " " +
+      ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][generatedDate.getMonth()] + " " +
+      generatedDate.getFullYear();
+
+    var control = tableDefaults(colors);
+    control.startY = y;
+    control.margin = { left: left, right: pageW - right };
+    control.body = [
+      ["Document", "Salary Slip", "Payroll Period", slipMonth(month)],
+      ["Employee ID", employeeId || "—", "Generated On", generatedOn]
+    ];
+    control.columnStyles = {
+      0: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
+      1: { cellWidth: 59 },
+      2: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
+      3: { cellWidth: 59 }
+    };
+    control.styles.cellPadding = { top: 4.2, right: 5, bottom: 4.2, left: 5 };
+    doc.autoTable(control);
+    y = doc.lastAutoTable.finalY + 7;
+
+    /* -------------------------------------------------------------------
+       DECLARATION
+       ------------------------------------------------------------------- */
+    y = sectionHeader(doc, "DECLARATION", y, left, width, colors);
+
+    var declaration =
+      "This is a computer-generated salary slip issued by Sapthagiri High School E/M. " +
+      "The salary details above are based on the payroll record for the stated period.";
+
+    var declarationLines = doc.splitTextToSize(declaration, width - 10);
+    text(doc, declarationLines, left + 5, y + 5, 8.0, colors.ink, "normal");
+    y += Math.max(1, declarationLines.length) * 4.2 + 8;
+
+    /* -------------------------------------------------------------------
+       FOOTER / ADMINISTRATION
+       ------------------------------------------------------------------- */
+    hLine(doc, left, pageH - 31, right, pageH - 31, colors.maroon, 0.45);
+
+    text(doc, "For Sapthagiri High School E/M", left, pageH - 24, 8.5, colors.maroon, "bold");
+    text(doc, "Authorised Administration", left, pageH - 18.5, 7.8, colors.muted, "normal");
+
+    text(doc, "Computer-generated document", right, pageH - 24, 7.6, colors.muted, "normal", { align: "right" });
+    text(doc, "Payroll Period: " + slipMonth(month), right, pageH - 18.5, 7.6, colors.muted, "normal", { align: "right" });
 
     var safe = name.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "Staff";
     var fileMonth = String(month || "").slice(0, 7) || "Payroll";
