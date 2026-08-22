@@ -30,23 +30,74 @@
     var s=document.createElement("style");
     s.id="salaryPayrollRowStyles";
     s.textContent=
+      ".payroll-shell{width:100%;max-width:1440px;margin:0 auto;}"+
+      ".payroll-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px;}"+
+      ".payroll-head h1{margin:0 0 5px;font-size:25px;line-height:1.15;}"+
+      ".payroll-head p{margin:0;color:#64748b;font-size:13px;}"+
+      ".payroll-actions{display:flex;gap:8px;}"+
+      ".payroll-toolbar{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding:14px 16px;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;box-shadow:0 3px 12px rgba(15,23,42,.04);}"+
+      ".payroll-toolbar .field{min-width:170px;margin:0;}"+
+      ".payroll-toolbar .field label{display:block;margin-bottom:5px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;}"+
+      ".payroll-rule{margin-left:auto;display:flex;align-items:center;gap:7px;color:#64748b;font-size:11px;line-height:1.35;max-width:390px;}"+
+      ".payroll-rule .material-icons{font-size:17px;color:#94a3b8;}"+
+      ".summary-grid{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px;}"+
+      ".summary-grid .summary-box{min-height:82px!important;padding:15px 17px!important;border:1px solid #e2e8f0!important;border-radius:14px!important;background:#fff!important;box-shadow:0 3px 12px rgba(15,23,42,.04)!important;}"+
+      ".summary-grid .summary-label{font-size:10px!important;font-weight:700!important;letter-spacing:.06em!important;text-transform:uppercase!important;color:#94a3b8!important;}"+
+      ".summary-grid .summary-value{margin-top:8px!important;font-size:21px!important;font-weight:800!important;color:#172033!important;}"+
+      ".summary-grid .summary-value.deduct{color:#b42318!important;}"+
+      ".summary-grid .summary-value.net{color:#237a3b!important;}"+
       ".payroll-list{display:flex;flex-direction:column;gap:12px;}"+
-      ".payroll-card.staff-row{display:grid!important;grid-template-columns:minmax(185px,1.45fr) repeat(8,minmax(70px,1fr)) minmax(78px,auto)!important;grid-template-rows:auto auto!important;column-gap:12px!important;row-gap:10px!important;align-items:start!important;padding:16px 18px!important;min-height:0!important;}"+
-      ".staff-row>.staff-main{grid-column:1;grid-row:1;min-width:0!important;display:flex!important;align-items:flex-start!important;}"+
-      ".staff-row>.metric{min-width:0!important;grid-row:1;align-self:start!important;}"+
-      ".staff-row>.metric span{display:block!important;font-size:10px!important;line-height:1.25!important;letter-spacing:.02em!important;white-space:normal!important;}"+
-      ".staff-row>.metric strong{display:block!important;margin-top:5px!important;font-size:13px!important;line-height:1.25!important;white-space:nowrap!important;}"+
-      ".staff-row>.metric small{font-size:9px!important;line-height:1.15!important;}"+
-      ".staff-row>.row-status{grid-column:10;grid-row:1;justify-self:end!important;align-self:start!important;white-space:nowrap!important;}"+
-      ".staff-row>.row-actions{grid-column:1/-1!important;grid-row:2!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-end!important;gap:8px!important;padding-top:10px!important;border-top:1px solid rgba(148,163,184,.18)!important;}"+
-      ".staff-row>.row-actions .btn{width:auto!important;min-width:88px!important;height:34px!important;padding:7px 12px!important;}"+
-      ".staff-row>.staff-main .staff-name{min-width:0!important;}"+
-      ".staff-row>.staff-main .staff-name strong{display:block!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}"+
-      "@media(max-width:1100px){.payroll-card.staff-row{grid-template-columns:minmax(170px,1.4fr) repeat(8,minmax(62px,1fr)) minmax(70px,auto)!important;column-gap:8px!important;padding:14px!important;}.staff-row>.metric strong{font-size:12px!important;}.staff-row>.metric span{font-size:9px!important;}}"+
-      "@media(max-width:820px){.payroll-card.staff-row{grid-template-columns:1fr 1fr 1fr!important;grid-template-rows:auto!important;}.staff-row>.staff-main{grid-column:1/-1!important;grid-row:auto!important;}.staff-row>.metric{grid-column:auto!important;grid-row:auto!important;}.staff-row>.row-status{grid-column:auto!important;grid-row:auto!important;justify-self:start!important;}.staff-row>.row-actions{grid-column:1/-1!important;grid-row:auto!important;justify-content:flex-start!important;flex-wrap:wrap!important;}}";
+      ".payroll-card.staff-row{display:block!important;padding:0!important;overflow:hidden!important;border:1px solid #e2e8f0!important;border-radius:16px!important;background:#fff!important;box-shadow:0 4px 18px rgba(15,23,42,.05)!important;}"+
+      ".staff-row .staff-top{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;padding:15px 18px 13px!important;border-bottom:1px solid #eef2f6!important;background:linear-gradient(180deg,#ffffff 0%,#fbfcfe 100%)!important;}"+
+      ".staff-row .staff-identity{display:flex!important;align-items:center!important;gap:12px!important;min-width:0!important;}"+
+      ".staff-row .staff-index{width:30px!important;height:30px!important;border-radius:9px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#f1f5f9!important;color:#64748b!important;font-size:12px!important;font-weight:800!important;flex:0 0 30px!important;}"+
+      ".staff-row .staff-name{min-width:0!important;}"+
+      ".staff-row .staff-name strong{display:block!important;font-size:15px!important;line-height:1.2!important;color:#1e293b!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}"+
+      ".staff-row .staff-name>span{display:block!important;margin-top:3px!important;color:#64748b!important;font-size:11px!important;}"+
+      ".staff-row .row-note{display:flex!important;align-items:center!important;gap:4px!important;margin-top:5px!important;color:#b45309!important;font-size:10px!important;}"+
+      ".staff-row .row-note .material-icons{font-size:13px!important;}"+
+      ".staff-row .row-status{display:flex!important;align-items:center!important;gap:8px!important;flex:0 0 auto!important;}"+
+      ".staff-row .row-status small{font-size:10px!important;color:#64748b!important;}"+
+      ".staff-row .status{display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:5px 10px!important;border-radius:999px!important;font-size:10px!important;font-weight:800!important;white-space:nowrap!important;}"+
+      ".staff-row .payroll-metrics{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:0!important;padding:14px 18px 8px!important;}"+
+      ".staff-row .metric{min-width:0!important;padding:5px 15px 10px!important;border-right:1px solid #edf1f5!important;border-bottom:1px solid #edf1f5!important;}"+
+      ".staff-row .metric:nth-child(4n){border-right:0!important;}"+
+      ".staff-row .metric:nth-last-child(-n+4){border-bottom:0!important;}"+
+      ".staff-row .metric span{display:block!important;margin-bottom:5px!important;color:#94a3b8!important;font-size:9px!important;line-height:1.2!important;font-weight:800!important;letter-spacing:.055em!important;text-transform:uppercase!important;white-space:normal!important;}"+
+      ".staff-row .metric strong{display:block!important;color:#1e293b!important;font-size:14px!important;line-height:1.25!important;font-weight:800!important;white-space:nowrap!important;}"+
+      ".staff-row .metric .deduct{color:#b42318!important;}"+
+      ".staff-row .metric .net{color:#237a3b!important;font-size:15px!important;}"+
+      ".staff-row .metric small{display:block!important;margin-top:3px!important;color:#b45309!important;font-size:9px!important;line-height:1.1!important;}"+
+      ".staff-row .adjustment{font-size:9px!important;margin-left:3px!important;}"+
+      ".staff-row .row-actions{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:8px!important;padding:11px 18px 14px!important;border-top:1px solid #eef2f6!important;background:#fafbfc!important;}"+
+      ".staff-row .row-actions:before{content:'Payroll actions';margin-right:auto;color:#94a3b8;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}"+
+      ".staff-row .row-actions .btn{width:auto!important;min-width:88px!important;height:35px!important;padding:7px 13px!important;border-radius:9px!important;}"+
+      ".staff-row .row-actions .btn i{font-size:16px!important;}"+
+      ".payroll-list .empty-state{padding:42px 20px!important;border:1px dashed #cbd5e1!important;border-radius:14px!important;background:#fff!important;color:#64748b!important;text-align:center!important;}"+
+      "@media(max-width:1100px){"+
+        ".summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;}"+
+        ".payroll-rule{width:100%;max-width:none;margin-left:0;}"+
+      "}"+
+      "@media(max-width:760px){"+
+        ".payroll-head{align-items:flex-start;flex-direction:column;}"+
+        ".summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}"+
+        ".staff-row .payroll-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important;padding:10px 12px 4px!important;}"+
+        ".staff-row .metric{padding:8px 10px!important;}"+
+        ".staff-row .metric:nth-child(4n){border-right:1px solid #edf1f5!important;}"+
+        ".staff-row .metric:nth-child(2n){border-right:0!important;}"+
+        ".staff-row .metric:nth-last-child(-n+4){border-bottom:1px solid #edf1f5!important;}"+
+        ".staff-row .metric:nth-last-child(-n+2){border-bottom:0!important;}"+
+        ".staff-row .row-actions{justify-content:flex-start!important;flex-wrap:wrap!important;}"+
+        ".staff-row .row-actions:before{width:100%;margin:0 0 2px!important;}"+
+      "}"+
+      "@media(max-width:480px){"+
+        ".summary-grid{grid-template-columns:1fr!important;}"+
+        ".staff-row .staff-top{align-items:flex-start!important;flex-direction:column!important;}"+
+        ".staff-row .row-status{width:100%!important;justify-content:flex-start!important;}"+
+        ".staff-row .row-actions .btn{flex:1 1 auto!important;}"+
+      "}";
     document.head.appendChild(s);
   }
-
   function render(){
     var paid=rows.filter(function(r){return r.status==='Paid'}).length;
     var pending=rows.filter(function(r){return r.status==='Pending'}).length;
@@ -91,30 +142,38 @@
       var joining = Number(r.joiningDaysUnpaid||0)>0
         ? '<div class="row-note"><i class="material-icons">event</i>Joined '+esc(r.joiningDate||'')+' · '+n(r.joiningDaysUnpaid)+' non-employed days</div>'
         : '';
+      var attendanceSource = r.manualAttendanceLeave!=null
+        ? '<small>Auto '+n(r.automaticAttendanceLeave)+'</small>'
+        : '';
 
       html+='<article class="payroll-card staff-row">'+
-        '<div class="staff-main">'+
-          '<div class="staff-index">'+(i+1)+'</div>'+
-          '<div class="staff-name"><strong>'+esc(r.name)+'</strong><span>'+esc(r.role||'')+'</span>'+joining+'</div>'+
+        '<div class="staff-top">'+
+          '<div class="staff-identity">'+
+            '<div class="staff-index">'+(i+1)+'</div>'+
+            '<div class="staff-name"><strong>'+esc(r.name)+'</strong><span>'+esc(r.role||'')+'</span>'+joining+'</div>'+
+          '</div>'+
+          '<div class="row-status">'+status(r.status)+(r.payDate?'<small>Paid '+esc(r.payDate)+'</small>':'')+'</div>'+
         '</div>'+
-        '<div class="metric"><span>Actual Salary</span><strong>'+money(r.salary)+'</strong></div>'+
-        '<div class="metric"><span>Leave Credit</span><strong>'+n(r.paidLeaveCredit)+' '+adjText+'</strong></div>'+
-        '<div class="metric"><span>Attendance Leave</span><strong>'+n(r.attendanceLeave)+(r.manualAttendanceLeave!=null?'<small style="display:block;color:#b45309;font-size:11px;">Auto '+n(r.automaticAttendanceLeave)+'</small>':'')+'</strong></div>'+
-        '<div class="metric"><span>Used Paid</span><strong>'+n(r.paidLeaveUsed)+'</strong></div>'+
-        '<div class="metric"><span>Balance</span><strong>'+n(r.paidLeaveBalance)+'</strong></div>'+
-        '<div class="metric"><span>Unpaid</span><strong>'+n(r.unpaidLeave)+'</strong></div>'+
-        '<div class="metric"><span>Deduction</span><strong class="deduct">'+money(r.totalDeduction)+'</strong></div>'+
-        '<div class="metric net-metric"><span>Net Salary</span><strong class="net">'+money(r.netSalary)+'</strong></div>'+
-        '<div class="row-status">'+status(r.status)+(r.payDate?'<small>Paid '+esc(r.payDate)+'</small>':'')+'</div>'+
+        '<div class="payroll-metrics">'+
+          '<div class="metric"><span>Actual Salary</span><strong>'+money(r.salary)+'</strong></div>'+
+          '<div class="metric"><span>Leave Credit</span><strong>'+n(r.paidLeaveCredit)+' '+adjText+'</strong></div>'+
+          '<div class="metric"><span>Attendance Leave</span><strong>'+n(r.attendanceLeave)+attendanceSource+'</strong></div>'+
+          '<div class="metric"><span>Used Paid</span><strong>'+n(r.paidLeaveUsed)+'</strong></div>'+
+          '<div class="metric"><span>Balance</span><strong>'+n(r.paidLeaveBalance)+'</strong></div>'+
+          '<div class="metric"><span>Unpaid</span><strong>'+n(r.unpaidLeave)+'</strong></div>'+
+          '<div class="metric"><span>Deduction</span><strong class="deduct">'+money(r.totalDeduction)+'</strong></div>'+
+          '<div class="metric"><span>Net Salary</span><strong class="net">'+money(r.netSalary)+'</strong></div>'+
+        '</div>'+
         '<div class="row-actions">'+
           (r.status==='Paid'
-            ? '<button class="btn btn-primary mini" onclick="SalaryPayroll.download('+i+')"><i class="material-icons">download</i>Slip</button>'
+            ? '<button class="btn btn-primary mini" onclick="SalaryPayroll.download('+i+')"><i class="material-icons">download</i>Salary Slip</button>'
             : '<button class="btn btn-light mini" onclick="SalaryPayroll.edit('+i+')"><i class="material-icons">edit</i>Edit</button>'+
               '<button class="btn btn-light mini" onclick="SalaryPayroll.adjustLeave('+i+')"><i class="material-icons">add_circle</i>Leave</button>'+
               '<button class="btn btn-success mini" onclick="SalaryPayroll.pay('+i+')"><i class="material-icons">payments</i>Pay</button>')+
         '</div>'+
       '</article>';
     });
+
     html+='</div>';
     return html;
   }
