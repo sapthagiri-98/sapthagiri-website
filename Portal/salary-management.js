@@ -47,6 +47,7 @@
     var html='<div class="payroll-toolbar">'+
       '<div class="field"><label>Salary Month</label><input id="salaryMonth" type="month" value="'+esc(currentMonth)+'"></div>'+
       '<button class="btn btn-primary" id="loadMonthBtn"><i class="material-icons">calendar_month</i>Load Month</button>'+
+      '<button class="btn btn-light" id="refetchLeavesBtn" title="Clear payroll leave overrides and reload the latest attendance leaves"><i class="material-icons">sync</i>Refetch Leaves</button>'+
       '<div class="payroll-rule"><i class="material-icons">info</i>3 late arrivals = 0.5 leave · unpaid deduction = salary ÷ 30 × unpaid days</div>'+
       '</div>'+
       '<div class="summary-grid">'+
@@ -76,6 +77,7 @@
         '</div>'+
         '<div class="metric"><span>Actual Salary</span><strong>'+money(r.salary)+'</strong></div>'+
         '<div class="metric"><span>Leave Credit</span><strong>'+n(r.paidLeaveCredit)+' '+adjText+'</strong></div>'+
+        '<div class="metric"><span>Attendance Leave</span><strong>'+n(r.attendanceLeave)+(r.manualAttendanceLeave!=null?'<small style="display:block;color:#b45309;font-size:11px;">Auto '+n(r.automaticAttendanceLeave)+'</small>':'')+'</strong></div>'+
         '<div class="metric"><span>Used Paid</span><strong>'+n(r.paidLeaveUsed)+'</strong></div>'+
         '<div class="metric"><span>Balance</span><strong>'+n(r.paidLeaveBalance)+'</strong></div>'+
         '<div class="metric"><span>Unpaid</span><strong>'+n(r.unpaidLeave)+'</strong></div>'+
@@ -95,8 +97,35 @@
     return html;
   }
   function bindMonthly(){
-    var inp=document.getElementById("salaryMonth"), btn=document.getElementById("loadMonthBtn");
+    var inp=document.getElementById("salaryMonth"), btn=document.getElementById("loadMonthBtn"), refetch=document.getElementById("refetchLeavesBtn");
     if(btn)btn.onclick=function(){currentMonth=inp.value||currentMonth;loadMonth()};
+    if(refetch)refetch.onclick=refetchLeaves;
+  }
+
+  async function refetchLeaves(){
+    currentMonth=(document.getElementById("salaryMonth")||{}).value||currentMonth;
+    if(!currentMonth)return;
+
+    var ok=window.confirm(
+      "Refetch the attendance leaves for " + monthLabel(currentMonth) + "?\n\n" +
+      "This will clear payroll leave overrides for unpaid/pending rows and use the latest attendance data. " +
+      "Already Paid salaries will not be changed."
+    );
+    if(!ok)return;
+
+    var b=document.getElementById("refetchLeavesBtn");
+    try{
+      if(b)b.disabled=true;
+      Portal.overlay(true,"Refetching attendance leaves…");
+      var result=await api("payrollRefetchLeaves",[currentMonth]);
+      toast(result && result.message ? result.message : "Attendance leaves refetched.");
+      await loadMonth();
+    }catch(e){
+      toast(e.message||String(e),true);
+    }finally{
+      if(b)b.disabled=false;
+      Portal.overlay(false);
+    }
   }
   async function loadMonth(){
     currentMonth=(document.getElementById("salaryMonth")||{}).value||currentMonth||new Date().toISOString().slice(0,7);
@@ -170,9 +199,121 @@
     };
   }
 
-  function edit(i){editing=i;var r=rows[i];document.getElementById('editEmployee').textContent=r.name+' · '+monthLabel(currentMonth);document.getElementById('editUnpaid').value=r.manualUnpaidLeave==null?r.unpaidLeave:r.manualUnpaidLeave;document.getElementById('editDeduction').value=r.manualDeduction==null?'':r.manualDeduction;document.getElementById('editNet').value=r.manualNetSalary==null?'':r.manualNetSalary;document.getElementById('editMode').value=r.paymentMode||'Bank Transfer';document.getElementById('editComment').value=r.paymentComment||'';document.getElementById('editModal').classList.add('show');}
-  function closeEdit(){document.getElementById('editModal').classList.remove('show');editing=null;}
-  async function saveEdit(){var r=rows[editing];var unpaid=Number(document.getElementById('editUnpaid').value||0);var dedRaw=document.getElementById('editDeduction').value;var netRaw=document.getElementById('editNet').value;var comment=document.getElementById('editComment').value.trim();if((dedRaw!==''||netRaw!==''||unpaid!==Number(r.calculatedUnpaidLeave))&&!comment){toast('Enter a reason for changing the calculated payroll. ',true);return}var paidUsed=Math.max(0,Number(r.attendanceLeave||0)-unpaid);var balance=Math.max(0,Number(r.paidLeaveCredit||0)-paidUsed);var deduction=dedRaw===''?unpaid*Number(r.salary||0)/30:Number(dedRaw);var net=netRaw===''?Number(r.salary||0)-deduction:Number(netRaw);try{await api('payrollSaveRow',[{month:currentMonth,userId:r.userId,salary:r.salary,annualLeaveEntitlement:r.annualLeaveEntitlement,paidLeaveCredit:r.paidLeaveCredit,paidLeaveUsed:paidUsed,paidLeaveBalance:balance,calculatedUnpaidLeave:r.calculatedUnpaidLeave,manualUnpaidLeave:unpaid,unpaidLeave:unpaid,dailyRate:r.dailyRate,calculatedDeduction:r.calculatedDeduction,manualDeduction:dedRaw===''?null:Number(dedRaw),totalDeduction:deduction,calculatedNetSalary:r.calculatedNetSalary,manualNetSalary:netRaw===''?null:Number(netRaw),netSalary:net,joiningDate:r.joiningDate,joiningDaysUnpaid:r.joiningDaysUnpaid,latePenaltyLeave:r.latePenaltyLeave}]);toast('Payroll changes saved.');closeEdit();await loadMonth()}catch(e){toast(e.message,true)}}
+  function ensureAttendanceLeaveEditor(r){
+    var input=document.getElementById("editAttendanceLeave");
+    if(!input){
+      var unpaid=document.getElementById("editUnpaid");
+      if(!unpaid)return;
+      var anchor=unpaid.closest(".field") || unpaid.parentElement;
+      var field=document.createElement("div");
+      field.className="field";
+      field.innerHTML=
+        '<label>Final Attendance Leave (days)</label>'+
+        '<input id="editAttendanceLeave" type="number" min="0" step="0.5">'+
+        '<div id="editAttendanceLeaveNote" class="muted" style="margin-top:5px;font-size:12px;"></div>'+
+        '<button type="button" class="btn btn-light mini" id="editAttendanceReset" style="margin-top:7px;">Use Automatic</button>';
+      anchor.parentNode.insertBefore(field,anchor);
+      input=document.getElementById("editAttendanceLeave");
+      document.getElementById("editAttendanceReset").onclick=function(){
+        var auto=Number(input.getAttribute("data-auto")||0);
+        input.value=auto;
+        input.setAttribute("data-manual","false");
+      };
+      input.addEventListener("input",function(){input.setAttribute("data-manual","true");});
+    }
+
+    var auto=Number(r.automaticAttendanceLeave==null?r.attendanceLeave:r.automaticAttendanceLeave);
+    var finalValue=r.manualAttendanceLeave==null?Number(r.attendanceLeave||0):Number(r.manualAttendanceLeave);
+    input.value=finalValue;
+    input.setAttribute("data-auto",String(auto));
+    input.setAttribute("data-manual",r.manualAttendanceLeave==null?"false":"true");
+
+    var note=document.getElementById("editAttendanceLeaveNote");
+    if(note){
+      note.textContent="Automatic attendance: "+n(auto)+" days. Change this only when management confirms a biometric/attendance correction.";
+    }
+  }
+
+  function edit(i){
+    editing=i;
+    var r=rows[i];
+    document.getElementById('editEmployee').textContent=r.name+' · '+monthLabel(currentMonth);
+    ensureAttendanceLeaveEditor(r);
+    document.getElementById('editUnpaid').value=r.manualUnpaidLeave==null?r.unpaidLeave:r.manualUnpaidLeave;
+    document.getElementById('editDeduction').value=r.manualDeduction==null?'':r.manualDeduction;
+    document.getElementById('editNet').value=r.manualNetSalary==null?'':r.manualNetSalary;
+    document.getElementById('editMode').value=r.paymentMode||'Bank Transfer';
+    document.getElementById('editComment').value=r.paymentComment||'';
+    document.getElementById('editModal').classList.add('show');
+  }
+
+  function closeEdit(){
+    document.getElementById('editModal').classList.remove('show');
+    editing=null;
+  }
+
+  async function saveEdit(){
+    var r=rows[editing];
+    var leaveInput=document.getElementById('editAttendanceLeave');
+    var finalAttendance=Number(leaveInput && leaveInput.value !== '' ? leaveInput.value : r.attendanceLeave);
+    var autoAttendance=Number(r.automaticAttendanceLeave==null?r.attendanceLeave:r.automaticAttendanceLeave);
+    var unpaid=Number(document.getElementById('editUnpaid').value||0);
+    var dedRaw=document.getElementById('editDeduction').value;
+    var netRaw=document.getElementById('editNet').value;
+    var comment=document.getElementById('editComment').value.trim();
+
+    if(!Number.isFinite(finalAttendance) || finalAttendance<0){
+      toast('Final attendance leave cannot be negative.',true);
+      return;
+    }
+
+    finalAttendance=Math.round(finalAttendance*2)/2;
+    var attendanceChanged=Math.abs(finalAttendance-Number(r.attendanceLeave||0))>0.001;
+    var manualLeaveOverride=Math.abs(finalAttendance-autoAttendance)>0.001 ? finalAttendance : null;
+
+    if((dedRaw!==''||netRaw!==''||unpaid!==Number(r.calculatedUnpaidLeave)||attendanceChanged)&&!comment){
+      toast('Enter a reason for changing the calculated payroll.',true);
+      return;
+    }
+
+    var paidUsed=Math.max(0,finalAttendance-unpaid);
+    var balance=Math.max(0,Number(r.paidLeaveCredit||0)-paidUsed);
+    var manualUnpaidValue=(r.manualUnpaidLeave!=null || unpaid!==Number(r.unpaidLeave||0)) ? unpaid : null;
+    var deduction=dedRaw===''?unpaid*Number(r.salary||0)/30:Number(dedRaw);
+    var net=netRaw===''?Number(r.salary||0)-deduction:Number(netRaw);
+
+    try{
+      await api('payrollSaveRow',[{
+        month:currentMonth,
+        userId:r.userId,
+        salary:r.salary,
+        annualLeaveEntitlement:r.annualLeaveEntitlement,
+        paidLeaveCredit:r.paidLeaveCredit,
+        paidLeaveUsed:paidUsed,
+        manualAttendanceLeave:manualLeaveOverride,
+        paidLeaveBalance:balance,
+        calculatedUnpaidLeave:r.calculatedUnpaidLeave,
+        manualUnpaidLeave:manualUnpaidValue,
+        unpaidLeave:unpaid,
+        dailyRate:r.dailyRate,
+        calculatedDeduction:r.calculatedDeduction,
+        manualDeduction:dedRaw===''?null:Number(dedRaw),
+        totalDeduction:deduction,
+        calculatedNetSalary:r.calculatedNetSalary,
+        manualNetSalary:netRaw===''?null:Number(netRaw),
+        netSalary:net,
+        joiningDate:r.joiningDate,
+        joiningDaysUnpaid:r.joiningDaysUnpaid,
+        latePenaltyLeave:r.latePenaltyLeave
+      }]);
+      toast('Payroll changes saved.');
+      closeEdit();
+      await loadMonth();
+    }catch(e){
+      toast(e.message||String(e),true);
+    }
+  }
+
   function pay(i){paying=i;var r=rows[i];document.getElementById('payEmployee').textContent=r.name+' · '+monthLabel(currentMonth);document.getElementById('payAmount').value=Number(r.netSalary||0).toFixed(2);document.getElementById('payDate').value=today();document.getElementById('payMode').value=r.paymentMode||'Bank Transfer';document.getElementById('payReference').value='';document.getElementById('payComment').value='';document.getElementById('payModal').classList.add('show');}
   function closePay(){document.getElementById('payModal').classList.remove('show');paying=null;}
   async function confirmPay(){var r=rows[paying], amount=Number(document.getElementById('payAmount').value||0), comment=document.getElementById('payComment').value.trim();if(Math.abs(amount-Number(r.netSalary||0))>0.005&&!comment){toast('Comment is required when changing the salary amount.',true);return}var b=document.getElementById('confirmPayBtn');try{b.disabled=true;await api('payrollSaveRow',[{month:currentMonth,userId:r.userId,salary:r.salary,annualLeaveEntitlement:r.annualLeaveEntitlement,paidLeaveCredit:r.paidLeaveCredit,paidLeaveUsed:r.paidLeaveUsed,paidLeaveBalance:r.paidLeaveBalance,calculatedUnpaidLeave:r.calculatedUnpaidLeave,manualUnpaidLeave:r.manualUnpaidLeave,unpaidLeave:r.unpaidLeave,dailyRate:r.dailyRate,calculatedDeduction:r.calculatedDeduction,manualDeduction:r.manualDeduction,totalDeduction:r.totalDeduction,calculatedNetSalary:r.calculatedNetSalary,manualNetSalary:Math.abs(amount-Number(r.calculatedNetSalary||0))>0.005?amount:r.manualNetSalary,netSalary:amount,joiningDate:r.joiningDate,joiningDaysUnpaid:r.joiningDaysUnpaid,latePenaltyLeave:r.latePenaltyLeave}]);await api('payrollMarkPaid',[{month:currentMonth,userId:r.userId,payDate:document.getElementById('payDate').value,paymentMode:document.getElementById('payMode').value,paymentReference:document.getElementById('payReference').value,paymentComment:comment,netSalary:amount}]);toast('Salary marked as paid.');closePay();await loadMonth()}catch(e){toast(e.message,true)}finally{b.disabled=false}}
