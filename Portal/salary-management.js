@@ -563,7 +563,7 @@
 
 /* =========================================================================
    Embedded salary-slip generator
-   Clean, compact, single-page A4 payslip
+   Print-first, clean one-page A4 salary slip
    ========================================================================= */
 (function () {
   "use strict";
@@ -669,7 +669,7 @@
     return null;
   }
 
-  /* Modern standard PDF font. Helvetica is intentionally used instead of Times. */
+  /* Helvetica is a clean, widely supported print font in jsPDF. */
   function setFont(doc, size, color, style) {
     doc.setFont("helvetica", style || "normal");
     doc.setFontSize(size || 9);
@@ -698,53 +698,46 @@
     doc.line(x1, y1, x2, y2);
   }
 
-  /*
-   * Compact section heading:
-   * a small burgundy accent block + restrained label.
-   * This replaces the heavy double-line separators from the previous design.
-   */
+  /* Print-oriented section heading: label first, then one restrained rule. */
   function section(doc, title, y, left, width, C) {
-    fill(doc, left, y, 2.2, 6, C.maroon);
-    text(doc, title, left + 6, y + 4.5, 8.2, C.maroon, "bold");
-    line(doc, left + 78, y + 3.2, left + width, y + 3.2, C.line, 0.35);
+    fill(doc, left, y + 0.8, 1.8, 5.4, C.maroon);
+    text(doc, title, left + 5, y + 5.0, 7.5, C.maroon, "bold");
+    line(doc, left + 52, y + 3.8, left + width, y + 3.8, C.line, 0.35);
     return y + 9;
   }
 
-  function labelValue(doc, x, y, w, label, value, C, opts) {
-    var labelW = opts && opts.labelW ? opts.labelW : 31;
-    var h = opts && opts.h ? opts.h : 9.5;
-    var valueX = x + labelW;
-
-    fill(doc, x, y, labelW, h, C.soft);
-    stroke(doc, x, y, w, h, C.line, 0.25);
-    line(doc, valueX, y, valueX, y + h, C.line, 0.25);
-
-    text(doc, label, x + 4, y + 6.1, 7.1, C.muted, "bold");
-    text(doc, value == null || value === "" ? "—" : value, valueX + 4, y + 6.1, 7.9, C.ink, "normal");
-    return h;
-  }
-
   function compactPairRow(doc, x, y, w, leftLabel, leftValue, rightLabel, rightValue, C, h) {
-    h = h || 9.5;
+    h = h || 8.5;
     var half = w / 2;
-    var labelW = 39;
+    var labelW = 36;
 
     fill(doc, x, y, labelW, h, C.soft);
     fill(doc, x + half, y, labelW, h, C.soft);
+    stroke(doc, x, y, w, h, C.line, 0.22);
+    line(doc, x + half, y, x + half, y + h, C.line, 0.22);
+    line(doc, x + labelW, y, x + labelW, y + h, C.line, 0.22);
+    line(doc, x + half + labelW, y, x + half + labelW, y + h, C.line, 0.22);
 
-    stroke(doc, x, y, w, h, C.line, 0.25);
-    line(doc, x + half, y, x + half, y + h, C.line, 0.25);
-    line(doc, x + labelW, y, x + labelW, y + h, C.line, 0.25);
-    line(doc, x + half + labelW, y, x + half + labelW, y + h, C.line, 0.25);
-
-    text(doc, leftLabel, x + 4, y + 6.1, 7.0, C.muted, "bold");
+    text(doc, leftLabel, x + 4, y + 5.5, 6.6, C.muted, "bold");
     text(doc, leftValue == null || leftValue === "" ? "—" : leftValue,
-      x + labelW + 4, y + 6.1, 7.8, C.ink, "normal");
+      x + labelW + 4, y + 5.5, 7.4, C.ink, "normal");
 
-    text(doc, rightLabel, x + half + 4, y + 6.1, 7.0, C.muted, "bold");
-    text(doc, rightValue == null || rightValue === "" ? "—" : rightValue,
-      x + half + labelW + 4, y + 6.1, 7.8, C.ink, "normal");
+    if (rightLabel) {
+      text(doc, rightLabel, x + half + 4, y + 5.5, 6.6, C.muted, "bold");
+      text(doc, rightValue == null || rightValue === "" ? "—" : rightValue,
+        x + half + labelW + 4, y + 5.5, 7.4, C.ink, "normal");
+    }
 
+    return h;
+  }
+
+  function salaryRow(doc, x, y, w, label, value, C, strong) {
+    var h = 8.5;
+    fill(doc, x, y, w, h, C.softer);
+    stroke(doc, x, y, w, h, C.line, 0.22);
+    text(doc, label, x + 5, y + 5.5, 6.8, C.muted, "bold");
+    text(doc, value, x + w - 5, y + 5.5, strong ? 8.2 : 7.8,
+      strong ? C.maroon : C.ink, strong ? "bold" : "normal", { align: "right" });
     return h;
   }
 
@@ -773,21 +766,15 @@
     var right = 196;
     var width = right - left;
 
-    /*
-     * Clean institutional palette:
-     * burgundy is used only as an accent, with charcoal text and cool grey
-     * structure. No bright orange body elements and no heavy boxed styling.
-     */
     var C = {
       maroon: "#76161D",
-      maroonSoft: "#F6EFF0",
+      maroonSoft: "#F7F0F1",
       ink: "#252A30",
       muted: "#69727C",
-      line: "#D9DEE3",
-      soft: "#F4F6F7",
+      line: "#D6DBDF",
+      soft: "#F3F5F6",
       softer: "#FAFBFB",
-      white: "#FFFFFF",
-      green: "#276749"
+      white: "#FFFFFF"
     };
 
     var name = String((row.staff && row.staff.name) || row.name || "");
@@ -807,11 +794,8 @@
     var opening = row.paidLeaveOpening != null ? row.paidLeaveOpening : row.paid_leave_opening;
     var unpaid = row.unpaidLeave != null ? row.unpaidLeave : row.unpaid_leave;
 
-    if (opening == null) {
-      opening = Number(balance || 0) + Number(used || 0);
-    }
+    if (opening == null) opening = Number(balance || 0) + Number(used || 0);
 
-    /* Keep the public employee identifier separate from the internal user ID. */
     var rawEmployeeId = row.employeeId != null
       ? row.employeeId
       : (row.employee_id != null ? row.employee_id : row.userId);
@@ -822,12 +806,10 @@
       if (Number.isFinite(employeeNumber) && employeeNumber > 0) {
         employeeId = "SHS-EMP-" + String(Math.floor(employeeNumber)).padStart(3, "0");
       } else {
-        employeeId = "SHS-EMP-" +
-          String(rawEmployeeId).replace(/[^a-z0-9]/gi, "").slice(-6);
+        employeeId = "SHS-EMP-" + String(rawEmployeeId).replace(/[^a-z0-9]/gi, "").slice(-6);
       }
     }
 
-    /* June/July 2026 have no transaction reference; August 2026 onward does. */
     var payrollKey = String(month || "").slice(0, 7);
     var transactionReference = "Not available";
     if (payrollKey >= "2026-08") {
@@ -835,8 +817,6 @@
     }
 
     fill(doc, 0, 0, pageW, pageH, C.white);
-
-    /* Very light page frame. */
     stroke(doc, 8.5, 8.5, 193, 280, C.line, 0.25);
 
     /* ================================================================
@@ -845,176 +825,110 @@
     var logo = await loadHeaderLogo();
 
     if (logo) {
-      /*
-       * The supplied header-logo already contains the school emblem and
-       * school name. It is therefore the only school-name treatment used.
-       */
       doc.addImage(logo, "PNG", left, 13, 103, 18, undefined, "FAST");
     }
 
-    /* Small document label only. No repeated payroll month at top right. */
-    fill(doc, right - 31, 15, 31, 7, C.maroonSoft);
-    text(doc, "PAYROLL DOCUMENT", right - 15.5, 19.6, 6.4, C.maroon, "bold", { align: "center" });
+    /* The document identity lives here once. No duplicate title in the body. */
+    fill(doc, 151, 13, 45, 22, C.maroonSoft);
+    line(doc, 151, 35, 196, 35, C.maroon, 0.55);
+    text(doc, "SALARY SLIP", 173.5, 23.0, 11.2, C.maroon, "bold", { align: "center" });
+    text(doc, slipMonth(month), 173.5, 29.2, 7.2, C.ink, "normal", { align: "center" });
 
-    /* School details sit together under the logo, separated by one clean rule. */
-    line(doc, left, 35.5, right, 35.5, C.maroon, 0.7);
-
+    /* School information is deliberately aligned as a proper two-line block. */
     text(doc,
       "8-3-311/3, Vemulawada By-Pass Road, Sapthagiri Colony, Karimnagar - 505001",
-      left, 42.0, 7.0, C.ink, "normal");
+      left, 39.5, 6.9, C.ink, "normal");
 
     text(doc,
       "9381118421  |  sapthagiri.98@gmail.com  |  www.sapthagirischool.in",
-      left, 46.7, 7.0, C.muted, "normal");
+      left, 44.4, 6.7, C.muted, "normal");
 
     text(doc,
-      "UDISE 36130790563   |   School Code 22227   |   PAN AAEAS6450K",
-      right, 46.7, 6.8, C.muted, "normal", { align: "right" });
+      "UDISE 36130790563  |  School Code 22227  |  PAN AAEAS6450K",
+      right, 44.4, 6.5, C.muted, "normal", { align: "right" });
 
-    /* ================================================================
-       DOCUMENT TITLE
-       ================================================================ */
-    text(doc, "SALARY SLIP", pageW / 2, 59.0, 15.5, C.ink, "bold", { align: "center" });
-    text(doc, slipMonth(month), pageW / 2, 65.0, 8.2, C.maroon, "bold", { align: "center" });
-    line(doc, 74, 68.5, 136, 68.5, C.line, 0.45);
+    /* One clear divider after the complete school information block. */
+    line(doc, left, 49.0, right, 49.0, C.maroon, 0.65);
 
-    var y = 74;
+    var y = 56;
 
     /* ================================================================
        EMPLOYEE INFORMATION
        ================================================================ */
     y = section(doc, "EMPLOYEE INFORMATION", y, left, width, C);
 
-    y += compactPairRow(
-      doc, left, y, width,
-      "Employee", name || "—",
-      "Designation", role || "—", C, 9.5
-    );
+    y += compactPairRow(doc, left, y, width,
+      "Employee", name || "—", "Designation", role || "—", C, 8.5);
+    y += compactPairRow(doc, left, y, width,
+      "Employee ID", employeeId || "—", "Payroll Month", slipMonth(month), C, 8.5);
+    y += compactPairRow(doc, left, y, width,
+      "Pay Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—", C, 8.5);
 
-    y += compactPairRow(
-      doc, left, y, width,
-      "Employee ID", employeeId || "—",
-      "Payroll Month", slipMonth(month),
-      C, 9.5
-    );
-
-    y += compactPairRow(
-      doc, left, y, width,
-      "Pay Date", slipDate(payDate) || "—",
-      "Payment Mode", payMode || "—",
-      C, 9.5
-    );
-
-    y += 6;
+    y += 5;
 
     /* ================================================================
        LEAVE SUMMARY
        ================================================================ */
     y = section(doc, "LEAVE SUMMARY", y, left, width, C);
+    y += compactPairRow(doc, left, y, width,
+      "Opening Balance", slipNum(opening), "Paid Leave Used", slipNum(used), C, 8.5);
+    y += compactPairRow(doc, left, y, width,
+      "Closing Balance", slipNum(balance), "Unpaid Leave", slipNum(unpaid), C, 8.5);
 
-    y += compactPairRow(
-      doc, left, y, width,
-      "Opening Balance", slipNum(opening),
-      "Paid Leave Used", slipNum(used),
-      C, 9.5
-    );
-
-    y += compactPairRow(
-      doc, left, y, width,
-      "Closing Balance", slipNum(balance),
-      "Unpaid Leave", slipNum(unpaid),
-      C, 9.5
-    );
-
-    y += 6;
+    y += 5;
 
     /* ================================================================
        SALARY DETAILS
        ================================================================ */
     y = section(doc, "SALARY DETAILS", y, left, width, C);
+    y += salaryRow(doc, left, y, width, "Monthly Salary", slipMoney(salary), C, false);
+    y += salaryRow(doc, left, y, width, "Unpaid Leave Deduction", slipMoney(deduction), C, false);
+    y += 4;
 
-    var half = width / 2;
-
-    fill(doc, left, y, width, 9.5, C.soft);
-    stroke(doc, left, y, width, 9.5, C.line, 0.25);
-    line(doc, left + half, y, left + half, y + 9.5, C.line, 0.25);
-
-    text(doc, "Monthly Salary", left + 5, y + 6.1, 7.4, C.muted, "bold");
-    text(doc, slipMoney(salary), left + half - 5, y + 6.1, 8.5, C.ink, "bold", { align: "right" });
-
-    y += 9.5;
-
-    fill(doc, left, y, width, 9.5, C.white);
-    stroke(doc, left, y, width, 9.5, C.line, 0.25);
-    line(doc, left + half, y, left + half, y + 9.5, C.line, 0.25);
-
-    text(doc, "Unpaid Leave Deduction", left + 5, y + 6.1, 7.4, C.muted, "bold");
-    text(doc, slipMoney(deduction), left + half - 5, y + 6.1, 8.5, C.ink, "normal", { align: "right" });
-
-    y += 11;
-
-    /* Net salary is the one intentionally prominent financial element. */
-    fill(doc, left, y, width, 13, C.maroonSoft);
-    stroke(doc, left, y, width, 13, C.maroon, 0.55);
-
-    text(doc, "NET SALARY PAYABLE", left + 6, y + 8.2, 8.4, C.maroon, "bold");
-    text(doc, slipMoney(net), right - 6, y + 8.2, 11.0, C.maroon, "bold", { align: "right" });
-
-    y += 19;
+    fill(doc, left, y, width, 12.5, C.maroonSoft);
+    stroke(doc, left, y, width, 12.5, C.maroon, 0.55);
+    text(doc, "NET SALARY PAYABLE", left + 6, y + 8.0, 8.0, C.maroon, "bold");
+    text(doc, slipMoney(net), right - 6, y + 8.0, 10.4, C.maroon, "bold", { align: "right" });
+    y += 17;
 
     /* ================================================================
        AMOUNT IN WORDS
        ================================================================ */
     y = section(doc, "AMOUNT IN WORDS", y, left, width, C);
-
-    fill(doc, left, y, width, 11, C.softer);
-    stroke(doc, left, y, width, 11, C.line, 0.25);
-    text(doc, amountWords(net), left + 5, y + 7.0, 8.0, C.ink, "normal");
-    y += 17;
+    text(doc, amountWords(net), left + 5, y + 5.0, 7.6, C.ink, "normal");
+    line(doc, left, y + 8.5, right, y + 8.5, C.line, 0.25);
+    y += 13;
 
     /* ================================================================
        PAYMENT INFORMATION
        ================================================================ */
     y = section(doc, "PAYMENT INFORMATION", y, left, width, C);
+    y += compactPairRow(doc, left, y, width,
+      "Payment Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—", C, 8.5);
+    y += compactPairRow(doc, left, y, width,
+      "Transaction Reference", transactionReference, "", "", C, 8.5);
 
-    y += compactPairRow(
-      doc, left, y, width,
-      "Payment Date", slipDate(payDate) || "—",
-      "Payment Mode", payMode || "—",
-      C, 9.5
-    );
-
-    y += compactPairRow(
-      doc, left, y, width,
-      "Transaction Reference", transactionReference,
-      "", "",
-      C, 9.5
-    );
-
-    y += 6;
+    y += 5;
 
     /* ================================================================
        DECLARATION
        ================================================================ */
     y = section(doc, "DECLARATION", y, left, width, C);
-
     var declaration =
       "This is a computer-generated salary slip issued by Sapthagiri High School E/M. " +
       "The salary details are based on the payroll record for the stated period.";
-
     var declarationLines = doc.splitTextToSize(declaration, width - 10);
-    text(doc, declarationLines, left + 5, y + 5.5, 7.2, C.muted, "normal");
-    y += Math.max(1, declarationLines.length) * 4 + 5;
+    text(doc, declarationLines, left + 5, y + 5.0, 6.9, C.muted, "normal");
+    y += Math.max(1, declarationLines.length) * 3.6 + 8;
 
     /* ================================================================
        FOOTER
        ================================================================ */
-    var footerY = 267;
-
+    var footerY = 265;
     line(doc, left, footerY, right, footerY, C.line, 0.35);
 
-    text(doc, "For Sapthagiri High School E/M", left, footerY + 8, 7.8, C.ink, "bold");
-    text(doc, "Authorised Administration", left, footerY + 13, 7.0, C.muted, "normal");
+    text(doc, "For Sapthagiri High School E/M", left, footerY + 7, 7.4, C.ink, "bold");
+    text(doc, "Authorised Administration", left, footerY + 12, 6.8, C.muted, "normal");
 
     var generatedDate = new Date();
     var generatedOn =
@@ -1022,8 +936,7 @@
       ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][generatedDate.getMonth()] +
       " " + generatedDate.getFullYear();
 
-    text(doc, "Generated " + generatedOn, right, footerY + 8, 7.0, C.muted, "normal", { align: "right" });
-    text(doc, "Payroll Period: " + slipMonth(month), right, footerY + 13, 7.0, C.muted, "normal", { align: "right" });
+    text(doc, "Generated " + generatedOn, right, footerY + 7, 6.8, C.muted, "normal", { align: "right" });
 
     var safe = name.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "Staff";
     var fileMonth = String(month || "").slice(0, 7) || "Payroll";
