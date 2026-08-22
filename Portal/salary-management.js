@@ -563,7 +563,7 @@
 
 /* =========================================================================
    Embedded salary-slip generator
-   Reference-style professional A4 payslip
+   Clean, compact, single-page A4 payslip
    ========================================================================= */
 (function () {
   "use strict";
@@ -592,15 +592,9 @@
   function slipMonth(v) {
     var p = String(v || "").slice(0, 7).split("-");
     if (p.length !== 2 || !p[0] || !p[1]) return String(v || "");
-    var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    var months = ["January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"];
     return (months[Number(p[1]) - 1] || p[1]) + " " + p[0];
-  }
-
-  function slipMonthShort(v) {
-    var p = String(v || "").slice(0, 7).split("-");
-    if (p.length !== 2) return String(v || "");
-    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return (months[Number(p[1]) - 1] || p[1]) + "-" + p[0].slice(-2);
   }
 
   function ones(n) {
@@ -610,7 +604,8 @@
   }
 
   function tens(n) {
-    return ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"][n] || "";
+    return ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy",
+      "Eighty", "Ninety"][n] || "";
   }
 
   function under1000(n) {
@@ -621,9 +616,8 @@
       n %= 100;
       if (n) s += " ";
     }
-    if (n < 20) {
-      s += ones(n);
-    } else {
+    if (n < 20) s += ones(n);
+    else {
       s += tens(Math.floor(n / 10));
       if (n % 10) s += " " + ones(n % 10);
     }
@@ -675,10 +669,11 @@
     return null;
   }
 
+  /* Modern standard PDF font. Helvetica is intentionally used instead of Times. */
   function setFont(doc, size, color, style) {
-    doc.setFont("times", style || "normal");
+    doc.setFont("helvetica", style || "normal");
     doc.setFontSize(size || 9);
-    doc.setTextColor(color || "#1F2937");
+    doc.setTextColor(color || "#20252B");
   }
 
   function text(doc, value, x, y, size, color, style, opts) {
@@ -686,40 +681,71 @@
     doc.text(String(value == null ? "" : value), x, y, opts || {});
   }
 
-  function hLine(doc, x1, y1, x2, y2, color, width) {
-    doc.setDrawColor(color || "#D0D5DD");
-    doc.setLineWidth(width || 0.25);
-    doc.line(x1, y1, x2, y2);
-  }
-
-  function fillRect(doc, x, y, w, h, color) {
+  function fill(doc, x, y, w, h, color) {
     doc.setFillColor(color);
     doc.rect(x, y, w, h, "F");
   }
 
-  function tableDefaults(colors) {
-    return {
-      theme: "grid",
-      styles: {
-        font: "times",
-        fontSize: 9.1,
-        textColor: colors.ink,
-        lineColor: [201, 206, 212],
-        lineWidth: 0.28,
-        cellPadding: { top: 4.8, right: 5.0, bottom: 4.8, left: 5.0 },
-        valign: "middle"
-      },
-      headStyles: {
-        font: "times",
-        fontStyle: "bold"
-      }
-    };
+  function stroke(doc, x, y, w, h, color, width) {
+    doc.setDrawColor(color);
+    doc.setLineWidth(width || 0.25);
+    doc.rect(x, y, w, h, "S");
   }
 
-  function sectionHeader(doc, title, y, left, width, colors) {
-    text(doc, title, left, y + 5.5, 8.8, colors.maroon, "bold");
-    hLine(doc, left, y + 8.5, left + width, y + 8.5, colors.maroon, 0.45);
-    return y + 11;
+  function line(doc, x1, y1, x2, y2, color, width) {
+    doc.setDrawColor(color);
+    doc.setLineWidth(width || 0.25);
+    doc.line(x1, y1, x2, y2);
+  }
+
+  /*
+   * Compact section heading:
+   * a small burgundy accent block + restrained label.
+   * This replaces the heavy double-line separators from the previous design.
+   */
+  function section(doc, title, y, left, width, C) {
+    fill(doc, left, y, 2.2, 6, C.maroon);
+    text(doc, title, left + 6, y + 4.5, 8.2, C.maroon, "bold");
+    line(doc, left + 78, y + 3.2, left + width, y + 3.2, C.line, 0.35);
+    return y + 9;
+  }
+
+  function labelValue(doc, x, y, w, label, value, C, opts) {
+    var labelW = opts && opts.labelW ? opts.labelW : 31;
+    var h = opts && opts.h ? opts.h : 9.5;
+    var valueX = x + labelW;
+
+    fill(doc, x, y, labelW, h, C.soft);
+    stroke(doc, x, y, w, h, C.line, 0.25);
+    line(doc, valueX, y, valueX, y + h, C.line, 0.25);
+
+    text(doc, label, x + 4, y + 6.1, 7.1, C.muted, "bold");
+    text(doc, value == null || value === "" ? "—" : value, valueX + 4, y + 6.1, 7.9, C.ink, "normal");
+    return h;
+  }
+
+  function compactPairRow(doc, x, y, w, leftLabel, leftValue, rightLabel, rightValue, C, h) {
+    h = h || 9.5;
+    var half = w / 2;
+    var labelW = 39;
+
+    fill(doc, x, y, labelW, h, C.soft);
+    fill(doc, x + half, y, labelW, h, C.soft);
+
+    stroke(doc, x, y, w, h, C.line, 0.25);
+    line(doc, x + half, y, x + half, y + h, C.line, 0.25);
+    line(doc, x + labelW, y, x + labelW, y + h, C.line, 0.25);
+    line(doc, x + half + labelW, y, x + half + labelW, y + h, C.line, 0.25);
+
+    text(doc, leftLabel, x + 4, y + 6.1, 7.0, C.muted, "bold");
+    text(doc, leftValue == null || leftValue === "" ? "—" : leftValue,
+      x + labelW + 4, y + 6.1, 7.8, C.ink, "normal");
+
+    text(doc, rightLabel, x + half + 4, y + 6.1, 7.0, C.muted, "bold");
+    text(doc, rightValue == null || rightValue === "" ? "—" : rightValue,
+      x + half + labelW + 4, y + 6.1, 7.8, C.ink, "normal");
+
+    return h;
   }
 
   window.generateSalarySlipPDF = async function (row, month) {
@@ -741,27 +767,27 @@
       compress: true
     });
 
-    if (typeof doc.autoTable !== "function") {
-      throw new Error("PDF table library is not loaded. Refresh the page once.");
-    }
-
     var pageW = 210;
     var pageH = 297;
-    var left = 15;
-    var right = 195;
+    var left = 14;
+    var right = 196;
     var width = right - left;
 
-    /* Salary-slip palette only. Payroll Management UI is untouched. */
-    var colors = {
-      maroon: "#7A151A",
-      maroonDark: "#5D1115",
-      orange: "#C76524",
-      ink: "#222222",
-      muted: "#5F6368",
-      gray: "#F5F5F5",
-      gray2: "#FAFAFA",
-      border: "#C9C9C9",
-      white: "#FFFFFF"
+    /*
+     * Clean institutional palette:
+     * burgundy is used only as an accent, with charcoal text and cool grey
+     * structure. No bright orange body elements and no heavy boxed styling.
+     */
+    var C = {
+      maroon: "#76161D",
+      maroonSoft: "#F6EFF0",
+      ink: "#252A30",
+      muted: "#69727C",
+      line: "#D9DEE3",
+      soft: "#F4F6F7",
+      softer: "#FAFBFB",
+      white: "#FFFFFF",
+      green: "#276749"
     };
 
     var name = String((row.staff && row.staff.name) || row.name || "");
@@ -785,12 +811,7 @@
       opening = Number(balance || 0) + Number(used || 0);
     }
 
-    /*
-     * Employee ID is a display/payroll identifier only.
-     * It deliberately does not expose the internal Users-table user ID.
-     * The existing payroll userId is used only to generate the display
-     * sequence SHS-EMP-001, SHS-EMP-002, etc.
-     */
+    /* Keep the public employee identifier separate from the internal user ID. */
     var rawEmployeeId = row.employeeId != null
       ? row.employeeId
       : (row.employee_id != null ? row.employee_id : row.userId);
@@ -801,247 +822,208 @@
       if (Number.isFinite(employeeNumber) && employeeNumber > 0) {
         employeeId = "SHS-EMP-" + String(Math.floor(employeeNumber)).padStart(3, "0");
       } else {
-        employeeId = "SHS-EMP-" + String(rawEmployeeId).replace(/[^a-z0-9]/gi, "").slice(-6);
+        employeeId = "SHS-EMP-" +
+          String(rawEmployeeId).replace(/[^a-z0-9]/gi, "").slice(-6);
       }
     }
 
-    /*
-     * June and July 2026 were already transferred before transaction
-     * references were introduced, so their reference is intentionally
-     * displayed as Not available.
-     * From August 2026 onward the transaction reference is displayed.
-     */
+    /* June/July 2026 have no transaction reference; August 2026 onward does. */
     var payrollKey = String(month || "").slice(0, 7);
     var transactionReference = "Not available";
     if (payrollKey >= "2026-08") {
       transactionReference = String(payReference || "").trim() || "Not available";
     }
 
-    fillRect(doc, 0, 0, pageW, pageH, colors.white);
+    fill(doc, 0, 0, pageW, pageH, C.white);
 
-    /* Subtle printable outer frame. */
-    doc.setDrawColor(colors.border);
-    doc.setLineWidth(0.3);
-    doc.rect(10, 9, 190, 278, "S");
+    /* Very light page frame. */
+    stroke(doc, 8.5, 8.5, 193, 280, C.line, 0.25);
 
-    /* -------------------------------------------------------------------
+    /* ================================================================
        HEADER
-       ------------------------------------------------------------------- */
+       ================================================================ */
     var logo = await loadHeaderLogo();
+
     if (logo) {
-      /* The supplied logo already contains the logo + school name. */
-      doc.addImage(logo, "PNG", left, 13, 111, 19.2, undefined, "FAST");
+      /*
+       * The supplied header-logo already contains the school emblem and
+       * school name. It is therefore the only school-name treatment used.
+       */
+      doc.addImage(logo, "PNG", left, 13, 103, 18, undefined, "FAST");
     }
 
-    text(doc, "SALARY SLIP", right, 18.5, 10.5, colors.maroon, "bold", { align: "right" });
-    text(doc, slipMonthShort(month), right, 25.2, 9.2, colors.ink, "bold", { align: "right" });
+    /* Small document label only. No repeated payroll month at top right. */
+    fill(doc, right - 31, 15, 31, 7, C.maroonSoft);
+    text(doc, "PAYROLL DOCUMENT", right - 15.5, 19.6, 6.4, C.maroon, "bold", { align: "center" });
 
-    hLine(doc, left, 37, right, 37, colors.maroon, 0.8);
-    hLine(doc, left, 38.5, right, 38.5, colors.orange, 0.45);
+    /* School details sit together under the logo, separated by one clean rule. */
+    line(doc, left, 35.5, right, 35.5, C.maroon, 0.7);
 
-    /* School contact / statutory details. No duplicate school name. */
-    text(doc, "8-3-311/3, Vemulawada By-Pass Road, Sapthagiri Colony, Karimnagar - 505001",
-      left, 44.5, 7.6, colors.ink, "normal");
-    text(doc, "9381118421  |  sapthagiri.98@gmail.com  |  www.sapthagirischool.in",
-      left, 49.2, 7.5, colors.ink, "normal");
-    text(doc, "UDISE Code: 36130790563   |   School Code: 22227   |   PAN: AAEAS6450K",
-      left, 53.9, 7.4, colors.muted, "normal");
+    text(doc,
+      "8-3-311/3, Vemulawada By-Pass Road, Sapthagiri Colony, Karimnagar - 505001",
+      left, 42.0, 7.0, C.ink, "normal");
 
-    var y = 61;
+    text(doc,
+      "9381118421  |  sapthagiri.98@gmail.com  |  www.sapthagirischool.in",
+      left, 46.7, 7.0, C.muted, "normal");
 
-    /* -------------------------------------------------------------------
-       TITLE
-       ------------------------------------------------------------------- */
-    text(doc, "SALARY SLIP", pageW / 2, y, 13, colors.maroon, "bold", { align: "center" });
-    text(doc, "Payroll Period: " + slipMonth(month), pageW / 2, y + 5.5, 8.4, colors.muted, "normal", { align: "center" });
-    y += 12;
+    text(doc,
+      "UDISE 36130790563   |   School Code 22227   |   PAN AAEAS6450K",
+      right, 46.7, 6.8, C.muted, "normal", { align: "right" });
 
-    /* -------------------------------------------------------------------
+    /* ================================================================
+       DOCUMENT TITLE
+       ================================================================ */
+    text(doc, "SALARY SLIP", pageW / 2, 59.0, 15.5, C.ink, "bold", { align: "center" });
+    text(doc, slipMonth(month), pageW / 2, 65.0, 8.2, C.maroon, "bold", { align: "center" });
+    line(doc, 74, 68.5, 136, 68.5, C.line, 0.45);
+
+    var y = 74;
+
+    /* ================================================================
        EMPLOYEE INFORMATION
-       ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "EMPLOYEE INFORMATION", y, left, width, colors);
+       ================================================================ */
+    y = section(doc, "EMPLOYEE INFORMATION", y, left, width, C);
 
-    var summary = tableDefaults(colors);
-    summary.startY = y;
-    summary.margin = { left: left, right: pageW - right };
-    summary.body = [
-      ["Employee Name", name || "—", "Designation", role || "—"],
-      ["Employee ID", employeeId || "—", "Payroll Month", slipMonth(month)],
-      ["Pay Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—"]
-    ];
-    summary.columnStyles = {
-      0: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
-      1: { cellWidth: 59 },
-      2: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
-      3: { cellWidth: 59 }
-    };
-    summary.styles.cellPadding = { top: 4.5, right: 5, bottom: 4.5, left: 5 };
-    doc.autoTable(summary);
-    y = doc.lastAutoTable.finalY + 7;
+    y += compactPairRow(
+      doc, left, y, width,
+      "Employee", name || "—",
+      "Designation", role || "—", C, 9.5
+    );
 
-    /* -------------------------------------------------------------------
+    y += compactPairRow(
+      doc, left, y, width,
+      "Employee ID", employeeId || "—",
+      "Payroll Month", slipMonth(month),
+      C, 9.5
+    );
+
+    y += compactPairRow(
+      doc, left, y, width,
+      "Pay Date", slipDate(payDate) || "—",
+      "Payment Mode", payMode || "—",
+      C, 9.5
+    );
+
+    y += 6;
+
+    /* ================================================================
        LEAVE SUMMARY
-       ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "LEAVE SUMMARY", y, left, width, colors);
+       ================================================================ */
+    y = section(doc, "LEAVE SUMMARY", y, left, width, C);
 
-    var leave = tableDefaults(colors);
-    leave.startY = y;
-    leave.margin = { left: left, right: pageW - right };
-    leave.body = [
-      ["Opening Paid Leave Balance", slipNum(opening), "Paid Leave Used", slipNum(used)],
-      ["Closing Paid Leave Balance", slipNum(balance), "Unpaid Leave", slipNum(unpaid)]
-    ];
-    leave.columnStyles = {
-      0: { cellWidth: 63, fontStyle: "bold", fillColor: [245,245,245] },
-      1: { cellWidth: 27, halign: "right", fontStyle: "bold" },
-      2: { cellWidth: 63, fontStyle: "bold", fillColor: [245,245,245] },
-      3: { cellWidth: 27, halign: "right", fontStyle: "bold" }
-    };
-    doc.autoTable(leave);
-    y = doc.lastAutoTable.finalY + 7;
+    y += compactPairRow(
+      doc, left, y, width,
+      "Opening Balance", slipNum(opening),
+      "Paid Leave Used", slipNum(used),
+      C, 9.5
+    );
 
-    /* -------------------------------------------------------------------
+    y += compactPairRow(
+      doc, left, y, width,
+      "Closing Balance", slipNum(balance),
+      "Unpaid Leave", slipNum(unpaid),
+      C, 9.5
+    );
+
+    y += 6;
+
+    /* ================================================================
        SALARY DETAILS
-       ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "SALARY DETAILS", y, left, width, colors);
+       ================================================================ */
+    y = section(doc, "SALARY DETAILS", y, left, width, C);
 
-    var salaryTable = tableDefaults(colors);
-    salaryTable.startY = y;
-    salaryTable.margin = { left: left, right: pageW - right };
-    salaryTable.body = [
-      ["Monthly Salary", slipMoney(salary)],
-      ["Unpaid Leave Deduction", slipMoney(deduction)]
-    ];
-    salaryTable.columnStyles = {
-      0: { cellWidth: 120, fontStyle: "bold", fillColor: [245,245,245] },
-      1: { cellWidth: 60, halign: "right", fontStyle: "bold" }
-    };
-    salaryTable.styles.cellPadding = { top: 5, right: 5, bottom: 5, left: 5 };
-    doc.autoTable(salaryTable);
-    y = doc.lastAutoTable.finalY + 1;
+    var half = width / 2;
 
-    /* Prominent net salary line without a dashboard-style coloured box. */
-    var netTable = tableDefaults(colors);
-    netTable.startY = y;
-    netTable.margin = { left: left, right: pageW - right };
-    netTable.body = [
-      ["NET SALARY PAYABLE", slipMoney(net)]
-    ];
-    netTable.columnStyles = {
-      0: { cellWidth: 120, fontStyle: "bold", fontSize: 10.2 },
-      1: { cellWidth: 60, halign: "right", fontStyle: "bold", fontSize: 11.5 }
-    };
-    netTable.styles.cellPadding = { top: 6.2, right: 5, bottom: 6.2, left: 5 };
-    netTable.didParseCell = function (data) {
-      if (data.row.index === 0) {
-        data.cell.styles.lineWidth = 0.5;
-        data.cell.styles.lineColor = [122,21,26];
-        data.cell.styles.textColor = [122,21,26];
-      }
-    };
-    doc.autoTable(netTable);
-    y = doc.lastAutoTable.finalY;
+    fill(doc, left, y, width, 9.5, C.soft);
+    stroke(doc, left, y, width, 9.5, C.line, 0.25);
+    line(doc, left + half, y, left + half, y + 9.5, C.line, 0.25);
 
-    /* -------------------------------------------------------------------
+    text(doc, "Monthly Salary", left + 5, y + 6.1, 7.4, C.muted, "bold");
+    text(doc, slipMoney(salary), left + half - 5, y + 6.1, 8.5, C.ink, "bold", { align: "right" });
+
+    y += 9.5;
+
+    fill(doc, left, y, width, 9.5, C.white);
+    stroke(doc, left, y, width, 9.5, C.line, 0.25);
+    line(doc, left + half, y, left + half, y + 9.5, C.line, 0.25);
+
+    text(doc, "Unpaid Leave Deduction", left + 5, y + 6.1, 7.4, C.muted, "bold");
+    text(doc, slipMoney(deduction), left + half - 5, y + 6.1, 8.5, C.ink, "normal", { align: "right" });
+
+    y += 11;
+
+    /* Net salary is the one intentionally prominent financial element. */
+    fill(doc, left, y, width, 13, C.maroonSoft);
+    stroke(doc, left, y, width, 13, C.maroon, 0.55);
+
+    text(doc, "NET SALARY PAYABLE", left + 6, y + 8.2, 8.4, C.maroon, "bold");
+    text(doc, slipMoney(net), right - 6, y + 8.2, 11.0, C.maroon, "bold", { align: "right" });
+
+    y += 19;
+
+    /* ================================================================
        AMOUNT IN WORDS
-       ------------------------------------------------------------------- */
-    y += 5;
-    var wordsTable = tableDefaults(colors);
-    wordsTable.startY = y;
-    wordsTable.margin = { left: left, right: pageW - right };
-    wordsTable.body = [["Amount in Words", amountWords(net)]];
-    wordsTable.columnStyles = {
-      0: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
-      1: { cellWidth: 149 }
-    };
-    wordsTable.styles.cellPadding = { top: 5, right: 5, bottom: 5, left: 5 };
-    doc.autoTable(wordsTable);
-    y = doc.lastAutoTable.finalY + 7;
+       ================================================================ */
+    y = section(doc, "AMOUNT IN WORDS", y, left, width, C);
 
-    /* -------------------------------------------------------------------
+    fill(doc, left, y, width, 11, C.softer);
+    stroke(doc, left, y, width, 11, C.line, 0.25);
+    text(doc, amountWords(net), left + 5, y + 7.0, 8.0, C.ink, "normal");
+    y += 17;
+
+    /* ================================================================
        PAYMENT INFORMATION
-       ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "PAYMENT INFORMATION", y, left, width, colors);
+       ================================================================ */
+    y = section(doc, "PAYMENT INFORMATION", y, left, width, C);
 
-    var payment = tableDefaults(colors);
-    payment.startY = y;
-    payment.margin = { left: left, right: pageW - right };
-    payment.body = [
-      ["Payment Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—"],
-      ["Transaction Reference", transactionReference, "", ""]
-    ];
-    payment.columnStyles = {
-      0: { cellWidth: 35, fontStyle: "bold", fillColor: [245,245,245] },
-      1: { cellWidth: 55 },
-      2: { cellWidth: 35, fontStyle: "bold", fillColor: [245,245,245] },
-      3: { cellWidth: 55 }
-    };
-    payment.didParseCell = function (data) {
-      if (data.row.index === 1 && data.column.index === 2) {
-        data.cell.colSpan = 0;
-        data.cell.text = "";
-        data.cell.styles.fillColor = [255,255,255];
-        data.cell.styles.lineWidth = 0;
-      }
-      if (data.row.index === 1 && data.column.index === 3) {
-        data.cell.text = "";
-        data.cell.styles.lineWidth = 0;
-      }
-    };
-    doc.autoTable(payment);
-    y = doc.lastAutoTable.finalY + 8;
+    y += compactPairRow(
+      doc, left, y, width,
+      "Payment Date", slipDate(payDate) || "—",
+      "Payment Mode", payMode || "—",
+      C, 9.5
+    );
 
-    /* -------------------------------------------------------------------
-       DOCUMENT CONTROL
-       ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "DOCUMENT CONTROL", y, left, width, colors);
+    y += compactPairRow(
+      doc, left, y, width,
+      "Transaction Reference", transactionReference,
+      "", "",
+      C, 9.5
+    );
+
+    y += 6;
+
+    /* ================================================================
+       DECLARATION
+       ================================================================ */
+    y = section(doc, "DECLARATION", y, left, width, C);
+
+    var declaration =
+      "This is a computer-generated salary slip issued by Sapthagiri High School E/M. " +
+      "The salary details are based on the payroll record for the stated period.";
+
+    var declarationLines = doc.splitTextToSize(declaration, width - 10);
+    text(doc, declarationLines, left + 5, y + 5.5, 7.2, C.muted, "normal");
+    y += Math.max(1, declarationLines.length) * 4 + 5;
+
+    /* ================================================================
+       FOOTER
+       ================================================================ */
+    var footerY = 267;
+
+    line(doc, left, footerY, right, footerY, C.line, 0.35);
+
+    text(doc, "For Sapthagiri High School E/M", left, footerY + 8, 7.8, C.ink, "bold");
+    text(doc, "Authorised Administration", left, footerY + 13, 7.0, C.muted, "normal");
 
     var generatedDate = new Date();
     var generatedOn =
       String(generatedDate.getDate()).padStart(2, "0") + " " +
-      ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][generatedDate.getMonth()] + " " +
-      generatedDate.getFullYear();
+      ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][generatedDate.getMonth()] +
+      " " + generatedDate.getFullYear();
 
-    var control = tableDefaults(colors);
-    control.startY = y;
-    control.margin = { left: left, right: pageW - right };
-    control.body = [
-      ["Document", "Salary Slip", "Payroll Period", slipMonth(month)],
-      ["Employee ID", employeeId || "—", "Generated On", generatedOn]
-    ];
-    control.columnStyles = {
-      0: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
-      1: { cellWidth: 59 },
-      2: { cellWidth: 31, fontStyle: "bold", fillColor: [245,245,245] },
-      3: { cellWidth: 59 }
-    };
-    control.styles.cellPadding = { top: 4.2, right: 5, bottom: 4.2, left: 5 };
-    doc.autoTable(control);
-    y = doc.lastAutoTable.finalY + 7;
-
-    /* -------------------------------------------------------------------
-       DECLARATION
-       ------------------------------------------------------------------- */
-    y = sectionHeader(doc, "DECLARATION", y, left, width, colors);
-
-    var declaration =
-      "This is a computer-generated salary slip issued by Sapthagiri High School E/M. " +
-      "The salary details above are based on the payroll record for the stated period.";
-
-    var declarationLines = doc.splitTextToSize(declaration, width - 10);
-    text(doc, declarationLines, left + 5, y + 5, 8.0, colors.ink, "normal");
-    y += Math.max(1, declarationLines.length) * 4.2 + 8;
-
-    /* -------------------------------------------------------------------
-       FOOTER / ADMINISTRATION
-       ------------------------------------------------------------------- */
-    hLine(doc, left, pageH - 31, right, pageH - 31, colors.maroon, 0.45);
-
-    text(doc, "For Sapthagiri High School E/M", left, pageH - 24, 8.5, colors.maroon, "bold");
-    text(doc, "Authorised Administration", left, pageH - 18.5, 7.8, colors.muted, "normal");
-
-    text(doc, "Computer-generated document", right, pageH - 24, 7.6, colors.muted, "normal", { align: "right" });
-    text(doc, "Payroll Period: " + slipMonth(month), right, pageH - 18.5, 7.6, colors.muted, "normal", { align: "right" });
+    text(doc, "Generated " + generatedOn, right, footerY + 8, 7.0, C.muted, "normal", { align: "right" });
+    text(doc, "Payroll Period: " + slipMonth(month), right, footerY + 13, 7.0, C.muted, "normal", { align: "right" });
 
     var safe = name.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "Staff";
     var fileMonth = String(month || "").slice(0, 7) || "Payroll";
