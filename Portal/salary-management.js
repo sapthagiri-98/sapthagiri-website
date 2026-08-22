@@ -819,38 +819,133 @@
     fill(doc, 0, 0, pageW, pageH, C.white);
     stroke(doc, 8.5, 8.5, 193, 280, C.line, 0.25);
 
-    /* ================================================================
+        /* ================================================================
        HEADER
        ================================================================ */
+
     var logo = await loadHeaderLogo();
 
+    /*
+     * Header geometry
+     *
+     * Left block  : official school logo
+     * Right block : document title + month
+     * Below       : school address
+     * Bottom row  : contact details + statutory identifiers
+     *
+     * Everything uses the same left/right margins so the printed result
+     * stays aligned on A4.
+     */
+    var headerLeft = left;
+    var headerRight = right;
+    var headerWidth = width;
+
     if (logo) {
-      doc.addImage(logo, "PNG", left, 13, 103, 18, undefined, "FAST");
+      /*
+       * Keep the supplied logo at its natural visual proportion.
+       * It occupies only the upper-left header area.
+       */
+      doc.addImage(
+        logo,
+        "PNG",
+        headerLeft,
+        13,
+        103,
+        18,
+        undefined,
+        "FAST"
+      );
     }
 
-    /* The document identity lives here once. No duplicate title in the body. */
-    fill(doc, 151, 13, 45, 22, C.maroonSoft);
-    line(doc, 151, 35, 196, 35, C.maroon, 0.55);
-    text(doc, "SALARY SLIP", 173.5, 23.0, 11.2, C.maroon, "bold", { align: "center" });
-    text(doc, slipMonth(month), 173.5, 29.2, 7.2, C.ink, "normal", { align: "center" });
+    /*
+     * Document title block on the upper-right.
+     * No separate PAYROLL DOCUMENT label.
+     */
+    text(
+      doc,
+      "SALARY SLIP",
+      headerRight,
+      20.5,
+      11.5,
+      C.maroon,
+      "bold",
+      { align: "right" }
+    );
 
-    /* School information is deliberately aligned as a proper two-line block. */
-    text(doc,
+    text(
+      doc,
+      slipMonth(month),
+      headerRight,
+      27.0,
+      7.8,
+      C.ink,
+      "normal",
+      { align: "right" }
+    );
+
+    /*
+     * School address.
+     *
+     * It is intentionally placed below the complete logo rather than
+     * beside it. This prevents the long address from fighting with the
+     * large school branding.
+     */
+    text(
+      doc,
       "8-3-311/3, Vemulawada By-Pass Road, Sapthagiri Colony, Karimnagar - 505001",
-      left, 39.5, 6.9, C.ink, "normal");
+      headerLeft,
+      39.5,
+      6.9,
+      C.ink,
+      "normal"
+    );
 
-    text(doc,
+    /*
+     * Bottom information row.
+     *
+     * Left side  = phone / email / website
+     * Right side = UDISE / School Code / PAN
+     *
+     * Both are aligned to the same left/right document boundaries.
+     */
+    text(
+      doc,
       "9381118421  |  sapthagiri.98@gmail.com  |  www.sapthagirischool.in",
-      left, 44.4, 6.7, C.muted, "normal");
+      headerLeft,
+      44.6,
+      6.6,
+      C.muted,
+      "normal"
+    );
 
-    text(doc,
+    text(
+      doc,
       "UDISE 36130790563  |  School Code 22227  |  PAN AAEAS6450K",
-      right, 44.4, 6.5, C.muted, "normal", { align: "right" });
+      headerRight,
+      44.6,
+      6.25,
+      C.muted,
+      "normal",
+      { align: "right" }
+    );
 
-    /* One clear divider after the complete school information block. */
-    line(doc, left, 49.0, right, 49.0, C.maroon, 0.65);
+    /*
+     * One divider after ALL header information.
+     */
+    line(
+      doc,
+      headerLeft,
+      50.0,
+      headerRight,
+      50.0,
+      C.maroon,
+      0.65
+    );
 
-    var y = 56;
+    /*
+     * Body starts below the complete header.
+     */
+    var y = 57;
 
     /* ================================================================
        EMPLOYEE INFORMATION
