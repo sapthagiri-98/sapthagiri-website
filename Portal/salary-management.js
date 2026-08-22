@@ -25,6 +25,28 @@
   }
   function status(s){var c=s==='Paid'?'paid':s==='Pending'?'pending':'unassigned';return '<span class="status '+c+'">'+esc(s)+'</span>';}
 
+  function ensurePayrollRowStyles(){
+    if(document.getElementById("salaryPayrollRowStyles"))return;
+    var s=document.createElement("style");
+    s.id="salaryPayrollRowStyles";
+    s.textContent=
+      ".payroll-list{display:flex;flex-direction:column;gap:12px;}"+
+      ".payroll-card.staff-row{display:grid!important;grid-template-columns:minmax(185px,1.45fr) repeat(8,minmax(70px,1fr)) minmax(78px,auto)!important;grid-template-rows:auto auto!important;column-gap:12px!important;row-gap:10px!important;align-items:start!important;padding:16px 18px!important;min-height:0!important;}"+
+      ".staff-row>.staff-main{grid-column:1;grid-row:1;min-width:0!important;display:flex!important;align-items:flex-start!important;}"+
+      ".staff-row>.metric{min-width:0!important;grid-row:1;align-self:start!important;}"+
+      ".staff-row>.metric span{display:block!important;font-size:10px!important;line-height:1.25!important;letter-spacing:.02em!important;white-space:normal!important;}"+
+      ".staff-row>.metric strong{display:block!important;margin-top:5px!important;font-size:13px!important;line-height:1.25!important;white-space:nowrap!important;}"+
+      ".staff-row>.metric small{font-size:9px!important;line-height:1.15!important;}"+
+      ".staff-row>.row-status{grid-column:10;grid-row:1;justify-self:end!important;align-self:start!important;white-space:nowrap!important;}"+
+      ".staff-row>.row-actions{grid-column:1/-1!important;grid-row:2!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-end!important;gap:8px!important;padding-top:10px!important;border-top:1px solid rgba(148,163,184,.18)!important;}"+
+      ".staff-row>.row-actions .btn{width:auto!important;min-width:88px!important;height:34px!important;padding:7px 12px!important;}"+
+      ".staff-row>.staff-main .staff-name{min-width:0!important;}"+
+      ".staff-row>.staff-main .staff-name strong{display:block!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}"+
+      "@media(max-width:1100px){.payroll-card.staff-row{grid-template-columns:minmax(170px,1.4fr) repeat(8,minmax(62px,1fr)) minmax(70px,auto)!important;column-gap:8px!important;padding:14px!important;}.staff-row>.metric strong{font-size:12px!important;}.staff-row>.metric span{font-size:9px!important;}}"+
+      "@media(max-width:820px){.payroll-card.staff-row{grid-template-columns:1fr 1fr 1fr!important;grid-template-rows:auto!important;}.staff-row>.staff-main{grid-column:1/-1!important;grid-row:auto!important;}.staff-row>.metric{grid-column:auto!important;grid-row:auto!important;}.staff-row>.row-status{grid-column:auto!important;grid-row:auto!important;justify-self:start!important;}.staff-row>.row-actions{grid-column:1/-1!important;grid-row:auto!important;justify-content:flex-start!important;flex-wrap:wrap!important;}}";
+    document.head.appendChild(s);
+  }
+
   function render(){
     var paid=rows.filter(function(r){return r.status==='Paid'}).length;
     var pending=rows.filter(function(r){return r.status==='Pending'}).length;
@@ -447,7 +469,7 @@
     };
   }
 
-  async function boot(){session=Portal.bootPage('payroll');if(!session)return;if(!BASE){toast('SUPABASE_PAYROLL_BASE is missing in config.js.',true);return}document.getElementById('payrollPasswordModal').classList.add('show');document.getElementById('payrollUnlockBtn').onclick=unlock;document.getElementById('payrollPassword').onkeydown=function(e){if(e.key==='Enter')unlock()};}
+  async function boot(){ensurePayrollRowStyles();session=Portal.bootPage('payroll');if(!session)return;if(!BASE){toast('SUPABASE_PAYROLL_BASE is missing in config.js.',true);return}document.getElementById('payrollPasswordModal').classList.add('show');document.getElementById('payrollUnlockBtn').onclick=unlock;document.getElementById('payrollPassword').onkeydown=function(e){if(e.key==='Enter')unlock()};}
   async function unlock(){
     var p=document.getElementById('payrollPassword').value;
     var err=document.getElementById('payrollPasswordError');
