@@ -177,8 +177,9 @@
 })();
 
 /* attendance-log.js — My Attendance Log (staff). Plain script; uses `Portal`.
-   Backend (unchanged): getTimesheetData(name, "YYYY-MM"),
-   getTeacherAvailableSalarySlips(name). Wording simplified for readability.
+   Backend: getTimesheetData(name, "YYYY-MM") for attendance.
+   Salary slips come from payroll-api using the logged-in staff account.
+   Wording simplified for readability.
    Month results are cached (CONFIG.MONTH_TTL_MS) so re-opening a month is
    instant — the console + inline line show the before/after timing. */
 (function () {
@@ -194,6 +195,7 @@
   var me = session.name;
   var calCache = {};       // month -> timesheet payload (in-memory this page)
   var slipsLoaded = false;
+  var payrollBase = (window.PORTAL_CONFIG || {}).SUPABASE_PAYROLL_BASE || "";
 
   $("view").innerHTML = shell();
   bind();
@@ -370,23 +372,111 @@
   }
 
   /* ---------------- salary slips ---------------- */
+  function payrollApi(fn, args) {
+    if (!payrollBase) return Promise.reject(new Error("SUPABASE_PAYROLL_BASE is missing in config.js."));
+    var s = P.Session.get() || {};
+    var C = window.PORTAL_CONFIG || {};
+    return fetch(payrollBase, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + (C.SUPABASE_ANON || ""),
+        "apikey": C.SUPABASE_ANON || "",
+        "x-session-token": s.token || ""
+      },
+      body: JSON.stringify({ fn: fn, args: args || [] })
+    })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        var j;
+        try { j = JSON.parse(t); } catch (e) { throw new Error("Invalid payroll server response"); }
+        if (!j.ok) throw new Error(j.error || "Payroll request failed");
+        return j.data;
+      });
+  }
+
   function loadSlips() {
     if (slipsLoaded) return;
-    P.api("getTeacherAvailableSalarySlips", [me], { overlay: false }).then(function (res) {
+    payrollApi("payrollMySalaryList", []).then(function (res) {
       slipsLoaded = true;
-      var slips = (res && res.slips) || [], pill = $("alSlipStatus"), list = $("alSlipList");
+      var slips = Array.isArray(res) ? res : [], pill = $("alSlipStatus"), list = $("alSlipList");
       if (slips.length === 0) {
-        pill.className = "pill grey"; pill.textContent = (res && res.ambiguous) ? "Name clash — ask admin" : "None uploaded yet";
-        list.innerHTML = '<div class="slip-empty">' + ((res && res.ambiguous) ? "Multiple staff share your first name. Ask admin to set your full name." : "Salary slips will appear here once uploaded.") + '</div>';
+        pill.className = "pill grey";
+        pill.textContent = "None available";
+        list.innerHTML = '<div class="slip-empty">Salary slips will appear here after your salary is marked as paid.</div>';
         return;
       }
-      pill.className = "pill green"; pill.textContent = slips.length + " available";
-      list.innerHTML = slips.map(function (s) {
-        return '<div class="slip-row"><span class="m"><i class="material-icons">event</i>' + esc(s.monthLabel) + '</span>' +
-          '<span class="acts"><a class="slip-btn" href="' + esc(s.viewUrl) + '" target="_blank" rel="noopener"><i class="material-icons" style="font-size:16px;color:#fff;">visibility</i> View</a>' +
-          '<a class="slip-btn maroon" href="' + esc(s.downloadUrl) + '" target="_blank" rel="noopener"><i class="material-icons" style="font-size:16px;color:#fff;">download</i> Download</a></span></div>';
+      pill.className = "pill green";
+      pill.textContent = slips.length + " available";
+      list.innerHTML = slips.map(function (s, i) {
+        var month = String(s.payroll_month || "").slice(0, 7);
+        var label = monthLabel(month);
+        return '<div class="slip-row"><span class="m"><i class="material-icons">event</i>' + esc(label) + '</span>' +
+          '<span class="acts">' +
+          '<button class="slip-btn" type="button" data-slip-action="view" data-slip-index="' + i + '"><i class="material-icons" style="font-size:16px;color:#fff;">visibility</i> View</button>' +
+          '<button class="slip-btn maroon" type="button" data-slip-action="download" data-slip-index="' + i + '"><i class="material-icons" style="font-size:16px;color:#fff;">download</i> Download</button>' +
+          '</span></div>';
       }).join("");
-    }).catch(function () { $("alSlipStatus").textContent = "Load failed"; });
+
+      Array.prototype.forEach.call(list.querySelectorAll("[data-slip-action]"), function (btn) {
+        btn.addEventListener("click", function () {
+          var idx = Number(btn.getAttribute("data-slip-index"));
+          var action = btn.getAttribute("data-slip-action");
+          if (action === "view") viewSlip(slips[idx]);
+          else downloadSlip(slips[idx]);
+        });
+      });
+    }).catch(function (e) {
+      slipsLoaded = false;
+      $("alSlipStatus").className = "pill grey";
+      $("alSlipStatus").textContent = "Load failed";
+      $("alSlipList").innerHTML = '<div class="slip-empty">' + esc(e.message || "Could not load salary slips.") + '</div>';
+    });
+  }
+
+  function ensurePdfLibraries() {
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+
+    function load(src) {
+      return new Promise(function (resolve, reject) {
+        var script = document.createElement("script");
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = function () { reject(new Error("Could not load the PDF library.")); };
+        document.head.appendChild(script);
+      });
+    }
+
+    return load("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js")
+      .then(function () {
+        if (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable) return;
+        return load("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js");
+      });
+  }
+
+  function downloadSlip(row) {
+    var month = String(row && row.payroll_month || "").slice(0, 7);
+    ensurePdfLibraries().then(function () {
+      return window.generateSalarySlipPDF(row, month);
+    }).catch(function (e) {
+      alert(e.message || String(e));
+    });
+  }
+
+  function viewSlip(row) {
+    var popup = window.open("", "_blank");
+    if (!popup) {
+      alert("Please allow pop-ups for this site to view the salary slip.");
+      return;
+    }
+
+    var month = String(row && row.payroll_month || "").slice(0, 7);
+    ensurePdfLibraries().then(function () {
+      return window.generateSalarySlipPDF(row, month, { mode: "view", targetWindow: popup });
+    }).catch(function (e) {
+      try { popup.close(); } catch (_) {}
+      alert(e.message || String(e));
+    });
   }
 
   /* ---------------- apply for leave (client-side WhatsApp) ---------------- */
@@ -408,4 +498,399 @@
     window.open("https://wa.me/" + num + "?text=" + encodeURIComponent(msg), "_blank");
     P.closeModal("alLeaveModal");
   }
+})();
+
+/* =========================================================================
+   Embedded salary-slip generator
+   Reference-style professional A4 payslip
+   ========================================================================= */
+(function () {
+  "use strict";
+
+  function slipNum(v) {
+    var x = Number(v || 0);
+    return Number.isInteger(x) ? String(x) : x.toFixed(1).replace(/\.0$/, "");
+  }
+
+  function slipMoney(v) {
+    return "Rs. " + Number(v || 0).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function slipDate(v) {
+    if (!v) return "";
+    var p = String(v).slice(0, 10).split("-");
+    if (p.length !== 3) return String(v);
+    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var mi = Number(p[1]) - 1;
+    return p[2] + " " + (months[mi] || p[1]) + " " + p[0];
+  }
+
+  function slipMonth(v) {
+    var p = String(v || "").slice(0, 7).split("-");
+    if (p.length !== 2 || !p[0] || !p[1]) return String(v || "");
+    var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    return (months[Number(p[1]) - 1] || p[1]) + " " + p[0];
+  }
+
+  function slipMonthShort(v) {
+    var p = String(v || "").slice(0, 7).split("-");
+    if (p.length !== 2) return String(v || "");
+    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return (months[Number(p[1]) - 1] || p[1]) + "-" + p[0].slice(-2);
+  }
+
+  function ones(n) {
+    return ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+      "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen",
+      "Eighteen", "Nineteen"][n] || "";
+  }
+
+  function tens(n) {
+    return ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"][n] || "";
+  }
+
+  function under1000(n) {
+    n = Math.floor(n);
+    var s = "";
+    if (n >= 100) {
+      s += ones(Math.floor(n / 100)) + " Hundred";
+      n %= 100;
+      if (n) s += " ";
+    }
+    if (n < 20) {
+      s += ones(n);
+    } else {
+      s += tens(Math.floor(n / 10));
+      if (n % 10) s += " " + ones(n % 10);
+    }
+    return s;
+  }
+
+  function amountWords(v) {
+    var n = Math.round(Number(v || 0));
+    if (n === 0) return "Zero Rupees Only";
+    var crore = Math.floor(n / 10000000); n %= 10000000;
+    var lakh = Math.floor(n / 100000); n %= 100000;
+    var thousand = Math.floor(n / 1000); n %= 1000;
+    var parts = [];
+    if (crore) parts.push(under1000(crore) + " Crore");
+    if (lakh) parts.push(under1000(lakh) + " Lakh");
+    if (thousand) parts.push(under1000(thousand) + " Thousand");
+    if (n) parts.push(under1000(n));
+    return parts.join(" ") + " Rupees Only";
+  }
+
+  function imageData(url) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error("Logo unavailable");
+      return r.blob();
+    }).then(function (blob) {
+      return new Promise(function (resolve, reject) {
+        var fr = new FileReader();
+        fr.onload = function () { resolve(fr.result); };
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+    });
+  }
+
+  async function loadHeaderLogo() {
+    var candidates = [
+      "../assets/images/branding/header-logo.png",
+      "assets/images/branding/header-logo.png",
+      "/assets/images/branding/header-logo.png",
+      "../sapthagiri-website-main/assets/images/branding/header-logo.png",
+      "sapthagiri-website-main/assets/images/branding/header-logo.png",
+      "/sapthagiri-website-main/assets/images/branding/header-logo.png"
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        return await imageData(candidates[i]);
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  function setFont(doc, size, color, style) {
+    doc.setFont("times", style || "normal");
+    doc.setFontSize(size || 9);
+    doc.setTextColor(color || "#1F2937");
+  }
+
+  function text(doc, value, x, y, size, color, style, opts) {
+    setFont(doc, size, color, style);
+    doc.text(String(value == null ? "" : value), x, y, opts || {});
+  }
+
+  function hLine(doc, x1, y1, x2, y2, color, width) {
+    doc.setDrawColor(color || "#D0D5DD");
+    doc.setLineWidth(width || 0.25);
+    doc.line(x1, y1, x2, y2);
+  }
+
+  function fillRect(doc, x, y, w, h, color) {
+    doc.setFillColor(color);
+    doc.rect(x, y, w, h, "F");
+  }
+
+  function tableDefaults(colors) {
+    return {
+      theme: "grid",
+      styles: {
+        font: "times",
+        fontSize: 9.1,
+        textColor: colors.ink,
+        lineColor: [201, 206, 212],
+        lineWidth: 0.28,
+        cellPadding: { top: 4.8, right: 5.0, bottom: 4.8, left: 5.0 },
+        valign: "middle"
+      },
+      headStyles: {
+        font: "times",
+        fontStyle: "bold"
+      }
+    };
+  }
+
+  function sectionHeader(doc, title, y, left, width, colors) {
+    fillRect(doc, left, y, width, 9, colors.gray);
+    text(doc, title, left + 5, y + 6.0, 8.8, colors.ink, "bold");
+    return y + 9;
+  }
+
+  window.generateSalarySlipPDF = async function (row, month, options) {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      throw new Error("PDF library is not loaded. Refresh the page once.");
+    }
+    if (!row || row.status !== "Paid") {
+      throw new Error("Salary is not marked as paid yet.");
+    }
+    if (typeof window.jspdf.jsPDF !== "function") {
+      throw new Error("jsPDF is unavailable.");
+    }
+
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({
+      unit: "mm",
+      format: "a4",
+      orientation: "portrait",
+      compress: true
+    });
+
+    if (typeof doc.autoTable !== "function") {
+      throw new Error("PDF table library is not loaded. Refresh the page once.");
+    }
+
+    var pageW = 210;
+    var pageH = 297;
+    var left = 15;
+    var right = 195;
+    var width = right - left;
+
+    /* Professional restrained palette: dark maroon + orange accent + neutral gray. */
+    var colors = {
+      maroon: "#7A151A",
+      maroonDark: "#5D1115",
+      orange: "#B85A1B",
+      ink: "#202020",
+      muted: "#555555",
+      gray: "#F0F0F0",
+      gray2: "#F7F7F7",
+      border: "#AFAFAF",
+      white: "#FFFFFF",
+      deduction: "#202020"
+    };
+
+    var name = String((row.staff && row.staff.name) || row.name || "");
+    var role = String((row.staff && row.staff.role) || row.role || "");
+    var payDate = row.payDate != null ? row.payDate : (row.pay_date || "");
+    var payMode = row.paymentMode != null ? row.paymentMode : (row.payment_mode || "Bank Transfer");
+    var payReference = row.paymentReference != null ? row.paymentReference : (row.payment_reference || "");
+    var comment = row.paymentComment != null ? row.paymentComment : (row.payment_comment || "");
+    /* Never print historical migration/internal payroll notes on employee slips. */
+    if (/historical\s+.*payroll\s+migration/i.test(String(comment))) comment = "";
+    var salary = row.salary != null ? row.salary : row.monthly_salary;
+    var deduction = row.totalDeduction != null ? row.totalDeduction : row.total_deduction;
+    var net = row.netSalary != null ? row.netSalary : row.net_salary;
+    var used = row.paidLeaveUsed != null ? row.paidLeaveUsed : row.paid_leave_used;
+    var balance = row.paidLeaveBalance != null ? row.paidLeaveBalance : row.paid_leave_balance;
+    var opening = row.paidLeaveOpening != null ? row.paidLeaveOpening : row.paid_leave_opening;
+    var unpaid = row.unpaidLeave != null ? row.unpaidLeave : row.unpaid_leave;
+    var joiningDays = Number(row.joiningDaysUnpaid != null ? row.joiningDaysUnpaid : (row.joining_days_unpaid || 0));
+
+    /* If the API does not send beginning balance, derive it correctly. */
+    if (opening == null) {
+      opening = Number(balance || 0) + Number(used || 0);
+    }
+
+    /* -------------------------------------------------------------------
+       PAGE
+       ------------------------------------------------------------------- */
+    fillRect(doc, 0, 0, pageW, pageH, colors.white);
+
+    /* Fine outer frame. It is intentionally subtle and printer-safe. */
+    doc.setDrawColor(colors.border);
+    doc.setLineWidth(0.35);
+    doc.rect(10, 9, 190, 278, "S");
+
+    /* -------------------------------------------------------------------
+       HEADER
+       ------------------------------------------------------------------- */
+    var logo = await loadHeaderLogo();
+    if (logo) {
+      /* Complete official header-logo. No duplicate school name is drawn. */
+      doc.addImage(logo, "PNG", left, 13, 111, 19.2, undefined, "FAST");
+    }
+
+    text(doc, "PAYSLIP FOR THE MONTH", right, 18.5, 7.8, colors.muted, "normal", { align: "right" });
+    text(doc, slipMonthShort(month), right, 25, 11.5, colors.ink, "bold", { align: "right" });
+
+    hLine(doc, left, 37, right, 37, colors.maroon, 0.8);
+    hLine(doc, left, 38.5, right, 38.5, colors.orange, 0.45);
+
+    /* -------------------------------------------------------------------
+       DOCUMENT TITLE + SUMMARY
+       ------------------------------------------------------------------- */
+    var y = 44;
+
+    fillRect(doc, left, y, width, 10, colors.gray);
+    text(doc, "EMPLOYEE SALARY SLIP", pageW / 2, y + 6.7, 10.5, colors.ink, "bold", { align: "center" });
+    y += 10;
+
+    fillRect(doc, left, y, width, 7.5, colors.gray);
+    text(doc, "SUMMARY", pageW / 2, y + 5.3, 8.8, colors.ink, "bold", { align: "center" });
+    y += 7.8;
+
+    var summary = tableDefaults(colors);
+    summary.startY = y;
+    summary.margin = { left: left, right: pageW - right };
+    summary.body = [
+      ["Employee Name", name || "—", "Designation", role || "—"],
+      ["Pay Date", slipDate(payDate) || "—", "Mode", payMode || "—"]
+    ];
+    summary.columnStyles = {
+      0: { cellWidth: 31, fontStyle: "bold" },
+      1: { cellWidth: 59 },
+      2: { cellWidth: 31, fontStyle: "bold" },
+      3: { cellWidth: 59 }
+    };
+    summary.styles.cellPadding = { top: 5.0, right: 5, bottom: 5.0, left: 5 };
+    doc.autoTable(summary);
+    y = doc.lastAutoTable.finalY + 8;
+
+    /* -------------------------------------------------------------------
+       LEAVE INFORMATION
+       ------------------------------------------------------------------- */
+    y = sectionHeader(doc, "LEAVE INFORMATION", y, left, width, colors);
+
+    var leave = tableDefaults(colors);
+    leave.startY = y;
+    leave.margin = { left: left, right: pageW - right };
+    leave.body = [
+      ["Paid Leave Balance (Beginning of Month)", slipNum(opening), "Utilised Paid Leaves", slipNum(used)],
+      ["Paid Leave Balance (End of Month)", slipNum(balance), "Unpaid Leaves", slipNum(unpaid)]
+    ];
+    leave.columnStyles = {
+      0: { cellWidth: 63, fontStyle: "bold" },
+      1: { cellWidth: 27, halign: "right", fontStyle: "bold" },
+      2: { cellWidth: 63, fontStyle: "bold" },
+      3: { cellWidth: 27, halign: "right", fontStyle: "bold" }
+    };
+    doc.autoTable(leave);
+    y = doc.lastAutoTable.finalY + 8;
+
+    /* -------------------------------------------------------------------
+       SALARY BREAK-UP
+       ------------------------------------------------------------------- */
+    y = sectionHeader(doc, "SALARY BREAK-UP", y, left, width, colors);
+
+    var salaryTable = tableDefaults(colors);
+    salaryTable.startY = y;
+    salaryTable.margin = { left: left, right: pageW - right };
+    salaryTable.body = [
+      ["Actual Salary", slipMoney(salary), "Unpaid Leaves Deduction", slipMoney(deduction)]
+    ];
+    salaryTable.columnStyles = {
+      0: { cellWidth: 31, fontStyle: "bold" },
+      1: { cellWidth: 59, halign: "right", fontStyle: "bold" },
+      2: { cellWidth: 63, fontStyle: "bold" },
+      3: { cellWidth: 27, halign: "right", fontStyle: "bold" }
+    };
+    salaryTable.styles.cellPadding = { top: 5.5, right: 5, bottom: 5.5, left: 5 };
+    salaryTable.didParseCell = function (data) {
+      if (data.column.index === 3) data.cell.styles.fontStyle = "bold";
+    };
+    doc.autoTable(salaryTable);
+    y = doc.lastAutoTable.finalY;
+
+    /* Net salary as a formal table row, not a decorative dashboard card. */
+    var netTable = tableDefaults(colors);
+    netTable.startY = y;
+    netTable.margin = { left: left, right: pageW - right };
+    netTable.body = [
+      ["Net Salary for Current Month\n(Actual Salary - Deduction)", slipMoney(net)]
+    ];
+    netTable.columnStyles = {
+      0: { cellWidth: 90, fontStyle: "bold", halign: "center", valign: "middle" },
+      1: { cellWidth: 90, halign: "right", fontStyle: "bold", fontSize: 11.2 }
+    };
+    netTable.styles.cellPadding = { top: 6.5, right: 5.5, bottom: 6.5, left: 5.5 };
+    netTable.didParseCell = function (data) {
+      if (data.column.index === 1) data.cell.styles.textColor = colors.ink;
+      if (data.column.index === 0) data.cell.styles.textColor = colors.ink;
+    };
+    doc.autoTable(netTable);
+    y = doc.lastAutoTable.finalY;
+
+    /* -------------------------------------------------------------------
+       AMOUNT IN WORDS
+       ------------------------------------------------------------------- */
+    var words = amountWords(net);
+    var wordsTable = tableDefaults(colors);
+    wordsTable.startY = y;
+    wordsTable.margin = { left: left, right: pageW - right };
+    wordsTable.body = [["In Words:", words]];
+    wordsTable.columnStyles = {
+      0: { cellWidth: 31, fontStyle: "bold" },
+      1: { cellWidth: 149 }
+    };
+    wordsTable.styles.cellPadding = { top: 5.0, right: 5, bottom: 5.0, left: 5 };
+    doc.autoTable(wordsTable);
+    y = doc.lastAutoTable.finalY;
+
+    /* Payment information is optional and appears only when actual payment
+       reference/comment data exists. Internal migration notes are never shown. */
+    if (payReference || comment) {
+      y += 6;
+      y = sectionHeader(doc, "PAYMENT DETAILS", y, left, width, colors);
+
+      var details = [];
+      if (payReference) details.push("Payment Reference: " + String(payReference));
+      if (comment) details.push("Note: " + String(comment));
+
+      var detailText = doc.splitTextToSize(details.join("  |  "), width - 8);
+      text(doc, detailText, left + 5, y + 5, 8.2, colors.ink, "normal");
+      y += Math.max(1, detailText.length) * 4 + 7;
+    }
+
+    /* -------------------------------------------------------------------
+       FOOTER
+       ------------------------------------------------------------------- */
+    hLine(doc, left, pageH - 19, right, pageH - 19, colors.border, 0.3);
+    text(doc, "Computer-generated salary slip • No signature required", pageW / 2, pageH - 12, 7.6, colors.muted, "normal", { align: "center" });
+
+    var safe = name.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "Staff";
+    var fileMonth = String(month || "").slice(0, 7) || "Payroll";
+    if (options && options.mode === "view") {
+      var blobUrl = doc.output("bloburl");
+      var target = options.targetWindow;
+      if (target && !target.closed) target.location.href = blobUrl;
+      else window.open(blobUrl, "_blank");
+    } else {
+      doc.save(safe + "_" + fileMonth + "_Salary_Slip.pdf");
+    }
+  };
 })();
