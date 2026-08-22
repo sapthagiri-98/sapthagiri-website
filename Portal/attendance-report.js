@@ -37,14 +37,34 @@
   }
 
   function bind() {
-    $("arMonth").value = P.thisMonth ? P.thisMonth() : (new Date()).toISOString().slice(0, 7);
-    $("arLoad").addEventListener("click", loadReport);
-    $("arPrint").addEventListener("click", function () { window.print(); });
-    $("arMsg").addEventListener("click", openMsg);
-    $("mmX").addEventListener("click", function () { $("mm").classList.remove("show"); });
-    $("mm").addEventListener("click", function (e) { if (e.target === $("mm")) $("mm").classList.remove("show"); });
-    $("mmGo").addEventListener("click", runMsg);
+  $("arMonth").value = P.thisMonth
+    ? P.thisMonth()
+    : (new Date()).toISOString().slice(0, 7);
+
+  $("arLoad").addEventListener("click", loadReport);
+
+  $("arPrint").addEventListener("click", function () {
+    window.print();
+  });
+
+  // Absentee WhatsApp trigger may not exist on this page
+  var arMsg = $("arMsg");
+  if (arMsg) {
+    arMsg.addEventListener("click", openMsg);
   }
+
+  $("mmX").addEventListener("click", function () {
+    $("mm").classList.remove("show");
+  });
+
+  $("mm").addEventListener("click", function (e) {
+    if (e.target === $("mm")) {
+      $("mm").classList.remove("show");
+    }
+  });
+
+  $("mmGo").addEventListener("click", runMsg);
+}
 
   function loadClasses() {
     P.api("getClasses", [""], { text: "Loading classes…" }).then(function (cs) {
