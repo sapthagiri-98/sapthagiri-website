@@ -275,11 +275,56 @@
         var modalBody =
           '<div class="fld"><label>Fee Head Code</label><input class="in" value="' + esc(code) + '" disabled/></div>' +
           '<div class="fld"><label>New Assigned Amount (₹)</label><input id="inpNewCharge" class="in big" type="number" value="' + currentAmt + '"/></div>' +
-          '<button class="btn btn-maroon" id="btnSaveCharge" style="width:100%;justify-content:center;margin-top:10px;"><i class="material-icons">save</i> Update Assigned Fee</button>';
+          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">' +
+          '<button class="btn btn-maroon" id="btnSaveCharge" style="flex:1;justify-content:center;"><i class="material-icons">save</i> Update Assigned Fee</button>' +
+          (L.yview === ((BOOT && BOOT.migrationYear) || "2025-26") ? '<button class="btn btn-outline" id="btnAssignNextOldDue" style="flex:1;justify-content:center;"><i class="material-icons">forward</i> Assign to ' + esc((BOOT && BOOT.currentYear) || "2026-27") + ' Old Due</button>' : '') +
+          '</div>';
 
         openModal("Edit Fee Charge · " + esc(L.yview), modalBody);
 
         setTimeout(function () {
+          var carryBtn = $("btnAssignNextOldDue");
+          if (carryBtn) {
+            carryBtn.onclick = function () {
+              var sourceYear = L.yview;
+              var targetYear = (BOOT && BOOT.currentYear) || "2026-27";
+              if (!confirm(
+                "Recalculate " + sourceYear + " closing due from the updated fee assignments and " +
+                "payments, then assign that amount as this student's " + targetYear + " Old Due?\n\n" +
+                "This updates only this student's " + targetYear + " Old Due."
+              )) return;
+
+              carryBtn.disabled = true;
+              carryBtn.innerHTML = '<i class="material-icons">sync</i> Assigning…';
+
+              P.api("feeAssignStudentOldDue", [L.student.id, ME], { text: "Assigning Old Due…" })
+                .then(function (res) {
+                  if (!res.success) {
+                    toast("Could not assign Old Due.", "err");
+                    return;
+                  }
+
+                  toast(
+                    targetYear + " Old Due assigned: " + money(res.oldDue) +
+                    " (from " + sourceYear + " closing due).",
+                    "ok"
+                  );
+                  closeModal("mdl");
+                  REPORTS.totals = null;
+                  L.stmt = null;
+                  L.yview = targetYear;
+                  refresh();
+                })
+                .catch(function (e) {
+                  toast(e.message || e, "err");
+                })
+                .finally(function () {
+                  carryBtn.disabled = false;
+                  carryBtn.innerHTML = '<i class="material-icons">forward</i> Assign to ' + esc(targetYear) + ' Old Due';
+                });
+            };
+          }
+
           $("btnSaveCharge").onclick = function () {
             var newAmt = Number($("inpNewCharge").value);
             if (isNaN(newAmt) || newAmt < 0) return toast("Enter a valid fee amount.", "err");
@@ -1618,7 +1663,6 @@
   function mountTools() {
     $("pTools").innerHTML =
       '<div class="tools-grid">' +
-        '<div class="tool-card tool-primary"><div class="tool-icon"><i class="material-icons">account_balance</i></div><span class="eyebrow">YEAR OPENING</span><h3>Assign 2026–27 Old Due</h3><p>Calculate each student’s 2025–26 closing arrear and create the fixed 2026–27 Old Due assignment.</p><button class="btn btn-maroon" id="tCarryOldDue"><i class="material-icons">sync</i> Assign Old Due</button><div id="tCarryOldDueO"></div></div>' +
         '<div class="tool-card"><div class="tool-icon soft"><i class="material-icons">sync</i></div><span class="eyebrow">STUDENT DATA</span><h3>Refresh Student Data</h3><p>Student Management remains the source of truth for names, classes, promotions, admissions and leaving records.</p><button class="btn btn-outline" id="tRefreshStudents"><i class="material-icons">refresh</i> Refresh Data</button><div id="tRefreshStudentsO"></div></div>' +
         '<div class="tool-card"><div class="tool-icon soft"><i class="material-icons">category</i></div><span class="eyebrow">FEE CONFIGURATION</span><h3>Add Fee Type</h3><p>Add a new fee head without changing the existing ledger structure.</p><div class="r2">' + fl("Name", ip("tyN", "", "e.g. Hostel Fee")) + fl("Code", ip("tyC", "", "e.g. HOSTEL")) + '</div><div class="r2">' + fl("Kind", '<select id="tyK" class="in"><option value="other">Other</option><option value="tuition">Tuition-like</option><option value="transport">Transport-like</option><option value="studyMaterials">Study Materials-like</option><option value="misc">Misc-like</option></select>') + fl("Sort", ip("tyS", "25")) + '</div><button class="btn btn-maroon" id="tyA"><i class="material-icons">add</i> Add Fee Type</button></div>' +
         '<div class="tool-card"><div class="tool-icon soft"><i class="material-icons">password</i></div><span class="eyebrow">SECURITY</span><h3>Module Password</h3><p>Change the password used to unlock Fee Management.</p>' + fl("New Module Password", ip("stP", "", "Enter new password")) + '<button class="btn btn-outline" id="stPB"><i class="material-icons">lock_reset</i> Update Password</button></div>' +
@@ -1637,15 +1681,6 @@
     };
     $("tyA").onclick = function () { var name = $("tyN").value.trim(), code = $("tyC").value.trim(); if (!name || !code) return toast("Name & code required.", "err"); P.api("feeAddFeeType", [{ name: name, code: code, kind: $("tyK").value, sort: Number($("tyS").value) || 25 }], { text: "Adding…" }).then(function () { toast("Added.", "ok"); P.api("feeBootstrap", [], { overlay: false }).then(function (b) { BOOT = b; }); }).catch(function (e) { toast(e.message || e, "err"); }); };
     $("stPB").onclick = function () { var pw = $("stP").value.trim(); if (!pw) return toast("Enter password.", "err"); P.api("feeSetPassword", [pw], { text: "Updating…" }).then(function () { toast("Password updated.", "ok"); $("stP").value = ""; }).catch(function (e) { toast(e.message || e, "err"); }); };
-    $("tCarryOldDue").onclick = function () {
-      if (!confirm("This will calculate the 2025-26 closing balance for every student and save it as their 2026-27 Old Due assignment.\n\nExisting imported 2026-27 Old Due values will be replaced.\n\nContinue?")) return;
-      var b = $("tCarryOldDue"), out = $("tCarryOldDueO"); b.disabled = true; b.innerHTML = '<i class="material-icons">sync</i> Assigning…';
-      out.innerHTML = '<div class="rsum">Calculating 2025-26 closing balances and creating 2026-27 assignments…</div>';
-      P.api("feeAssignCarryForwardOldDue", ["2026-27", ME], { text: "Assigning Old Due…" }).then(function (r) {
-        if (!r.success) { out.innerHTML = '<div class="rsum">Completed with ' + (r.errors || []).length + ' error(s). Assigned ' + r.assigned + ' students.</div>'; if (r.errors && r.errors.length) console.error("Old Due assignment errors:", r.errors); toast("Old Due assignment completed with errors.", "err"); return; }
-        out.innerHTML = '<div class="rsum">Done. ' + r.assigned + ' students assigned.</div>'; toast("2026-27 Old Due assignments created successfully.", "ok");
-      }).catch(function (e) { out.innerHTML = eb(e); toast(e.message || e, "err"); }).finally(function () { b.disabled = false; b.innerHTML = '<i class="material-icons">sync</i> Assign Old Due'; });
-    };
   }
 
   /* ---- Shared UI Helpers ---- */
