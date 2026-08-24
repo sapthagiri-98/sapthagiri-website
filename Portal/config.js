@@ -205,6 +205,7 @@ window.PORTAL_CONFIG = {
 
   SUPABASE_FEE_FNS: [
     "feeVerifyPassword",
+    "feeAssignStudentOldDue",
     "feeBootstrap",
     "feeGetClasses",
     "feeGetStudents",
