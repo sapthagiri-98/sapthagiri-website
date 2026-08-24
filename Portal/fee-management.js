@@ -6,20 +6,31 @@
   var P = window.Portal;
 
   /*
-   * MOBILE FINANCE VIEW
-   * -------------------
-   * Do NOT redirect to fee-ledger-view.html here. That separate page can
-   * lose the current student context and can show a blank page when its
-   * HTML/dependencies are not loaded.
+   * MOBILE FINANCE ROUTE
+   * --------------------
+   * Fee Ledger View is the dedicated mobile-only UI.
    *
-   * Instead this file becomes a read-only ledger on mobile. The same page
-   * and the same student search are used, so selecting a student such as
-   * Santosh works normally. Desktop keeps the complete Fee Management UI.
+   * IMPORTANT:
+   * Check the viewport BEFORE calling P.bootPage("feemgmt").
+   * This prevents Fee Management System from initializing on mobile.
+   *
+   * Mobile:
+   *   fee-management.html -> fee-ledger-view.html
+   *
+   * Desktop:
+   *   fee-management.html -> normal Fee Management System
    */
-  var _financeViewport = window.innerWidth || document.documentElement.clientWidth || 9999;
-  var IS_MOBILE_FINANCE = _financeViewport < 900;
+  var _financeViewport =
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    9999;
 
-  /* bootPage is required on both layouts for authentication and portal chrome. */
+  if (_financeViewport < 900) {
+    location.replace("fee-ledger-view.html");
+    return;
+  }
+
+  /* Desktop only */
   var session = P.bootPage("feemgmt");
   if (!session) return;
 
@@ -32,11 +43,7 @@
   var PAY = { student: null, account: null, choice: "" };
   var SHEET = { data: null };
   var REPORTS = { year: "", totals: null, classData: null, classListRequest: 0, classRequest: 0 };
-
-  /* Mobile is a quick read-only lookup and does not use the desktop module
-     password gate. Desktop behaviour remains unchanged. */
-  if (IS_MOBILE_FINANCE) boot();
-  else gate();
+  gate();
 
   function gate() {
     if (rg()) return boot();
@@ -50,22 +57,13 @@
 
   function boot() { $("view").innerHTML = mt("Loading finance…"); P.api("feeBootstrap", [], { overlay: false }).then(function (b) { BOOT = b; YEAR = b.currentYear; L.yview = YEAR; shell(); }).catch(function (e) { $("view").innerHTML = eb(e); }); }
   function shell() {
-    var mobileShell = IS_MOBILE_FINANCE
-      ? '<div class="fin-head"><div class="fin-brand"><div class="fin-brand-mark"><i class="material-icons">account_balance</i></div><div><span class="chip">Fees · Read Only</span><h1 class="fin-title">Fees &amp; Ledger</h1><p class="fin-sub">Student dues, fee structure and payment history.</p></div></div></div>'
-      : '<div class="fin-head"><div class="fin-brand"><div class="fin-brand-mark"><i class="material-icons">account_balance</i></div><div><span class="chip">Finance</span><h1 class="fin-title">Fee Management</h1><p class="fin-sub">Student ledger · collections · fee sheet · parent follow-up.</p></div></div></div>';
-
-    var tabsHtml = IS_MOBILE_FINANCE ? '' :
-      '<div class="fin-tabs" id="tabs">' + tb("ledger", "receipt_long", "Ledger") + tb("collect", "point_of_sale", "Collect") + tb("sheet", "grid_on", "Fee Sheet") + tb("reports", "assessment", "Reports") + tb("collections", "payments", "Collections") + tb("messages", "chat", "Messages") + tb("tools", "settings", "Tools") + '</div>';
-
-    $("view").innerHTML = mobileShell + tabsHtml +
+    $("view").innerHTML =
+      '<div class="fin-head"><div class="fin-brand"><div class="fin-brand-mark"><i class="material-icons">account_balance</i></div><div><span class="chip">Finance</span><h1 class="fin-title">Fee Management</h1><p class="fin-sub">Student ledger · collections · fee sheet · parent follow-up.</p></div></div></div>' +
+      '<div class="fin-tabs" id="tabs">' + tb("ledger", "receipt_long", "Ledger") + tb("collect", "point_of_sale", "Collect") + tb("sheet", "grid_on", "Fee Sheet") + tb("reports", "assessment", "Reports") + tb("collections", "payments", "Collections") + tb("messages", "chat", "Messages") + tb("tools", "settings", "Tools") + '</div>' +
       '<div id="pLedger"></div><div id="pCollect" style="display:none"></div><div id="pSheet" style="display:none"></div><div id="pReports" style="display:none"></div><div id="pCollections" style="display:none"></div><div id="pMessages" style="display:none"></div><div id="pTools" style="display:none"></div>' + modalHost();
-
-    if (!IS_MOBILE_FINANCE) {
-      Array.prototype.forEach.call($("tabs").querySelectorAll("button"), function (b) { b.onclick = function () { sw(b.getAttribute("data-t")); }; });
-    }
+    Array.prototype.forEach.call($("tabs").querySelectorAll("button"), function (b) { b.onclick = function () { sw(b.getAttribute("data-t")); }; });
     mountLedger();
   }
-
   function tb(id, ic, l) { return '<button data-t="' + id + '"' + (id === "ledger" ? ' class="active"' : "") + '><i class="material-icons">' + ic + '</i>' + l + '</button>'; }
   function sw(t) {
     ["ledger", "collect", "sheet", "reports", "collections", "messages", "tools"].forEach(function (x) { $("p" + cap(x)).style.display = (x === t ? "block" : "none"); });
@@ -132,16 +130,13 @@
       '<div class="tots" id="lTot" style="margin-top:12px"></div>' +
       '<div class="actbar">' +
       selc("event", "Academic Year", '<select id="lYr" class="in">' + yearOptions() + '</select>') +
-      '<div class="acts"><button class="btn btn-outline btn-sm" id="pFullLg"><i class="material-icons">history_edu</i> Print Full Audit Ledger</button>' +
-      (IS_MOBILE_FINANCE ? '' : '<button class="btn btn-maroon btn-sm" id="cP"><i class="material-icons">point_of_sale</i> Collect</button>') +
-      '</div></div><div id="lD"></div>';
+      '<div class="acts"><button class="btn btn-outline btn-sm" id="pFullLg"><i class="material-icons">history_edu</i> Print Full Audit Ledger</button><button class="btn btn-maroon btn-sm" id="cP"><i class="material-icons">point_of_sale</i> Collect</button></div>' +
+      '</div><div id="lD"></div>';
 
     $("lYr").value = L.yview;
     $("lYr").onchange = function () { L.yview = this.value; refresh(); };
     $("pFullLg").onclick = triggerFullAuditPrint;
-    if (!IS_MOBILE_FINANCE && $("cP")) {
-      $("cP").onclick = function () { sw("collect"); setTimeout(function () { collectOpen(s.id); }, 40); };
-    }
+    $("cP").onclick = function () { sw("collect"); setTimeout(function () { collectOpen(s.id); }, 40); };
     refresh();
   }
 
@@ -192,7 +187,7 @@
 
     var chargeRows = sortedCharges.map(function (c) {
       var isOldDue = (c.code === "OLD_DUE" || c.label.toLowerCase().includes("old due"));
-      var allowEdit = !IS_MOBILE_FINANCE && (!isOldDue || isDigitisationYear);
+      var allowEdit = !isOldDue || isDigitisationYear;
 
       return (
         '<tr>' +
@@ -253,7 +248,7 @@
           '<td data-label="Actions">' +
             '<button class="mini rP" data-r="' + esc(a.receiptId) + '" data-y="' + esc(yf) + '" title="Print"><i class="material-icons" style="font-size:15px">print</i></button> ' +
             '<button class="mini rS" data-r="' + esc(a.receiptId) + '" data-y="' + esc(yf) + '" title="Share"><i class="material-icons" style="font-size:15px">ios_share</i></button> ' +
-            (IS_MOBILE_FINANCE ? '' : '<button class="mini btn-void-alloc" data-r="' + esc(a.receiptId) + '" data-y="' + esc(yf) + '" data-ft="' + esc(a.code) + '" style="color:#b91c1c;border-color:#fca5a5;" title="Void Only This Allocation"><i class="material-icons" style="font-size:15px">delete_outline</i></button>') +
+            '<button class="mini btn-void-alloc" data-r="' + esc(a.receiptId) + '" data-y="' + esc(yf) + '" data-ft="' + esc(a.code) + '" style="color:#b91c1c;border-color:#fca5a5;" title="Void Only This Allocation"><i class="material-icons" style="font-size:15px">delete_outline</i></button>' +
           '</td>' +
           '</tr>'
         );
