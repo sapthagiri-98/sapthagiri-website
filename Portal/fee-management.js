@@ -3,25 +3,38 @@
    ========================================================================= */
 (function () {
   "use strict";
-  var P = window.Portal, session = P.bootPage("feemgmt");
-  if (!session) return;
-  var esc = P.esc, $ = function (id) { return document.getElementById(id); };
-  var ME = session.name || "Admin", GATE = "fin_gate_v3", SCHOOL_TOTALS_GATE = "school_totals_gate_v1";
+  var P = window.Portal;
 
   /*
    * MOBILE FINANCE ROUTE
    * --------------------
-   * On mobile, Fee Management System is a read-only browsing module.
-   * Do not show the desktop Fee Management password gate.
-   * Send Management directly to the dedicated mobile Fees & Ledger page.
+   * IMPORTANT: check the viewport BEFORE calling P.bootPage("feemgmt").
    *
-   * Desktop behaviour remains completely unchanged.
+   * bootPage() renders the Fee Management navigation/sub-tabs first.
+   * If we call it before redirecting, the user briefly sees the editable
+   * Fee Management UI and then gets redirected to the read-only ledger.
+   * On mobile this must be a direct route with no intermediate render.
+   *
+   * Mobile:
+   *   Fee Management URL -> immediately -> Fees & Ledger
+   *   No Fee Management tabs, password gate, Collect, Edit or Save controls.
+   *
+   * Desktop:
+   *   Existing Fee Management behaviour remains unchanged.
    */
   var _financeViewport = window.innerWidth || document.documentElement.clientWidth || 9999;
+
   if (_financeViewport < 900) {
     location.replace("fee-ledger-view.html");
     return;
   }
+
+  /* Desktop only: now it is safe to initialise the full Fee Management UI. */
+  var session = P.bootPage("feemgmt");
+  if (!session) return;
+
+  var esc = P.esc, $ = function (id) { return document.getElementById(id); };
+  var ME = session.name || "Admin", GATE = "fin_gate_v3", SCHOOL_TOTALS_GATE = "school_totals_gate_v1";
 
   css();
   var BOOT = null, YEAR = "", SCHOOL_TOTALS_PW = "";
