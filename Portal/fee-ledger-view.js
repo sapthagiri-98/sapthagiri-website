@@ -16,52 +16,23 @@
   var P = window.Portal;
   var session = P.Session && P.Session.get ? P.Session.get() : null;
   var isPhone = (window.innerWidth || document.documentElement.clientWidth || 9999) < 900;
-
-  /*
-   * Fee Ledger View is available on mobile to Management/Admin users
-   * and to staff who have the "Fee Management System" permission.
-   * The permission system is the source of truth; do not check the
-   * user's name here.
-   */
-  function hasFeeManagementAccess(s) {
-    if (!s) return false;
-
-    if (P.getVisibleModules) {
-      var modules = P.getVisibleModules(s) || [];
-      return modules.some(function (m) {
-        return m && m.id === "feemgmt";
-      });
-    }
-
-    if (s.role === "Management") return true;
-
-    return !!(s.permissions && s.permissions["Fee Management System"]);
-  }
+  var hasFeeManagementAccess = !!(session && (
+    String(session.role || "").toLowerCase() === "management" ||
+    !!(session.permissions && session.permissions["Fee Management System"])
+  ));
 
   if (!session) {
     location.replace("login.html");
     return;
   }
 
-  if (!isPhone) {
+  if (!isPhone || !hasFeeManagementAccess) {
     location.replace("fee-management.html");
     return;
   }
 
-  if (!hasFeeManagementAccess(session)) {
-    location.replace("fee-management.html");
-    return;
-  }
-
-  /*
-   * Do not use bootPage("feeview") here. It injects the shared sub-tab
-   * navigation, while this page is the dedicated mobile ledger surface.
-   */
-  P.renderChrome({
-    app: true,
-    userName: session.name
-  });
-  P.renderNav("feeview", session);
+  session = P.bootPage("feeview");
+  if (!session) return;
 
   var esc = P.esc;
   var $ = function (id) { return document.getElementById(id); };
@@ -1039,3 +1010,4 @@
     document.head.appendChild(s);
   }
 })();
+
