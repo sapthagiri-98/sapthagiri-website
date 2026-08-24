@@ -325,11 +325,17 @@
       var cust = (s.customFields || []).map(function (f) {
         return field(f.name, customInput("cf_" + f.code, f, s.customValues[f.code] || ""));
       }).join("");
+
+      // smGetStudent returns enrollments newest-first, so the first
+      // enrollment is the current/latest enrollment used for the class.
+      var currentEnrollment = (s.enrollments || []).length ? s.enrollments[0] : null;
+
       openModal("Edit · " + esc(s.name),
         '<div class="sm-row2">' +
           field("Student ID *", inp("edId", s.id)) + field("Admission No", inp("edAdm", s.admissionNo)) +
         '</div><div class="sm-row2">' +
-          field("Student Name *", inp("edName", s.name)) + '<div></div>' +
+          field("Student Name *", inp("edName", s.name)) +
+          field("Class", classEditSelect("edClass", s.currentClass)) +
         '</div><div class="sm-row2">' +
           field("Father Name", inp("edFather", s.father)) + field("Mother Name", inp("edMother", s.mother)) +
         '</div><div class="sm-row2">' +
@@ -349,19 +355,67 @@
             religion: $("edReligion").value, category: $("edCategory").value, bloodGroup: $("edBlood").value, admissionDate: $("edAdmDate").value,
             custom: collectCustom(s.customFields)
           };
+
+          var newClass = $("edClass").value.trim();
+
           if (!patch.name.trim()) throw new Error("Name is required.");
+          if (!newClass) throw new Error("Class is required.");
+
           var newId = $("edId").value.trim();
           if (!newId) throw new Error("Student ID is required.");
-          var doSave = function (useId) {
-            return P.api("smUpdateStudent", [useId, patch, ME], { text: "Saving…" }).then(function () { toast("Saved.", "ok"); loadList(); });
+
+          var saveEnrollment = function () {
+            // Class belongs to the enrollment, not the student identity.
+            // Only update it when an enrollment exists and the class changed.
+            if (!currentEnrollment || newClass === String(s.currentClass || "").trim()) {
+              return Promise.resolve();
+            }
+
+            return P.api(
+              "smUpdateEnrollment",
+              [currentEnrollment.enrollmentId, { className: newClass }, ME],
+              { text: "Updating class…" }
+            );
           };
+
+          var doSave = function (useId) {
+            return P.api("smUpdateStudent", [useId, patch, ME], { text: "Saving…" })
+              .then(function () {
+                return saveEnrollment();
+              })
+              .then(function () {
+                toast("Student details and class saved.", "ok");
+                loadList();
+              });
+          };
+
           if (newId !== id) {
-            return P.api("smChangeStudentId", [id, newId, patch.admissionNo, ME], { text: "Updating ID…" }).then(function () { return doSave(newId); });
+            return P.api("smChangeStudentId", [id, newId, patch.admissionNo, ME], { text: "Updating ID…" })
+              .then(function () { return doSave(newId); });
           }
+
           return doSave(id);
         });
     }).catch(function (e) { toast(e.message || e, "err"); });
   }
+
+  // Class is an enrollment field, so use the same class list supplied
+  // by smBootstrap. Keep the current value even if it is not in the list.
+  function classEditSelect(id, val) {
+    var current = String(val || "").trim();
+    var classes = (BOOT && BOOT.classes) ? BOOT.classes.slice() : [];
+    if (current && classes.indexOf(current) === -1) classes.push(current);
+
+    return '<select id="' + id + '" class="sm-input">' +
+      '<option value="">Select class</option>' +
+      classes.map(function (c) {
+        return '<option value="' + esc(c) + '"' +
+          (String(c) === current ? " selected" : "") + '>' +
+          esc(c) + '</option>';
+      }).join("") +
+      '</select>';
+  }
+
 
   /* ============================ STATUS MENU ============================ */
   function openStatus(id) {
