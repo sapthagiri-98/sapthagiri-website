@@ -246,7 +246,22 @@
   function _visibleMenu(session) {
     var isMgmt = session.role === "Management", perms = session.permissions || {};
     return MENU.filter(function (m) {
-      if (Object.prototype.hasOwnProperty.call(perms, m.perm)) { if (m.mgmt && !isMgmt) return false; if (m.teacherOnly && isMgmt) return false; return !!perms[m.perm]; }
+      /*
+       * Explicit user permissions are authoritative.
+       *
+       * Management modules are hidden by default from Staff/Teachers,
+       * but an administrator can explicitly grant one of those modules
+       * (for example Fee Management System) to a Staff/Teacher account.
+       *
+       * Therefore, do NOT reject m.mgmt merely because the role is not
+       * Management when an explicit permission entry exists.
+       */
+      if (Object.prototype.hasOwnProperty.call(perms, m.perm)) {
+        if (m.teacherOnly && isMgmt) return false;
+        return !!perms[m.perm];
+      }
+
+      /* No explicit permission entry: preserve the role defaults. */
       if (m.mgmt) return isMgmt;
       if (m.teacherOnly) return !isMgmt;
       return true;
@@ -289,6 +304,24 @@
       ? SUBTABS[group].filter(function (t) { return t.id === "attendance"; })
       : SUBTABS[group].filter(function (t) {
           if (isMobileAdmin(session) && t.id === "feemgmt") return false;
+
+          /*
+           * Sub-tabs normally follow their role restriction, but an
+           * explicitly granted module permission must also grant access
+           * to its corresponding sub-tab.
+           */
+          if (group === "feemgmt") {
+            if (t.id === "feemgmt") {
+              return !!(session.permissions &&
+                Object.prototype.hasOwnProperty.call(session.permissions, "Fee Management System") &&
+                session.permissions["Fee Management System"]);
+            }
+            if (t.id === "feeview") {
+              return isMgmt || !!(session.permissions &&
+                session.permissions["Fee Management System"]);
+            }
+          }
+
           return t.mgmt ? isMgmt : (t.teacherOnly ? !isMgmt : true);
         });
     if (tabs.length < 2) return; // nothing to switch between
