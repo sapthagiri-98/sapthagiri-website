@@ -384,7 +384,7 @@
    * opens with the message ready. The user only needs to attach the downloaded
    * PDF and press Send.
    */
-  function openReceiptSharePreviewModal(r) {
+  function openReceiptSharePreviewModal(r, returnToLedgerSid) {
     var phone = r.contactNo || (L.student ? L.student.phone : "") || (PAY.student ? PAY.student.phone : "");
     var cleanPhone = String(phone || "").replace(/\D/g, "");
 
@@ -429,6 +429,25 @@
       '</div>';
 
     openModal("Share Receipt · " + esc(r.receiptId), modalHtml);
+
+    if (returnToLedgerSid) {
+      setTimeout(function () {
+        var mx = $("mx"), mc2 = $("mc2"), h = $("mdl");
+        var closeAndRefresh = function () {
+          if (h) h.classList.remove("show");
+          L.stmt = null;
+          REPORTS.totals = null;
+          sw("ledger");
+          openLedger(returnToLedgerSid);
+        };
+        if (mc2) {
+          mc2.textContent = "Close & View Ledger";
+          mc2.onclick = closeAndRefresh;
+        }
+        if (mx) mx.onclick = closeAndRefresh;
+        if (h) h.onclick = function (e) { if (e.target === h) closeAndRefresh(); };
+      }, 30);
+    }
 
     setTimeout(function () {
       var frame = $("receiptPreviewFrame");
@@ -653,15 +672,30 @@
 
   function refreshAfterReceipt(sid) {
     var closeAndRefresh = function () {
-      var h = $("mdl"); if (h) h.classList.remove("show");
+      var h = $("mdl");
+      if (h) h.classList.remove("show");
+
+      // Force a fresh finance read so the newly recorded payment is visible
+      // immediately when the student ledger opens again.
+      L.stmt = null;
+      REPORTS.totals = null;
+
       sw("ledger");
       openLedger(sid);
     };
+
     setTimeout(function () {
       var mx = $("mx"), mc2 = $("mc2"), h = $("mdl");
+      if (!h) return;
+
+      if (mc2) {
+        mc2.textContent = "Close & View Ledger";
+        mc2.onclick = closeAndRefresh;
+      }
       if (mx) mx.onclick = closeAndRefresh;
-      if (mc2) mc2.onclick = closeAndRefresh;
-      if (h) h.onclick = function (e) { if (e.target === h) closeAndRefresh(); };
+      h.onclick = function (e) {
+        if (e.target === h) closeAndRefresh();
+      };
     }, 30);
   }
 
@@ -669,26 +703,37 @@
     window._multiReceiptCache = receipts;
 
     var listHtml = receipts.map(function (r, idx) {
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border-bottom:1px solid #e2e8f0;gap:8px;">' +
-        '<div><b>' + esc(r.receiptId) + '</b> <span class="chip" style="font-size:10px;">' + esc(r.feeType) + '</span></div>' +
-        '<div style="display:flex;align-items:center;gap:6px;">' +
-          '<b style="color:#047857;">' + money(r.currentPayment || r.amount) + '</b> ' +
-          '<button class="mini" onclick="window.printSingleReceipt(\'' + esc(r.receiptId) + '\')"><i class="material-icons" style="font-size:14px">print</i> Print</button>' +
-          '<button class="mini" id="waBtn_' + idx + '" style="color:#166534;border-color:#bbf7d0;" onclick="window.openSingleReceiptShare(' + idx + ')"><i class="material-icons" style="font-size:14px">send</i> Open WhatsApp</button>' +
+      var amount = Number(r.currentPayment != null ? r.currentPayment : (r.amount || 0));
+      return '<div class="multi-receipt-card">' +
+        '<div class="multi-receipt-info">' +
+          '<div class="multi-receipt-type"><i class="material-icons">receipt_long</i><div><span class="multi-receipt-label">' + esc(r.feeType || "Fee") + '</span><b>' + esc(r.receiptId) + '</b></div></div>' +
+          '<div class="multi-receipt-amount">' + money(amount) + '</div>' +
+        '</div>' +
+        '<div class="multi-receipt-actions">' +
+          '<button class="btn btn-outline btn-sm" onclick="window.printSingleReceipt(' + idx + ')"><i class="material-icons">print</i> Print</button>' +
+          '<button class="btn btn-maroon btn-sm" onclick="window.openSingleReceiptShare(' + idx + ')"><i class="material-icons">ios_share</i> Share</button>' +
         '</div>' +
       '</div>';
     }).join("");
 
-    openModal("Receipts Generated (" + receipts.length + ")", '<div class="note ok"><i class="material-icons">check_circle</i>Payment split into ' + receipts.length + ' receipts by fee type.</div><div style="margin-top:10px;">' + listHtml + '</div>');
+    var intro = '<div class="multi-receipt-summary"><div class="note ok"><i class="material-icons">check_circle</i><div><b>Payment recorded successfully.</b><span>The amount was split into ' + receipts.length + ' receipts by fee type.</span></div></div></div>';
+    var body = intro + '<div class="multi-receipt-list">' + listHtml + '</div>';
+
+    openModal("Receipts Generated", body);
     refreshAfterReceipt(sid);
 
-    window.printSingleReceipt = function (rid) {
-      withReceipt(rid, function (rc) { ReceiptShare.print(rc); });
+    window.printSingleReceipt = function (idx) {
+      var rc = window._multiReceiptCache[idx];
+      if (!rc) return;
+      var year = rc.year || PAY.account.year;
+      withReceipt(rc.receiptId, year, function (receipt) {
+        ReceiptShare.print(receipt);
+      });
     };
 
     window.openSingleReceiptShare = function (idx) {
       var rc = window._multiReceiptCache[idx];
-      if (rc) openReceiptSharePreviewModal(rc);
+      if (rc) openReceiptSharePreviewModal(rc, sid);
     };
   }
 
@@ -697,7 +742,7 @@
     refreshAfterReceipt(sid);
     setTimeout(function () {
       if ($("rP")) $("rP").onclick = function () { ReceiptShare.print(r); };
-      if ($("rS")) $("rS").onclick = function () { openReceiptSharePreviewModal(r); };
+      if ($("rS")) $("rS").onclick = function () { openReceiptSharePreviewModal(r, sid); };
     }, 30);
   }
 
@@ -1792,6 +1837,7 @@
       ".report-two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}.report-box{background:#fff;border:1px solid var(--border);border-radius:16px;padding:15px;box-shadow:0 5px 18px rgba(15,23,42,.04);margin-bottom:14px}.report-box-head{margin-bottom:10px}.report-box-head h3{margin:3px 0 4px;font-size:16px;color:#202638}.report-box-head p{margin:0;color:var(--text-muted);font-size:11px}.report-table td,.report-table th{padding:9px 10px}.report-history-box{margin-top:0}.legacy-total-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.legacy-total-card{border:1px solid #eadede;background:#faf5f5;border-radius:12px;padding:14px}.legacy-total-card span{display:block;color:var(--maroon);font-size:10px;font-weight:800;letter-spacing:.6px}.legacy-total-card b{display:block;margin-top:4px;font-size:22px;color:#202638}.report-stat{display:flex;align-items:center;gap:7px;padding:9px 12px;border-radius:11px;background:#faf5f5;color:var(--maroon);font-size:12px;font-weight:800;white-space:nowrap}.report-stat i{font-size:17px}.report-class-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin:2px 0 12px}.report-class-head h3{margin:3px 0 4px;font-size:18px;color:#202638}.report-class-head p{margin:0;color:var(--text-muted);font-size:11px}.report-legend{display:flex;gap:6px;flex-wrap:wrap}.report-legend span{font-size:10px;font-weight:800;padding:5px 8px;border-radius:999px}.legend-active{background:#ecfdf5;color:#15803d}.legend-inactive{background:#fff7ed;color:#b45309}.report-table-wrap{overflow:auto;border:1px solid var(--border);border-radius:13px;background:#fff}.report-class-table{min-width:1180px}.report-class-table th,.report-class-table td{padding:9px 10px}.report-class-table .report-roll{text-align:center;font-weight:800;color:var(--maroon);width:55px}.report-class-table .report-history{min-width:230px;font-size:11px;line-height:1.55}.report-inactive-row td{background:#fffaf3!important}.report-tabs{margin-bottom:12px}@media(max-width:900px){.report-two-col{grid-template-columns:1fr}.report-summary{grid-template-columns:1fr}.report-class-head{flex-direction:column}}@media(max-width:620px){.legacy-total-grid{grid-template-columns:1fr}.report-toolbar .btn{width:100%;justify-content:center}.report-toolbar .ssel{min-width:100%}}"
     ];
 
+    styles.push(".multi-receipt-summary{margin-bottom:12px}.multi-receipt-summary .note{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border-radius:12px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}.multi-receipt-summary .note i{font-size:19px;margin-top:1px}.multi-receipt-summary .note div{display:flex;flex-direction:column;gap:2px}.multi-receipt-summary .note span{font-size:11.5px;color:#4b5563;font-weight:500}.multi-receipt-list{display:grid;gap:9px}.multi-receipt-card{padding:12px 13px;border:1px solid #e2e8f0;border-radius:13px;background:#fff;box-shadow:0 3px 10px rgba(15,23,42,.04)}.multi-receipt-info{display:flex;align-items:center;justify-content:space-between;gap:12px}.multi-receipt-type{display:flex;align-items:center;gap:9px;min-width:0}.multi-receipt-type>i{font-size:20px;color:var(--maroon);background:var(--primary-light);padding:7px;border-radius:9px}.multi-receipt-type>div{display:flex;flex-direction:column;min-width:0}.multi-receipt-label{font-size:12.5px;font-weight:800;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.multi-receipt-type b{font-size:10.5px;color:#64748b;margin-top:2px;font-weight:600}.multi-receipt-amount{font-size:15px;font-weight:900;color:#047857;white-space:nowrap}.multi-receipt-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px;padding-top:9px;border-top:1px solid #f1f5f9}.multi-receipt-actions .btn{min-height:34px;padding:7px 11px}.multi-receipt-actions .btn i{font-size:16px}");
     s.textContent = styles.join("\n");
     document.head.appendChild(s);
   }
