@@ -268,7 +268,8 @@
     });
   }
   function _href(m) {
-    if (m && m.id === "feemgmt" && isMobileAdmin(Session.get())) {
+    if (m && m.id === "feemgmt" &&
+        (window.innerWidth || document.documentElement.clientWidth || 9999) < MOBILE_ADMIN_BP) {
       return "fee-ledger-view.html";
     }
     return m.soon ? ("coming-soon.html?m=" + encodeURIComponent(m.label)) : m.href;
