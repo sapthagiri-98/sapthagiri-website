@@ -16,23 +16,52 @@
   var P = window.Portal;
   var session = P.Session && P.Session.get ? P.Session.get() : null;
   var isPhone = (window.innerWidth || document.documentElement.clientWidth || 9999) < 900;
-  var isAdmin = !!(session &&
-    String(session.role || "").toLowerCase() === "management" &&
-    String(session.name || "").trim().toLowerCase() ===
-      String((P.CONFIG || {}).ADMIN_USER_NAME || "Admin").trim().toLowerCase());
+
+  /*
+   * Fee Ledger View is available on mobile to Management/Admin users
+   * and to staff who have the "Fee Management System" permission.
+   * The permission system is the source of truth; do not check the
+   * user's name here.
+   */
+  function hasFeeManagementAccess(s) {
+    if (!s) return false;
+
+    if (P.getVisibleModules) {
+      var modules = P.getVisibleModules(s) || [];
+      return modules.some(function (m) {
+        return m && m.id === "feemgmt";
+      });
+    }
+
+    if (s.role === "Management") return true;
+
+    return !!(s.permissions && s.permissions["Fee Management System"]);
+  }
 
   if (!session) {
     location.replace("login.html");
     return;
   }
 
-  if (!isPhone || !isAdmin) {
+  if (!isPhone) {
     location.replace("fee-management.html");
     return;
   }
 
-  session = P.bootPage("feeview");
-  if (!session) return;
+  if (!hasFeeManagementAccess(session)) {
+    location.replace("fee-management.html");
+    return;
+  }
+
+  /*
+   * Do not use bootPage("feeview") here. It injects the shared sub-tab
+   * navigation, while this page is the dedicated mobile ledger surface.
+   */
+  P.renderChrome({
+    app: true,
+    userName: session.name
+  });
+  P.renderNav("feeview", session);
 
   var esc = P.esc;
   var $ = function (id) { return document.getElementById(id); };
@@ -901,26 +930,19 @@
       ".flv-section-head h3{margin:2px 0 0;font-size:14px;line-height:1.2;color:#202638}",
       ".flv-badge{font-size:10px;font-weight:800;color:var(--maroon);background:#faf0f0;border:1px solid #ead6d6;border-radius:999px;padding:5px 8px;white-space:nowrap}",
 
-      /* Fee structure: compact financial cards.
-         Keep the fee name and all three amounts on one visual row so the
-         section is easier to scan and does not waste vertical space. */
-      ".flv-fee-list{border:1px solid #e6eaf0;border-radius:13px;overflow:hidden;background:#fff}",
-      ".flv-fee-row{display:grid;grid-template-columns:minmax(125px,1.45fr) repeat(3,minmax(58px,.72fr));align-items:center;gap:7px;padding:12px 11px;border-bottom:1px solid #edf0f3;min-height:72px}",
+      ".flv-fee-list{border:1px solid #edf0f3;border-radius:11px;overflow:hidden}",
+      ".flv-fee-row{display:grid;grid-template-columns:minmax(150px,1.6fr) repeat(3,minmax(65px,.7fr));align-items:center;gap:6px;padding:10px;border-bottom:1px solid #f0f2f5}",
       ".flv-fee-row:last-child{border-bottom:0}",
-      ".flv-fee-name{display:flex;align-items:center;gap:9px;min-width:0}",
-      ".flv-fee-icon{width:34px;height:34px;border-radius:10px;background:#faf0f0;color:var(--maroon);display:grid;place-items:center;flex:0 0 34px;border:1px solid #f1dfdf}",
-      ".flv-fee-icon i{font-size:18px}",
-      ".flv-fee-name>div{min-width:0}",
-      ".flv-fee-name b{display:block;font-size:13px;line-height:1.18;font-weight:800;color:#293246;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".flv-fee-name small{display:inline-flex;align-items:center;margin-top:4px;font-size:10px;font-weight:700}",
-      ".flv-fee-name small:before{content:'';width:5px;height:5px;border-radius:50%;margin-right:5px;background:currentColor}",
+      ".flv-fee-name{display:flex;align-items:center;gap:7px;min-width:0}",
+      ".flv-fee-icon{width:29px;height:29px;border-radius:8px;background:#faf0f0;color:var(--maroon);display:grid;place-items:center;flex:0 0 29px}",
+      ".flv-fee-icon i{font-size:16px}",
+      ".flv-fee-name b{display:block;font-size:11.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".flv-fee-name small{display:block;margin-top:2px;font-size:9.5px}",
       ".flv-fee-name small.pending{color:#dc2626}.flv-fee-name small.cleared{color:#059669}",
-      ".flv-fee-num{text-align:right;padding-left:3px}",
-      ".flv-fee-num small{display:block;color:#94a3b8;font-size:9px;font-weight:800;line-height:1.1;margin-bottom:5px}",
-      ".flv-fee-num b{display:block;font-size:14px;line-height:1.05;font-weight:800;color:#30394c;white-space:nowrap}",
-      ".flv-fee-num.due-num{padding-right:2px}",
+      ".flv-fee-num{text-align:right}",
+      ".flv-fee-num small{display:block;color:#94a3b8;font-size:8.5px;font-weight:700}",
+      ".flv-fee-num b{font-size:11.5px;color:#334155}",
       ".flv-fee-num.due-num b{color:#dc2626}",
-      ".flv-fee-row:hover{background:#fffafb}",
 
       ".flv-ledger-section{padding-bottom:14px}",
       ".flv-ledger-head{align-items:flex-end}",
@@ -988,14 +1010,9 @@
         ".flv-pickers{grid-template-columns:1fr 1fr}",
         ".flv-summary{grid-template-columns:1.35fr 1fr 1fr}",
         ".flv-due-card{grid-column:1/-1}",
-        ".flv-fee-row{grid-template-columns:minmax(118px,1.35fr) repeat(3,minmax(55px,.72fr));gap:5px;padding:11px 9px;min-height:68px}",
-        ".flv-fee-name{grid-column:auto;gap:7px}",
-        ".flv-fee-icon{width:32px;height:32px;flex-basis:32px}",
-        ".flv-fee-name b{font-size:12px}",
-        ".flv-fee-name small{font-size:9px}",
-        ".flv-fee-num{text-align:right}",
-        ".flv-fee-num small{font-size:8px;margin-bottom:4px}",
-        ".flv-fee-num b{font-size:13px}",
+        ".flv-fee-row{grid-template-columns:1fr 1fr 1fr;gap:6px}",
+        ".flv-fee-name{grid-column:1/-1}",
+        ".flv-fee-num{text-align:left}",
         ".flv-fee-num.due-num{text-align:right}",
         ".flv-ledger-row{grid-template-columns:1fr}",
       "}",
@@ -1010,14 +1027,6 @@
         ".flv-ledger-head{align-items:flex-start;flex-direction:column}",
         ".flv-ledger-filter{width:100%;min-height:44px;font-size:13px}",
         ".flv-flow-card{padding:11px}",
-        ".flv-fee-row{grid-template-columns:minmax(105px,1.2fr) repeat(3,minmax(50px,.68fr));gap:4px;padding:10px 7px}",
-        ".flv-fee-name{gap:6px}",
-        ".flv-fee-icon{width:30px;height:30px;flex-basis:30px;border-radius:9px}",
-        ".flv-fee-icon i{font-size:16px}",
-        ".flv-fee-name b{font-size:11.5px}",
-        ".flv-fee-name small{font-size:8.5px}",
-        ".flv-fee-num small{font-size:7.5px}",
-        ".flv-fee-num b{font-size:12px}",
         ".flv-flow-payment-main strong{font-size:14px}",
         ".flv-flow-card-head strong{font-size:15px}",
         ".flv-flow-empty{margin-left:0}",
