@@ -228,8 +228,9 @@
     var d = (current.calendarMap || {})[drillDate] || {}, arr = (d[key] || []).slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
     if (!arr.length) { $("saDayBody").innerHTML = '<div class="slip-empty">No staff in this list for the day.</div>'; return; }
     $("saDayBody").innerHTML = arr.map(function (r, i) {
+      var dual = String(r.shiftType || "").toUpperCase() === "DUAL";
       var meta = 'In ' + esc(r.in1 || "—") + ' · Out ' + esc(r.out1 || "—");
-      if (r.in2 || r.out2) meta += ' · In2 ' + esc(r.in2 || "—") + ' · Out2 ' + esc(r.out2 || "—");
+      if (dual && ((r.in2 && r.in2 !== "-") || (r.out2 && r.out2 !== "-"))) meta += ' · In2 ' + esc(r.in2 || "—") + ' · Out2 ' + esc(r.out2 || "—");
       if (r.lateBy && r.lateBy !== "-") meta += ' · Late by ' + esc(r.lateBy);
       if (r.gaps && r.gaps !== "-") meta += ' · ' + esc(r.gaps);
       if (r.attendanceSource === "Manual" || r.source === "manual") meta += ' · Manual';
