@@ -123,6 +123,7 @@ window.PORTAL_CONFIG = {
     "getTimesheetData",
     "getManagementMonthlyBulkPayload",
      "clearAttendanceAdjustments",
+     "saveAttendanceAdjustment",
     "getTeacherAvailableSalarySlips"
   ],
 
