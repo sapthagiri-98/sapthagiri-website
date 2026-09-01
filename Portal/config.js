@@ -1,4 +1,4 @@
-/* =========================================================================
+   /* =========================================================================
    config.js — Portal Configuration
    ========================================================================= */
 window.PORTAL_CONFIG = {
@@ -122,6 +122,7 @@ window.PORTAL_CONFIG = {
   SUPABASE_SA_FNS: [
     "getTimesheetData",
     "getManagementMonthlyBulkPayload",
+     "clearAttendanceAdjustments",
     "getTeacherAvailableSalarySlips"
   ],
 
