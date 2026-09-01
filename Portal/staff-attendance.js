@@ -1,32 +1,16 @@
-/* ========================================================================
-   staff-attendance.js — ONE frontend file for both Staff Attendance and
-   My Attendance Log.
-
-   Management users see Staff Attendance.
-   Non-Management staff see My Attendance Log.
-   Both screens use the same backend staff-attendance-api.
-   ======================================================================== */
-
-/* staff-attendance.js — Staff Attendance (Management). Plain script; uses `Portal`.
-   Backend (unchanged): getManagementMonthlyBulkPayload("YYYY-MM") which returns
-   { success, calendarMap:{date:{Present:[],Late:[],Absent:[],HalfDay:[]}},
-     summaryReport:[{name,designation,present,absent,late,halfDay,totalLeaves}] }.
-   Wording simplified. The month payload is cached (CONFIG.MONTH_TTL_MS) so a
-   second view is instant — the console + inline line show before/after timing.
-   Refresh bypasses the cache. */
+/* staff-attendance.js — Management Staff Attendance v4.
+   Clickable monthly counters, per-employee drill-down, manual attendance corrections,
+   manual punches, manual leave, continuous-duty override and biometric refresh. */
 (function () {
   "use strict";
-  var P = window.Portal;
-  var session = P.Session.get();
+  var P = window.Portal, session = P.Session.get();
   if (!session || session.role !== "Management") return;
   session = P.bootPage("stafftrack");
   if (!session) return;
 
   var esc = P.esc, prettyDate = P.prettyDate, monthLabel = P.monthLabel;
   var $ = function (id) { return document.getElementById(id); };
-  var monthCache = {};   // month -> payload (in-memory)
-  var current = null;    // current month payload
-  var drillDate = "";
+  var monthCache = {}, current = null, drillDate = "";
 
   $("view").innerHTML = shell();
   bind();
@@ -37,85 +21,93 @@
     '<div class="card wide-card">' +
       '<div class="mod-head"><div><span class="eyebrow">Management</span>' +
         '<h2 style="margin-bottom:4px;">Staff Attendance</h2>' +
-        '<p class="view-description" style="margin:0;">See who was present, late or absent each day — plus a simple monthly summary.</p></div></div>' +
+        '<p class="view-description" style="margin:0;">Biometric attendance with manual correction and employee-level drill-down.</p></div>' +
+        '<button class="btn btn-maroon" id="saManual" style="width:auto;padding:10px 16px;"><i class="material-icons" style="color:#fff;">edit_calendar</i> Manual Entry</button>' +
+      '</div>' +
       '<div class="mod-toolbar">' +
         '<div class="smart-selector"><div class="ss-icon"><i class="material-icons">calendar_month</i></div>' +
           '<div class="ss-body"><div class="ss-label">Month</div><input type="month" id="saMonth"></div></div>' +
-        '<button class="refresh-btn" id="saRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh</button>' +
+        '<button class="refresh-btn" id="saRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh Biometric</button>' +
       '</div>' +
       '<div class="timing-line" id="saTiming"></div>' +
-      '<div class="legend">' +
-        '<span class="lg"><span class="dot d-green"></span>Present</span>' +
-        '<span class="lg"><span class="dot d-orange"></span>Late</span>' +
-        '<span class="lg"><span class="dot d-purple"></span>Half day</span>' +
-        '<span class="lg"><span class="dot d-red"></span>Absent</span>' +
-        '<span class="lg" style="color:var(--text-muted);">Tap any day for the name lists.</span>' +
-      '</div>' +
+      '<div class="legend"><span class="lg"><span class="dot d-green"></span>Present</span><span class="lg"><span class="dot d-orange"></span>Late</span><span class="lg"><span class="dot d-purple"></span>Half day</span><span class="lg"><span class="dot d-red"></span>Absent</span><span class="lg"><span class="dot d-blue"></span>Manual leave</span><span class="lg" style="color:var(--text-muted);">Click a summary number to see its dates and punch times.</span></div>' +
       '<div class="cal-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>' +
       '<div class="cal-grid" id="saGrid"></div>' +
       '<div class="group-head" style="margin-top:26px;"><i class="material-icons" style="font-size:18px;">summarize</i> Monthly Summary</div>' +
       '<div id="saSummary"></div>' +
-    '</div>' +
-    dayModal();
+    '</div>' + dayModal() + employeeModal() + editModal();
   }
+
   function dayModal() {
-    return '<div class="modal-overlay" id="saDayModal"><div class="modal-content" style="max-width:560px;">' +
+    return '<div class="modal-overlay" id="saDayModal"><div class="modal-content" style="max-width:650px;">' +
       '<div class="modal-header-container"><h3 id="saDayTitle">Staff on this day</h3><button class="modal-close-icon" data-close="saDayModal">&times;</button></div>' +
-      '<div class="day-drill-tabs" id="saDayTabs"></div>' +
-      '<div id="saDayBody"></div>' +
+      '<div class="day-drill-tabs" id="saDayTabs"></div><div id="saDayBody"></div>' +
       '<button class="btn btn-secondary" data-close="saDayModal" style="margin-top:16px;">Close</button></div></div>';
+  }
+
+  function employeeModal() {
+    return '<div class="modal-overlay" id="saEmployeeModal"><div class="modal-content" style="max-width:760px;">' +
+      '<div class="modal-header-container"><h3 id="saEmployeeTitle">Attendance details</h3><button class="modal-close-icon" data-close="saEmployeeModal">&times;</button></div>' +
+      '<div id="saEmployeeBody"></div>' +
+      '<button class="btn btn-secondary" data-close="saEmployeeModal" style="margin-top:16px;">Close</button></div></div>';
+  }
+
+  function editModal() {
+    return '<div class="modal-overlay" id="saEditModal"><div class="modal-content" style="max-width:600px;">' +
+      '<div class="modal-header-container"><h3 id="saEditTitle">Manual Attendance Entry</h3><button class="modal-close-icon" data-close="saEditModal">&times;</button></div>' +
+      '<input type="hidden" id="saEditId">' +
+      '<div class="form-group"><label>Employee</label><select id="saEditUser"></select></div>' +
+      '<div class="form-group"><label>Date</label><input type="date" id="saEditDate"></div>' +
+      '<div class="form-group"><label>Entry type</label><select id="saEditType"><option value="PUNCH">Manual Punch</option><option value="STATUS">Attendance Status</option><option value="LEAVE">Leave</option><option value="DUTY">Official Duty / Continuous Duty</option></select></div>' +
+      '<div id="saPunchFields"><div style="display:flex;gap:10px;"><div class="form-group" style="flex:1;"><label>Session</label><select id="saEditSession"><option value="ALL">Auto / Full day</option><option value="MORNING">Morning</option><option value="AFTERNOON">Afternoon</option></select></div><div class="form-group" style="flex:1;"><label>Punch type</label><select id="saEditPunchType"><option value="IN">IN</option><option value="OUT">OUT</option></select></div></div><div class="form-group"><label>Punch time</label><input type="time" id="saEditTime"></div></div>' +
+      '<div id="saStatusFields" style="display:none;"><div class="form-group"><label>Status</label><select id="saEditStatus"><option value="Present">Present</option><option value="Half Day">Half Day</option><option value="Absent">Absent</option><option value="Leave">Leave</option></select></div></div>' +
+      '<div class="form-group"><label>Reason / note</label><textarea id="saEditReason" rows="3" placeholder="Biometric failure, official school work, approved leave, etc."></textarea></div>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">' +
+        '<button class="btn btn-secondary" id="saResetDay" style="width:auto;">Reset to Biometric</button>' +
+        '<button class="btn btn-secondary" data-close="saEditModal" style="width:auto;">Cancel</button>' +
+        '<button class="btn btn-maroon" id="saEditSave" style="width:auto;"><i class="material-icons" style="color:#fff;">save</i> Save</button>' +
+      '</div>' +
+      '<p style="font-size:12px;color:var(--text-muted);margin-top:12px;">Original biometric punches are never changed. Manual entries are stored separately and can be removed to restore the biometric result.</p>' +
+    '</div></div>';
   }
 
   function bind() {
     var m = $("saMonth"); m.value = P.thisMonth();
     m.addEventListener("change", function () { loadMonth(m.value, false); });
     $("saRefresh").addEventListener("click", function () { loadMonth($("saMonth").value, true); });
+    $("saManual").addEventListener("click", function () { openEditor(); });
+    $("saEditType").addEventListener("change", toggleEditFields);
+    $("saEditSave").addEventListener("click", saveEdit);
+    $("saResetDay").addEventListener("click", resetDay);
     Array.prototype.forEach.call(document.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { P.closeModal(b.getAttribute("data-close")); }); });
     Array.prototype.forEach.call(document.querySelectorAll(".modal-overlay"), function (mm) { mm.addEventListener("click", function (e) { if (e.target === mm) P.closeModal(mm.id); }); });
   }
 
-  /* ---------------- load month (cache = measurable win) ---------------- */
   function loadMonth(month, force) {
     var key = "staffmon_" + month, t0 = performance.now();
     if (!force) {
       var mem = monthCache[month] || P.Cache.get(key);
-      if (mem) {
-        var ms = Math.round(performance.now() - t0);
-        P.perf.record("Load Staff Month", ms, "warm"); showTiming(ms, "warm");
-        current = mem; render(mem, month); monthCache[month] = mem; return;
-      }
+      if (mem) { var ms = Math.round(performance.now() - t0); P.perf.record("Load Staff Month", ms, "warm"); showTiming(ms, "warm"); current = mem; render(mem, month); monthCache[month] = mem; return; }
     }
-    $("saGrid").innerHTML = '<div class="inline-loader" style="grid-column:span 7;"><i class="material-icons">sync</i>Reading biometric records… this can take a moment.</div>';
+    $("saGrid").innerHTML = '<div class="inline-loader" style="grid-column:span 7;"><i class="material-icons">sync</i>Reading biometric records and manual corrections…</div>';
     $("saSummary").innerHTML = "";
     P.api("getManagementMonthlyBulkPayload", [month], { text: "Loading staff attendance…" }).then(function (res) {
-      var ms = Math.round(performance.now() - t0);
-      P.perf.record("Load Staff Month", ms, "cold"); showTiming(ms, "cold");
+      var ms = Math.round(performance.now() - t0); P.perf.record("Load Staff Month", ms, "cold"); showTiming(ms, "cold");
       if (!res || !res.success) { $("saGrid").innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">error_outline</i>' + esc((res && res.error) || "Could not load records.") + '</div>'; return; }
       current = res; monthCache[month] = res; P.Cache.set(key, res, P.CONFIG.MONTH_TTL_MS); render(res, month);
     }).catch(function (e) { $("saGrid").innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>'; });
   }
-  function showTiming(ms, mode) {
-    var base = P.perf.baseline["Load Staff Month"], el = $("saTiming");
-    if (mode === "warm" && base) el.innerHTML = "⚡ Loaded from cache in <b>" + ms + " ms</b> — first load was " + base + " ms (" + Math.round((1 - ms / base) * 100) + "% faster).";
-    else el.innerHTML = "⏱ Loaded in " + ms + " ms." + (base ? "" : " Re-open this month to load instantly from cache.");
-  }
+  function showTiming(ms, mode) { var base = P.perf.baseline["Load Staff Month"], el = $("saTiming"); if (mode === "warm" && base) el.innerHTML = "⚡ Loaded from cache in <b>" + ms + " ms</b> — first load was " + base + " ms."; else el.innerHTML = "⏱ Loaded in " + ms + " ms."; }
 
-  /* ---------------- render calendar + summary ---------------- */
   function render(res, month) {
-    var map = res.calendarMap || {};
-    var keys = Object.keys(map).sort();
-    var grid = $("saGrid");
-    if (keys.length === 0) { grid.innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">inbox</i>No records for ' + esc(monthLabel(month)) + '.</div>'; }
+    var map = res.calendarMap || {}, keys = Object.keys(map).sort(), grid = $("saGrid");
+    if (!keys.length) { grid.innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">inbox</i>No records for ' + esc(monthLabel(month)) + '.</div>'; }
     else {
       var pad = new Date(keys[0] + "T00:00:00").getDay(), html = "";
       for (var i = 0; i < pad; i++) html += '<div class="cal-day empty"></div>';
       keys.forEach(function (k) {
-        var d = map[k], p = d.Present.length, l = d.Late.length, h = d.HalfDay.length, a = d.Absent.length;
-        var mini = "";
-        if (p) mini += '<span class="m-p">P ' + p + '</span>';
-        if (l) mini += '<span class="m-l">L ' + l + '</span>';
-        if (h) mini += '<span class="m-h">H ' + h + '</span>';
-        if (a) mini += '<span class="m-a">A ' + a + '</span>';
+        var d = map[k], p = (d.Present || []).length, l = (d.Late || []).length, h = (d.HalfDay || []).length, a = (d.Absent || []).length, lv = (d.Leave || []).length, mini = "";
+        if (p) mini += '<span class="m-p">P ' + p + '</span>'; if (l) mini += '<span class="m-l">L ' + l + '</span>'; if (h) mini += '<span class="m-h">H ' + h + '</span>'; if (a) mini += '<span class="m-a">A ' + a + '</span>'; if (lv) mini += '<span class="m-p">V ' + lv + '</span>';
         html += '<div class="cal-day" data-day="' + k + '"><div class="dnum">' + (+k.split("-")[2]) + '</div><div class="mini">' + mini + '</div></div>';
       });
       grid.innerHTML = html;
@@ -123,56 +115,109 @@
     }
     renderSummary(res.summaryReport || []);
   }
+
   function renderSummary(rep) {
     var host = $("saSummary");
     if (!rep.length) { host.innerHTML = '<div class="slip-empty">No staff records for this month.</div>'; return; }
     rep = rep.slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
     var rows = rep.map(function (r) {
       return '<tr><td style="font-weight:700;">' + esc(r.name) + '</td><td style="color:var(--text-muted);">' + esc(r.designation || "") + '</td>' +
-        '<td class="num"><span class="pill green">' + (r.present || 0) + '</span></td>' +
-        '<td class="num"><span class="pill orange">' + (r.late || 0) + '</span></td>' +
-        '<td class="num"><span class="pill purple">' + (r.halfDay || 0) + '</span></td>' +
-        '<td class="num"><span class="pill red">' + (r.absent || 0) + '</span></td>' +
+        '<td class="num">' + countBtn(r.userId, "Present", r.present || 0, "green") + '</td>' +
+        '<td class="num">' + countBtn(r.userId, "Late", r.late || 0, "orange") + '</td>' +
+        '<td class="num">' + countBtn(r.userId, "HalfDay", r.halfDay || 0, "purple") + '</td>' +
+        '<td class="num">' + countBtn(r.userId, "Absent", r.absent || 0, "red") + '</td>' +
+        '<td class="num">' + countBtn(r.userId, "Leave", r.leave || 0, "blue") + '</td>' +
         '<td class="num" style="font-weight:800;color:var(--maroon);">' + (Number(r.totalLeaves) || 0) + '</td></tr>';
     }).join("");
-    host.innerHTML = '<div class="friendly-wrap"><table class="friendly-table"><thead><tr>' +
-      '<th>Name</th><th>Role</th><th style="text-align:center;">Present</th><th style="text-align:center;">Late</th><th style="text-align:center;">Half</th><th style="text-align:center;">Absent</th><th style="text-align:center;">Leaves Used</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-      '<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">“Leaves Used” = absent days + half-days counted as ½, plus a ½ penalty for every 3 late arrivals.</p>';
+    host.innerHTML = '<div class="friendly-wrap"><table class="friendly-table"><thead><tr><th>Name</th><th>Role</th><th style="text-align:center;">Present</th><th style="text-align:center;">Late</th><th style="text-align:center;">Half</th><th style="text-align:center;">Absent</th><th style="text-align:center;">Leave</th><th style="text-align:center;">Leaves Used</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Click Present, Late, Half, Absent or Leave to see the exact dates, punch times, late duration and correction source.</p>';
+    Array.prototype.forEach.call(host.querySelectorAll("[data-summary]"), function (b) { b.addEventListener("click", function () { openEmployee(Number(b.getAttribute("data-user")), b.getAttribute("data-summary")); }); });
+  }
+  function countBtn(userId, cat, n, cls) { return '<button type="button" data-summary="' + cat + '" data-user="' + userId + '" class="pill ' + cls + '" style="border:0;cursor:pointer;min-width:36px;">' + n + '</button>'; }
+
+  function openEmployee(userId, category) {
+    var rep = (current.summaryReport || []).find(function (r) { return Number(r.userId) === Number(userId); });
+    if (!rep) return;
+    var bucket = category === "HalfDay" ? "HalfDay" : category;
+    var rows = [];
+    Object.keys(current.calendarMap || {}).sort().forEach(function (date) {
+      var arr = ((current.calendarMap[date] || {})[bucket] || []);
+      arr.forEach(function (r) { if (Number(r.userId) === Number(userId)) rows.push({ date: date, r: r }); });
+    });
+    $("saEmployeeTitle").textContent = rep.name + " — " + ({Present:"Present",Late:"Late",HalfDay:"Half days",Absent:"Absent",Leave:"Leave"}[category] || category);
+    if (!rows.length) { $("saEmployeeBody").innerHTML = '<div class="slip-empty">No matching dates.</div>'; P.openModal("saEmployeeModal"); return; }
+    $("saEmployeeBody").innerHTML = '<div style="max-height:55vh;overflow:auto;">' + rows.map(function (x) {
+      var r = x.r, times = 'In ' + esc(r.in1 || "—") + ' · Out ' + esc(r.out1 || "—");
+      if (r.in2 || r.out2) times += ' · In2 ' + esc(r.in2 || "—") + ' · Out2 ' + esc(r.out2 || "—");
+      var late = r.lateBy && r.lateBy !== "-" ? ' · Late by ' + esc(r.lateBy) + (r.lateSession ? ' (' + esc(r.lateSession) + ')' : '') : '';
+      var src = r.source === "manual" ? 'Manual' : (r.source === "manual+biometric" ? 'Biometric + Manual' : 'Biometric');
+      return '<div class="list-row" style="align-items:flex-start;"><div class="idx">' + esc(prettyDate(x.date)) + '</div><div class="who"><div class="nm">' + esc(r.status) + '</div><div class="meta">' + times + late + (r.gaps && r.gaps !== "-" ? ' · ' + esc(r.gaps) : '') + ' · Source: ' + esc(src) + '</div>' + (r.manualReason ? '<div class="meta">Reason: ' + esc(r.manualReason) + '</div>' : '') + '</div><button class="btn btn-secondary" data-edit-date="' + x.date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 10px;">Edit</button></div>';
+    }).join("") + '</div>';
+    Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll("[data-edit-date]"), function (b) { b.addEventListener("click", function () { P.closeModal("saEmployeeModal"); openEditor(Number(b.getAttribute("data-edit-user")), b.getAttribute("data-edit-date")); }); });
+    P.openModal("saEmployeeModal");
   }
 
-  /* ---------------- day drilldown ---------------- */
   function openDay(k) {
-    drillDate = k;
-    var d = (current.calendarMap || {})[k] || { Present: [], Late: [], Absent: [], HalfDay: [] };
+    drillDate = k; var d = (current.calendarMap || {})[k] || {};
     $("saDayTitle").textContent = "Staff on " + prettyDate(k);
-    $("saDayTabs").innerHTML =
-      tabBtn("Present", "t-green", d.Present.length) +
-      tabBtn("Late", "t-orange", d.Late.length) +
-      tabBtn("HalfDay", "t-purple", d.HalfDay.length) +
-      tabBtn("Absent", "t-red", d.Absent.length);
+    $("saDayTabs").innerHTML = tabBtn("Present", "t-green", (d.Present || []).length) + tabBtn("Late", "t-orange", (d.Late || []).length) + tabBtn("HalfDay", "t-purple", (d.HalfDay || []).length) + tabBtn("Absent", "t-red", (d.Absent || []).length) + tabBtn("Leave", "t-green", (d.Leave || []).length);
     Array.prototype.forEach.call($("saDayTabs").querySelectorAll("button"), function (b) { b.addEventListener("click", function () { showTab(b.getAttribute("data-k")); }); });
-    // open on the most useful non-empty tab
-    var first = d.Late.length ? "Late" : (d.HalfDay.length ? "HalfDay" : (d.Absent.length ? "Absent" : "Present"));
-    showTab(first);
-    P.openModal("saDayModal");
+    var first = (d.Late || []).length ? "Late" : ((d.HalfDay || []).length ? "HalfDay" : ((d.Absent || []).length ? "Absent" : ((d.Leave || []).length ? "Leave" : "Present")));
+    showTab(first); P.openModal("saDayModal");
   }
-  function tabBtn(key, cls, n) {
-    var label = { Present: "Present", Late: "Late", HalfDay: "Half day", Absent: "Absent" }[key];
-    return '<button class="' + cls + '" data-k="' + key + '"><span class="n">' + n + '</span><span class="l">' + label + '</span></button>';
-  }
+  function tabBtn(key, cls, n) { var label = {Present:"Present",Late:"Late",HalfDay:"Half day",Absent:"Absent",Leave:"Leave"}[key] || key; return '<button class="' + cls + '" data-k="' + key + '"><span class="n">' + n + '</span><span class="l">' + label + '</span></button>'; }
   function showTab(key) {
     Array.prototype.forEach.call($("saDayTabs").querySelectorAll("button"), function (b) { b.classList.toggle("active", b.getAttribute("data-k") === key); });
-    var d = (current.calendarMap || {})[drillDate] || {};
-    var arr = (d[key] || []).slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
-    var showTimes = (key !== "Absent");
-    if (arr.length === 0) { $("saDayBody").innerHTML = '<div class="slip-empty">No staff in this list for the day.</div>'; return; }
+    var d = (current.calendarMap || {})[drillDate] || {}, arr = (d[key] || []).slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+    if (!arr.length) { $("saDayBody").innerHTML = '<div class="slip-empty">No staff in this list for the day.</div>'; return; }
     $("saDayBody").innerHTML = arr.map(function (r, i) {
-      var meta = showTimes
-        ? ("In " + esc(r.in1 || "—") + " · Out " + esc(r.out1 || "—") + (String(r.status || "").indexOf("Late") >= 0 ? (" · " + esc(r.status)) : "") + (r.gaps && r.gaps !== "-" ? (" · " + esc(r.gaps)) : ""))
-        : "No clock-in recorded";
-      return '<div class="list-row"><div class="idx">' + (i + 1) + '</div><div class="who"><div class="nm">' + esc(r.name) + '</div><div class="meta">' + esc(r.designation || "") + ' — ' + meta + '</div></div></div>';
+      var meta = 'In ' + esc(r.in1 || "—") + ' · Out ' + esc(r.out1 || "—");
+      if (r.in2 || r.out2) meta += ' · In2 ' + esc(r.in2 || "—") + ' · Out2 ' + esc(r.out2 || "—");
+      if (r.lateBy && r.lateBy !== "-") meta += ' · Late by ' + esc(r.lateBy);
+      if (r.gaps && r.gaps !== "-") meta += ' · ' + esc(r.gaps);
+      return '<div class="list-row"><div class="idx">' + (i + 1) + '</div><div class="who"><div class="nm">' + esc(r.name) + '</div><div class="meta">' + esc(r.designation || "") + ' — ' + meta + '</div></div><button class="btn btn-secondary" data-day-edit="' + esc(r.userId) + '" style="width:auto;padding:7px 10px;">Edit</button></div>';
     }).join("");
+    Array.prototype.forEach.call($("saDayBody").querySelectorAll("[data-day-edit]"), function (b) { b.addEventListener("click", function () { P.closeModal("saDayModal"); openEditor(Number(b.getAttribute("data-day-edit")), drillDate); }); });
+  }
+
+  function populateUsers(selected) {
+    var sel = $("saEditUser"), rep = current.staffDirectory || current.summaryReport || [];
+    sel.innerHTML = rep.slice().sort(function (a,b) { return String(a.name).localeCompare(String(b.name)); }).map(function (r) { return '<option value="' + r.userId + '">' + esc(r.name) + ' — ' + esc(r.designation || '') + '</option>'; }).join("");
+    if (selected) sel.value = String(selected);
+  }
+  function openEditor(userId, date) {
+    populateUsers(userId);
+    var d = date || P.todayIso(), uid = Number(userId || $("saEditUser").value), rec = ((current.calendarMap || {})[d] || {});
+    var all = rec.adjustments || [], a = all.length ? all[0] : null;
+    $("saEditId").value = a ? String(a.id) : "";
+    $("saEditDate").value = d;
+    $("saEditType").value = a ? String(a.entryType || "PUNCH") : "PUNCH";
+    $("saEditSession").value = a ? String(a.session || "ALL") : "ALL";
+    $("saEditPunchType").value = a ? String(a.punchType || "IN") : "IN";
+    $("saEditTime").value = a && a.punchTime ? String(a.punchTime).slice(0,5) : "";
+    $("saEditStatus").value = a && a.status ? String(a.status) : "Present";
+    $("saEditReason").value = a && a.reason ? String(a.reason) : "";
+    toggleEditFields(); P.openModal("saEditModal");
+  }
+  function toggleEditFields() {
+    var type = $("saEditType").value, punch = type === "PUNCH";
+    $("saPunchFields").style.display = punch ? "block" : "none";
+    $("saStatusFields").style.display = punch ? "none" : "block";
+    if (type === "LEAVE") $("saEditStatus").value = "Leave";
+    if (type === "DUTY") $("saEditStatus").value = "Present";
+  }
+  function saveEdit() {
+    var type = $("saEditType").value, payload = { userId:Number($("saEditUser").value), date:$("saEditDate").value, entryType:type, session:$("saEditSession").value, punchType:$("saEditPunchType").value, punchTime:$("saEditTime").value, statusOverride:$("saEditStatus").value, reason:$("saEditReason").value.trim() }, id = Number($("saEditId").value || 0);
+    if (!payload.userId || !payload.date) return alert("Employee and date are required.");
+    if (type === "PUNCH" && !payload.punchTime) return alert("Punch time is required.");
+    var fn = id ? "updateAttendanceAdjustment" : "saveAttendanceAdjustment", args = id ? [id, payload] : [payload];
+    P.api(fn, args, { text:"Saving attendance correction…" }).then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); }).catch(function (e) { alert(e.message || e); });
+  }
+  function resetDay() {
+    var uid = Number($("saEditUser").value), date = $("saEditDate").value;
+    if (!uid || !date) return;
+    if (!confirm("Remove all manual corrections for this employee on " + prettyDate(date) + " and restore biometric attendance?")) return;
+    P.api("clearAttendanceAdjustments", [uid, date], { text:"Restoring biometric attendance…" }).then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); }).catch(function (e) { alert(e.message || e); });
   }
 })();
 
