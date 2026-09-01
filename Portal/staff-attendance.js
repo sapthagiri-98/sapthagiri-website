@@ -55,19 +55,29 @@
   function editModal() {
     return '<div class="modal-overlay" id="saEditModal"><div class="modal-content" style="max-width:600px;">' +
       '<div class="modal-header-container"><h3 id="saEditTitle">Manual Attendance Entry</h3><button class="modal-close-icon" data-close="saEditModal">&times;</button></div>' +
-      '<input type="hidden" id="saEditId">' +
+      '<input type="hidden" id="saEditId"><input type="hidden" id="saEditShiftType">' +
       '<div class="form-group"><label>Employee</label><select id="saEditUser"></select></div>' +
+      '<div id="saShiftInfo" style="font-size:13px;color:var(--text-muted);margin:-4px 0 14px;"></div>' +
       '<div class="form-group"><label>Date</label><input type="date" id="saEditDate"></div>' +
-      '<div class="form-group"><label>Entry type</label><select id="saEditType"><option value="PUNCH">Manual Punch</option><option value="STATUS">Attendance Status</option><option value="LEAVE">Leave</option><option value="DUTY">Official Duty / Continuous Duty</option></select></div>' +
-      '<div id="saPunchFields"><div style="display:flex;gap:10px;"><div class="form-group" style="flex:1;"><label>Session</label><select id="saEditSession"><option value="ALL">Auto / Full day</option><option value="MORNING">Morning</option><option value="AFTERNOON">Afternoon</option></select></div><div class="form-group" style="flex:1;"><label>Punch type</label><select id="saEditPunchType"><option value="IN">IN</option><option value="OUT">OUT</option></select></div></div><div class="form-group"><label>Punch time</label><input type="time" id="saEditTime"></div></div>' +
-      '<div id="saStatusFields" style="display:none;"><div class="form-group"><label>Status</label><select id="saEditStatus"><option value="Present">Present</option><option value="Half Day">Half Day</option><option value="Absent">Absent</option><option value="Leave">Leave</option></select></div></div>' +
-      '<div class="form-group"><label>Reason / note</label><textarea id="saEditReason" rows="3" placeholder="Biometric failure, official school work, approved leave, etc."></textarea></div>' +
+      '<div class="form-group"><label>Correction</label><select id="saEditType"><option value="PUNCH">Manual Attendance</option><option value="LEAVE">Leave</option><option value="DUTY">Official Duty / Continuous Duty</option></select></div>' +
+      '<div id="saSingleFields">' +
+        '<div style="display:flex;gap:10px;"><div class="form-group" style="flex:1;"><label>In time</label><input type="time" id="saSingleIn"></div>' +
+        '<div class="form-group" style="flex:1;"><label>Out time</label><input type="time" id="saSingleOut"></div></div>' +
+      '</div>' +
+      '<div id="saDualFields" style="display:none;">' +
+        '<div style="font-size:12px;font-weight:700;color:var(--maroon);margin:4px 0 6px;">Morning session</div>' +
+        '<div style="display:flex;gap:10px;"><div class="form-group" style="flex:1;"><label>In</label><input type="time" id="saMorningIn"></div><div class="form-group" style="flex:1;"><label>Out</label><input type="time" id="saMorningOut"></div></div>' +
+        '<div style="font-size:12px;font-weight:700;color:var(--maroon);margin:4px 0 6px;">Afternoon session</div>' +
+        '<div style="display:flex;gap:10px;"><div class="form-group" style="flex:1;"><label>In</label><input type="time" id="saAfternoonIn"></div><div class="form-group" style="flex:1;"><label>Out</label><input type="time" id="saAfternoonOut"></div></div>' +
+      '</div>' +
+      '<div id="saStatusFields" style="display:none;"><div class="form-group"><label>Status</label><select id="saEditStatus"><option value="Leave">Leave</option><option value="Present">Present</option><option value="Half Day">Half Day</option><option value="Absent">Absent</option></select></div></div>' +
+      '<div class="form-group"><label>Reason / note</label><textarea id="saEditReason" rows="3" placeholder="Biometric failure, school work, approved leave, etc."></textarea></div>' +
       '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">' +
         '<button class="btn btn-secondary" id="saResetDay" style="width:auto;">Reset to Biometric</button>' +
         '<button class="btn btn-secondary" data-close="saEditModal" style="width:auto;">Cancel</button>' +
         '<button class="btn btn-maroon" id="saEditSave" style="width:auto;"><i class="material-icons" style="color:#fff;">save</i> Save</button>' +
       '</div>' +
-      '<p style="font-size:12px;color:var(--text-muted);margin-top:12px;">Original biometric punches are never changed. Manual entries are stored separately and can be removed to restore the biometric result.</p>' +
+      '<p style="font-size:12px;color:var(--text-muted);margin-top:12px;">Manual corrections are stored separately. Reset removes the correction and restores the biometric result.</p>' +
     '</div></div>';
   }
 
@@ -77,6 +87,7 @@
     $("saRefresh").addEventListener("click", function () { loadMonth($("saMonth").value, true); });
     $("saManual").addEventListener("click", function () { openEditor(); });
     $("saEditType").addEventListener("change", toggleEditFields);
+    $("saEditUser").addEventListener("change", function () { updateEditorForUser(Number($("saEditUser").value)); });
     $("saEditSave").addEventListener("click", saveEdit);
     $("saResetDay").addEventListener("click", resetDay);
     Array.prototype.forEach.call(document.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { P.closeModal(b.getAttribute("data-close")); }); });
@@ -138,22 +149,27 @@
   function openEmployee(userId, category) {
     var rep = (current.summaryReport || []).find(function (r) { return Number(r.userId) === Number(userId); });
     if (!rep) return;
-    var bucket = category === "HalfDay" ? "HalfDay" : category;
-    var rows = [];
+    var bucket = category === "HalfDay" ? "HalfDay" : category, rows = [];
     Object.keys(current.calendarMap || {}).sort().forEach(function (date) {
       var arr = ((current.calendarMap[date] || {})[bucket] || []);
       arr.forEach(function (r) { if (Number(r.userId) === Number(userId)) rows.push({ date: date, r: r }); });
     });
     $("saEmployeeTitle").textContent = rep.name + " — " + ({Present:"Present",Late:"Late",HalfDay:"Half days",Absent:"Absent",Leave:"Leave"}[category] || category);
-    if (!rows.length) { $("saEmployeeBody").innerHTML = '<div class="slip-empty">No matching dates.</div>'; P.openModal("saEmployeeModal"); return; }
+    if (!rows.length) {
+      $("saEmployeeBody").innerHTML = '<div class="slip-empty">No matching dates.</div>';
+      P.openModal("saEmployeeModal"); return;
+    }
     $("saEmployeeBody").innerHTML = '<div style="max-height:55vh;overflow:auto;">' + rows.map(function (x) {
       var r = x.r, times = 'In ' + esc(r.in1 || "—") + ' · Out ' + esc(r.out1 || "—");
       if (r.in2 || r.out2) times += ' · In2 ' + esc(r.in2 || "—") + ' · Out2 ' + esc(r.out2 || "—");
-      var late = r.lateBy && r.lateBy !== "-" ? ' · Late by ' + esc(r.lateBy) + (r.lateSession ? ' (' + esc(r.lateSession) + ')' : '') : '';
-      var src = r.source === "manual" ? 'Manual' : (r.source === "manual+biometric" ? 'Biometric + Manual' : 'Biometric');
-      return '<div class="list-row" style="align-items:flex-start;"><div class="idx">' + esc(prettyDate(x.date)) + '</div><div class="who"><div class="nm">' + esc(r.status) + '</div><div class="meta">' + times + late + (r.gaps && r.gaps !== "-" ? ' · ' + esc(r.gaps) : '') + ' · Source: ' + esc(src) + '</div>' + (r.manualReason ? '<div class="meta">Reason: ' + esc(r.manualReason) + '</div>' : '') + '</div><button class="btn btn-secondary" data-edit-date="' + x.date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 10px;">Edit</button></div>';
+      var late = Number(r.lateByMinutes) > 0 ? ' · Late by ' + esc(r.lateBy || "0m") + (r.lateSession ? ' (' + esc(r.lateSession) + ')' : '') : '';
+      var src = r.attendanceSource === "Manual" || r.source === "manual" ? "Manual" : "Biometric";
+      var reason = r.manualReason ? '<div class="meta">Reason: ' + esc(r.manualReason) + '</div>' : '';
+      return '<div class="list-row" style="align-items:flex-start;"><div class="idx">' + esc(prettyDate(x.date)) + '</div><div class="who"><div class="nm">' + esc(r.status) + '</div><div class="meta">' + times + late + (r.gaps && r.gaps !== "-" ? ' · ' + esc(r.gaps) : '') + ' · Source: ' + src + '</div>' + reason + '</div><button class="btn btn-secondary" data-edit-date="' + x.date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 10px;">Edit</button></div>';
     }).join("") + '</div>';
-    Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll("[data-edit-date]"), function (b) { b.addEventListener("click", function () { P.closeModal("saEmployeeModal"); openEditor(Number(b.getAttribute("data-edit-user")), b.getAttribute("data-edit-date")); }); });
+    Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll("[data-edit-date]"), function (b) {
+      b.addEventListener("click", function () { P.closeModal("saEmployeeModal"); openEditor(Number(b.getAttribute("data-edit-user")), b.getAttribute("data-edit-date")); });
+    });
     P.openModal("saEmployeeModal");
   }
 
@@ -175,6 +191,7 @@
       if (r.in2 || r.out2) meta += ' · In2 ' + esc(r.in2 || "—") + ' · Out2 ' + esc(r.out2 || "—");
       if (r.lateBy && r.lateBy !== "-") meta += ' · Late by ' + esc(r.lateBy);
       if (r.gaps && r.gaps !== "-") meta += ' · ' + esc(r.gaps);
+      if (r.attendanceSource === "Manual" || r.source === "manual") meta += ' · Manual';
       return '<div class="list-row"><div class="idx">' + (i + 1) + '</div><div class="who"><div class="nm">' + esc(r.name) + '</div><div class="meta">' + esc(r.designation || "") + ' — ' + meta + '</div></div><button class="btn btn-secondary" data-day-edit="' + esc(r.userId) + '" style="width:auto;padding:7px 10px;">Edit</button></div>';
     }).join("");
     Array.prototype.forEach.call($("saDayBody").querySelectorAll("[data-day-edit]"), function (b) { b.addEventListener("click", function () { P.closeModal("saDayModal"); openEditor(Number(b.getAttribute("data-day-edit")), drillDate); }); });
@@ -182,43 +199,100 @@
 
   function populateUsers(selected) {
     var sel = $("saEditUser"), rep = current.staffDirectory || current.summaryReport || [];
-    sel.innerHTML = rep.slice().sort(function (a,b) { return String(a.name).localeCompare(String(b.name)); }).map(function (r) { return '<option value="' + r.userId + '">' + esc(r.name) + ' — ' + esc(r.designation || '') + '</option>'; }).join("");
+    sel.innerHTML = rep.slice().sort(function (a,b) { return String(a.name).localeCompare(String(b.name)); })
+      .map(function (r) { return '<option value="' + r.userId + '">' + esc(r.name) + ' — ' + esc(r.designation || '') + '</option>'; }).join("");
     if (selected) sel.value = String(selected);
   }
+
+  function selectedStaff() {
+    var uid = Number($("saEditUser").value);
+    return (current.staffDirectory || []).find(function (r) { return Number(r.userId) === uid; }) ||
+      (current.summaryReport || []).find(function (r) { return Number(r.userId) === uid; }) || null;
+  }
+
+  function updateEditorForUser(uid) {
+    var st = (current.staffDirectory || []).find(function (r) { return Number(r.userId) === Number(uid); });
+    if (!st) return;
+    var dual = String(st.shiftType || "").toUpperCase() === "DUAL";
+    $("saEditShiftType").value = dual ? "DUAL" : "SINGLE";
+    $("saSingleFields").style.display = dual ? "none" : "block";
+    $("saDualFields").style.display = dual ? "block" : "none";
+    $("saShiftInfo").textContent = dual
+      ? "Dual session employee — enter the morning and afternoon punches."
+      : "Single session employee — enter the time they came in and went out.";
+  }
+
   function openEditor(userId, date) {
     populateUsers(userId);
-    var d = date || P.todayIso(), uid = Number(userId || $("saEditUser").value), rec = ((current.calendarMap || {})[d] || {});
-    var all = rec.adjustments || [], a = all.length ? all[0] : null;
-    $("saEditId").value = a ? String(a.id) : "";
+    var d = date || P.todayIso(), uid = Number(userId || $("saEditUser").value);
+    updateEditorForUser(uid);
+    $("saEditId").value = "";
     $("saEditDate").value = d;
-    $("saEditType").value = a ? String(a.entryType || "PUNCH") : "PUNCH";
-    $("saEditSession").value = a ? String(a.session || "ALL") : "ALL";
-    $("saEditPunchType").value = a ? String(a.punchType || "IN") : "IN";
-    $("saEditTime").value = a && a.punchTime ? String(a.punchTime).slice(0,5) : "";
-    $("saEditStatus").value = a && a.status ? String(a.status) : "Present";
-    $("saEditReason").value = a && a.reason ? String(a.reason) : "";
-    toggleEditFields(); P.openModal("saEditModal");
+    $("saEditType").value = "PUNCH";
+    $("saSingleIn").value = ""; $("saSingleOut").value = "";
+    $("saMorningIn").value = ""; $("saMorningOut").value = "";
+    $("saAfternoonIn").value = ""; $("saAfternoonOut").value = "";
+    $("saEditStatus").value = "Present";
+    $("saEditReason").value = "";
+    toggleEditFields();
+    P.openModal("saEditModal");
   }
+
   function toggleEditFields() {
     var type = $("saEditType").value, punch = type === "PUNCH";
-    $("saPunchFields").style.display = punch ? "block" : "none";
+    $("saSingleFields").style.display = "none";
+    $("saDualFields").style.display = "none";
     $("saStatusFields").style.display = punch ? "none" : "block";
+    if (punch) updateEditorForUser(Number($("saEditUser").value));
     if (type === "LEAVE") $("saEditStatus").value = "Leave";
     if (type === "DUTY") $("saEditStatus").value = "Present";
   }
-  function saveEdit() {
-    var type = $("saEditType").value, payload = { userId:Number($("saEditUser").value), date:$("saEditDate").value, entryType:type, session:$("saEditSession").value, punchType:$("saEditPunchType").value, punchTime:$("saEditTime").value, statusOverride:$("saEditStatus").value, reason:$("saEditReason").value.trim() }, id = Number($("saEditId").value || 0);
-    if (!payload.userId || !payload.date) return alert("Employee and date are required.");
-    if (type === "PUNCH" && !payload.punchTime) return alert("Punch time is required.");
-    var fn = id ? "updateAttendanceAdjustment" : "saveAttendanceAdjustment", args = id ? [id, payload] : [payload];
-    P.api(fn, args, { text:"Saving attendance correction…" }).then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); }).catch(function (e) { alert(e.message || e); });
+
+  function addPunch(arr, session, type, time) {
+    if (time) arr.push({ session: session, punchType: type, time: time });
   }
+
+  function saveEdit() {
+    var type = $("saEditType").value, uid = Number($("saEditUser").value), date = $("saEditDate").value;
+    if (!uid || !date) return alert("Employee and date are required.");
+    var st = selectedStaff(), dual = st && String(st.shiftType || "").toUpperCase() === "DUAL";
+    var reason = $("saEditReason").value.trim();
+
+    if (type !== "PUNCH") {
+      var status = type === "LEAVE" ? "Leave" : "Present";
+      var payload = { userId:uid, date:date, entryType:type, statusOverride:status, reason:reason };
+      P.api("saveAttendanceAdjustment", [payload], { text:"Saving attendance correction…" })
+        .then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); })
+        .catch(function (e) { alert(e.message || e); });
+      return;
+    }
+
+    var punches = [];
+    if (dual) {
+      addPunch(punches, "MORNING", "IN", $("saMorningIn").value);
+      addPunch(punches, "MORNING", "OUT", $("saMorningOut").value);
+      addPunch(punches, "AFTERNOON", "IN", $("saAfternoonIn").value);
+      addPunch(punches, "AFTERNOON", "OUT", $("saAfternoonOut").value);
+    } else {
+      addPunch(punches, "SINGLE", "IN", $("saSingleIn").value);
+      addPunch(punches, "SINGLE", "OUT", $("saSingleOut").value);
+    }
+    if (!punches.length) return alert("Enter at least one punch time.");
+    var payload = { userId:uid, date:date, entryType:"PUNCH", punches:punches, reason:reason };
+    P.api("saveAttendanceAdjustment", [payload], { text:"Saving attendance correction…" })
+      .then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); })
+      .catch(function (e) { alert(e.message || e); });
+  }
+
   function resetDay() {
     var uid = Number($("saEditUser").value), date = $("saEditDate").value;
     if (!uid || !date) return;
     if (!confirm("Remove all manual corrections for this employee on " + prettyDate(date) + " and restore biometric attendance?")) return;
-    P.api("clearAttendanceAdjustments", [uid, date], { text:"Restoring biometric attendance…" }).then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); }).catch(function (e) { alert(e.message || e); });
+    P.api("clearAttendanceAdjustments", [uid, date], { text:"Restoring biometric attendance…" })
+      .then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); })
+      .catch(function (e) { alert(e.message || e); });
   }
+
 })();
 
 /* attendance-log.js — My Attendance Log (staff). Plain script; uses `Portal`.
