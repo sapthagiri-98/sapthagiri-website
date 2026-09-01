@@ -270,17 +270,18 @@
 
   function openEditor(userId, date) {
     editorLockedUser = !!userId;
+    populateUsers(userId);
+    if (userId) $("saEditUser").value = String(userId);
     $("saEditEmployeePicker").style.display = editorLockedUser ? "none" : "block";
     $("saEditEmployeeFixed").style.display = editorLockedUser ? "block" : "none";
-    if (editorLockedUser) updateEditorForUser(Number(userId)); else { populateUsers(); updateEditorForUser(Number($("saEditUser").value)); }
+    updateEditorForUser(Number($("saEditUser").value));
     var d = date || P.todayIso();
-    if (editorLockedUser) $("saEditUser").value = String(userId);
     $("saEditDate").value = d;
     $("saEditId").value = "";
     $("saEditType").value = "PUNCH";
     clearEditorFields();
     toggleEditFields();
-    if (editorLockedUser) loadExistingAdjustment(Number(userId), d);
+    if (editorLockedUser) loadExistingAdjustment(Number($("saEditUser").value), d);
     $("saEditTitle").textContent = editorLockedUser ? "Edit Attendance" : "Manual Attendance Entry";
     P.openModal("saEditModal");
   }
