@@ -193,16 +193,16 @@
   function employeeAttendanceCard(date, r, userId, category) {
     var manual = r.attendanceSource === "Manual" || r.source === "manual";
     var status = String(r.status || category || "");
-    var dual = String(r.shiftType || "").toUpperCase() === "DUAL" || !!(r.in2 || r.out2);
+    var dual = String(r.shiftType || "").toUpperCase() === "DUAL";
     var source = manual ? "Manual correction" : "Biometric";
     var sourceStyle = manual ? "#eef6ff;color:#1769aa;" : "#f1f8f4;color:#287a55;";
     var statusStyle = status === "Late" ? "#fff4d6;color:#8a5a00;" : (status === "Absent" ? "#fdeaea;color:#a92828;" : (status === "Leave" ? "#eaf4ff;color:#1769aa;" : "#f2edff;color:#6b3bb8;"));
-    function punch(label, value) {
-      var v = value == null ? "" : String(value).trim();
-      var missing = !v || v === "-" || v === "—" || v === "null" || v === "undefined";
-      if (!missing && /^\\d{1,2}:\\d{2}:\\d{2}$/.test(v)) v = v.slice(0,5);
-      return '<div style="border:1px solid #e4e7eb;border-radius:10px;padding:10px 12px;background:' + (missing ? '#fafafa' : '#fff') + ';min-width:0;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:700;">' + label + '</div><div style="font-size:15px;font-weight:800;margin-top:3px;color:' + (missing ? '#9aa1aa' : 'var(--text)') + ';">' + (missing ? 'Missing' : esc(v)) + '</div></div>';
-    }
+   function punch(label, value) {
+     var v = value == null ? "" : String(value).trim();
+     var missing = !v || v === "-" || v === "—" || v === "null" || v === "undefined";
+     if (!missing && /^\d{1,2}:\d{2}(:\d{2})?$/.test(v)) v = v.slice(0, 5);
+     return '<div style="border:1px solid #e4e7eb;border-radius:10px;padding:10px 12px;background:' + (missing ? '#fafafa' : '#fff') + ';min-width:0;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:700;">' + label + '</div><div style="font-size:15px;font-weight:800;margin-top:3px;color:' + (missing ? '#9aa1aa' : 'var(--text)') + ';">' + (missing ? 'Missing' : esc(v)) + '</div></div>';
+   }
     function sessionBlock(title, inValue, outValue) { return '<div style="margin-top:12px;padding:12px;border:1px solid #e6e8eb;border-radius:12px;background:#fcfcfd;"><div style="font-size:12px;font-weight:800;color:var(--maroon);margin-bottom:8px;">' + title + '</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + punch('In time', inValue) + punch('Out time', outValue) + '</div></div>'; }
     var sessionHtml = dual ? sessionBlock('Morning session', r.in1, r.out1) + sessionBlock('Afternoon session', r.in2, r.out2) : sessionBlock('Attendance', r.in1, r.out1);
     var lateHtml = Number(r.lateByMinutes || 0) > 0 ? '<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e7;color:#7a5200;font-size:13px;"><b>Late arrival:</b> ' + esc(r.lateBy || "Late") + (r.lateSession ? ' · ' + esc(r.lateSession) + ' session' : '') + '</div>' : '';
