@@ -1,6 +1,6 @@
-/* staff-attendance.js — Management Staff Attendance v4.
-   Clickable monthly counters, per-employee drill-down, manual attendance corrections,
-   manual punches, manual leave, continuous-duty override and biometric refresh. */
+/* staff-attendance.js — Management Staff Attendance v5.
+   Clickable monthly counters, employee/date drill-down, shift-aware manual corrections,
+   manual punches, manual leave/duty, and biometric reset. */
 (function () {
   "use strict";
   var P = window.Portal, session = P.Session.get();
@@ -10,7 +10,7 @@
 
   var esc = P.esc, prettyDate = P.prettyDate, monthLabel = P.monthLabel;
   var $ = function (id) { return document.getElementById(id); };
-  var monthCache = {}, current = null, drillDate = "";
+  var monthCache = {}, current = null, drillDate = "", editorLockedUser = false;
 
   $("view").innerHTML = shell();
   bind();
@@ -30,7 +30,7 @@
         '<button class="refresh-btn" id="saRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh Biometric</button>' +
       '</div>' +
       '<div class="timing-line" id="saTiming"></div>' +
-      '<div class="legend"><span class="lg"><span class="dot d-green"></span>Present</span><span class="lg"><span class="dot d-orange"></span>Late</span><span class="lg"><span class="dot d-purple"></span>Half day</span><span class="lg"><span class="dot d-red"></span>Absent</span><span class="lg"><span class="dot d-blue"></span>Manual leave</span><span class="lg" style="color:var(--text-muted);">Click a summary number to see its dates and punch times.</span></div>' +
+      '<div class="legend"><span class="lg"><span class="dot d-green"></span>Present</span><span class="lg"><span class="dot d-orange"></span>Late</span><span class="lg"><span class="dot d-purple"></span>Half day</span><span class="lg"><span class="dot d-red"></span>Absent</span><span class="lg"><span class="dot d-blue"></span>Manual leave</span><span class="lg" style="color:var(--text-muted);">Click a summary number to see the exact dates and attendance.</span></div>' +
       '<div class="cal-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>' +
       '<div class="cal-grid" id="saGrid"></div>' +
       '<div class="group-head" style="margin-top:26px;"><i class="material-icons" style="font-size:18px;">summarize</i> Monthly Summary</div>' +
@@ -39,7 +39,7 @@
   }
 
   function dayModal() {
-    return '<div class="modal-overlay" id="saDayModal"><div class="modal-content" style="max-width:650px;">' +
+    return '<div class="modal-overlay" id="saDayModal"><div class="modal-content" style="max-width:700px;">' +
       '<div class="modal-header-container"><h3 id="saDayTitle">Staff on this day</h3><button class="modal-close-icon" data-close="saDayModal">&times;</button></div>' +
       '<div class="day-drill-tabs" id="saDayTabs"></div><div id="saDayBody"></div>' +
       '<button class="btn btn-secondary" data-close="saDayModal" style="margin-top:16px;">Close</button></div></div>';
@@ -56,7 +56,8 @@
     return '<div class="modal-overlay" id="saEditModal"><div class="modal-content" style="max-width:600px;">' +
       '<div class="modal-header-container"><h3 id="saEditTitle">Manual Attendance Entry</h3><button class="modal-close-icon" data-close="saEditModal">&times;</button></div>' +
       '<input type="hidden" id="saEditId"><input type="hidden" id="saEditShiftType">' +
-      '<div class="form-group"><label>Employee</label><select id="saEditUser"></select></div>' +
+      '<div id="saEditEmployeePicker" class="form-group"><label>Employee</label><select id="saEditUser"></select></div>' +
+      '<div id="saEditEmployeeFixed" style="display:none;margin-bottom:14px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;"><div style="font-size:11px;text-transform:uppercase;font-weight:700;color:var(--text-muted);">Employee</div><div id="saEditEmployeeName" style="font-size:15px;font-weight:800;margin-top:3px;"></div></div>' +
       '<div id="saShiftInfo" style="font-size:13px;color:var(--text-muted);margin:-4px 0 14px;"></div>' +
       '<div class="form-group"><label>Date</label><input type="date" id="saEditDate"></div>' +
       '<div class="form-group"><label>Correction</label><select id="saEditType"><option value="PUNCH">Manual Attendance</option><option value="LEAVE">Leave</option><option value="DUTY">Official Duty / Continuous Duty</option></select></div>' +
@@ -94,25 +95,26 @@
     Array.prototype.forEach.call(document.querySelectorAll(".modal-overlay"), function (mm) { mm.addEventListener("click", function (e) { if (e.target === mm) P.closeModal(mm.id); }); });
   }
 
-  function loadMonth(month, force) {
+  function loadMonth(month, force, afterLoad) {
     var key = "staffmon_" + month, t0 = performance.now();
     if (!force) {
       var mem = monthCache[month] || P.Cache.get(key);
-      if (mem) { var ms = Math.round(performance.now() - t0); P.perf.record("Load Staff Month", ms, "warm"); showTiming(ms, "warm"); current = mem; render(mem, month); monthCache[month] = mem; return; }
+      if (mem) { var ms = Math.round(performance.now() - t0); P.perf.record("Load Staff Month", ms, "warm"); showTiming(ms, "warm"); current = mem; render(mem, month); monthCache[month] = mem; if (afterLoad) afterLoad(); return; }
     }
     $("saGrid").innerHTML = '<div class="inline-loader" style="grid-column:span 7;"><i class="material-icons">sync</i>Reading biometric records and manual corrections…</div>';
     $("saSummary").innerHTML = "";
     P.api("getManagementMonthlyBulkPayload", [month], { text: "Loading staff attendance…" }).then(function (res) {
       var ms = Math.round(performance.now() - t0); P.perf.record("Load Staff Month", ms, "cold"); showTiming(ms, "cold");
       if (!res || !res.success) { $("saGrid").innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">error_outline</i>' + esc((res && res.error) || "Could not load records.") + '</div>'; return; }
-      current = res; monthCache[month] = res; P.Cache.set(key, res, P.CONFIG.MONTH_TTL_MS); render(res, month);
+      current = res; monthCache[month] = res; P.Cache.set(key, res, P.CONFIG.MONTH_TTL_MS); render(res, month); if (afterLoad) afterLoad();
     }).catch(function (e) { $("saGrid").innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>'; });
   }
+
   function showTiming(ms, mode) { var base = P.perf.baseline["Load Staff Month"], el = $("saTiming"); if (mode === "warm" && base) el.innerHTML = "⚡ Loaded from cache in <b>" + ms + " ms</b> — first load was " + base + " ms."; else el.innerHTML = "⏱ Loaded in " + ms + " ms."; }
 
   function render(res, month) {
     var map = res.calendarMap || {}, keys = Object.keys(map).sort(), grid = $("saGrid");
-    if (!keys.length) { grid.innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">inbox</i>No records for ' + esc(monthLabel(month)) + '.</div>'; }
+    if (!keys.length) grid.innerHTML = '<div class="att-empty" style="grid-column:span 7;"><i class="material-icons">inbox</i>No records for ' + esc(monthLabel(month)) + '.</div>';
     else {
       var pad = new Date(keys[0] + "T00:00:00").getDay(), html = "";
       for (var i = 0; i < pad; i++) html += '<div class="cal-day empty"></div>';
@@ -133,20 +135,39 @@
     rep = rep.slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
     var rows = rep.map(function (r) {
       return '<tr><td style="font-weight:700;">' + esc(r.name) + '</td><td style="color:var(--text-muted);">' + esc(r.designation || "") + '</td>' +
-        '<td class="num">' + countBtn(r.userId, "Present", r.present || 0, "green") + '</td>' +
-        '<td class="num">' + countBtn(r.userId, "Late", r.late || 0, "orange") + '</td>' +
-        '<td class="num">' + countBtn(r.userId, "HalfDay", r.halfDay || 0, "purple") + '</td>' +
-        '<td class="num">' + countBtn(r.userId, "Absent", r.absent || 0, "red") + '</td>' +
-        '<td class="num">' + countBtn(r.userId, "Leave", r.leave || 0, "blue") + '</td>' +
+        '<td class="num">' + countBtn(r, "Present", r.present || 0, "green") + '</td>' +
+        '<td class="num">' + countBtn(r, "Late", r.late || 0, "orange") + '</td>' +
+        '<td class="num">' + countBtn(r, "HalfDay", r.halfDay || 0, "purple") + '</td>' +
+        '<td class="num">' + countBtn(r, "Absent", r.absent || 0, "red") + '</td>' +
+        '<td class="num">' + countBtn(r, "Leave", r.leave || 0, "blue") + '</td>' +
         '<td class="num" style="font-weight:800;color:var(--maroon);">' + (Number(r.totalLeaves) || 0) + '</td></tr>';
     }).join("");
     host.innerHTML = '<div class="friendly-wrap"><table class="friendly-table"><thead><tr><th>Name</th><th>Role</th><th style="text-align:center;">Present</th><th style="text-align:center;">Late</th><th style="text-align:center;">Half</th><th style="text-align:center;">Absent</th><th style="text-align:center;">Leave</th><th style="text-align:center;">Leaves Used</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
-      '<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Click Present, Late, Half, Absent or Leave to see the exact dates, punch times, late duration and correction source.</p>';
-    Array.prototype.forEach.call(host.querySelectorAll("[data-summary]"), function (b) { b.addEventListener("click", function () { openEmployee(Number(b.getAttribute("data-user")), b.getAttribute("data-summary")); }); });
+      '<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Click Present, Late, Half, Absent or Leave to see exact dates and punch times.</p>';
+    Array.prototype.forEach.call(host.querySelectorAll("[data-summary]"), function (b) { b.addEventListener("click", function () { openEmployee(Number(b.getAttribute("data-user")), b.getAttribute("data-summary"), b.getAttribute("data-name")); }); });
   }
-  function countBtn(userId, cat, n, cls) { return '<button type="button" data-summary="' + cat + '" data-user="' + userId + '" class="pill ' + cls + '" style="border:0;cursor:pointer;min-width:36px;">' + n + '</button>'; }
 
-  function openEmployee(userId, category) {
+  function countBtn(r, cat, n, cls) {
+    return '<button type="button" data-summary="' + cat + '" data-user="' + (r.userId || "") + '" data-name="' + esc(r.name || "") + '" class="pill ' + cls + '" style="border:0;cursor:pointer;min-width:36px;">' + n + '</button>';
+  }
+
+  function resolveUserId(userId, name) {
+    if (userId) return Number(userId);
+    var d = current && current.staffDirectory || [];
+    var x = d.find(function (r) { return String(r.name).toLowerCase() === String(name || "").toLowerCase(); });
+    if (x) return Number(x.userId);
+    var rep = current && current.summaryReport || [];
+    x = rep.find(function (r) { return String(r.name).toLowerCase() === String(name || "").toLowerCase(); });
+    return x ? Number(x.userId) : 0;
+  }
+
+  function openEmployee(userId, category, name) {
+    userId = resolveUserId(userId, name);
+    if (!userId) {
+      // Old cached payloads may not contain userId. Force one fresh fetch once.
+      loadMonth($("saMonth").value, true, function () { openEmployee(userId, category, name); });
+      return;
+    }
     var rep = (current.summaryReport || []).find(function (r) { return Number(r.userId) === Number(userId); });
     if (!rep) return;
     var bucket = category === "HalfDay" ? "HalfDay" : category, rows = [];
@@ -157,12 +178,10 @@
     var labels = {Present:"Present days",Late:"Late days",HalfDay:"Half days",Absent:"Absent days",Leave:"Leave days"};
     $("saEmployeeTitle").textContent = rep.name + " — " + (labels[category] || category);
     if (!rows.length) {
-      $("saEmployeeBody").innerHTML = '<div class="slip-empty">No matching dates.</div>';
+      $("saEmployeeBody").innerHTML = '<div class="slip-empty">No matching dates in this category.</div>';
       P.openModal("saEmployeeModal"); return;
     }
-    $("saEmployeeBody").innerHTML = '<div style="max-height:62vh;overflow:auto;padding-right:4px;">' + rows.map(function (x) {
-      return employeeAttendanceCard(x.date, x.r, userId, category);
-    }).join("") + '</div>';
+    $("saEmployeeBody").innerHTML = '<div style="max-height:62vh;overflow:auto;padding-right:4px;">' + rows.map(function (x) { return employeeAttendanceCard(x.date, x.r, userId, category); }).join("") + '</div>';
     Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll("[data-edit-date]"), function (b) {
       b.addEventListener("click", function () { P.closeModal("saEmployeeModal"); openEditor(Number(b.getAttribute("data-edit-user")), b.getAttribute("data-edit-date")); });
     });
@@ -172,59 +191,19 @@
   function employeeAttendanceCard(date, r, userId, category) {
     var manual = r.attendanceSource === "Manual" || r.source === "manual";
     var status = String(r.status || category || "");
-    var dual = String(r.shiftType || "").toUpperCase() === "DUAL" || !!(r.in2 || r.out2 || r.lateSession === "Afternoon");
+    var dual = String(r.shiftType || "").toUpperCase() === "DUAL" || !!(r.in2 || r.out2);
     var source = manual ? "Manual correction" : "Biometric";
-    var sourceClass = manual ? "#eef6ff;color:#1769aa;" : "#f1f8f4;color:#287a55;";
-    var statusText = status === "Half Day" ? "Half Day" : status;
+    var sourceStyle = manual ? "#eef6ff;color:#1769aa;" : "#f1f8f4;color:#287a55;";
     var statusStyle = status === "Late" ? "#fff4d6;color:#8a5a00;" : (status === "Absent" ? "#fdeaea;color:#a92828;" : (status === "Leave" ? "#eaf4ff;color:#1769aa;" : "#f2edff;color:#6b3bb8;"));
-
-    function punch(label, value) {
-      var missing = !value;
-      return '<div style="border:1px solid #e4e7eb;border-radius:10px;padding:10px 12px;background:' + (missing ? '#fafafa' : '#fff') + ';min-width:0;">' +
-        '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:700;">' + label + '</div>' +
-        '<div style="font-size:15px;font-weight:800;margin-top:3px;color:' + (missing ? '#9aa1aa' : 'var(--text)') + ';">' + (missing ? 'Missing' : esc(value)) + '</div></div>';
-    }
-
-    function sessionBlock(title, inValue, outValue) {
-      return '<div style="margin-top:12px;padding:12px;border:1px solid #e6e8eb;border-radius:12px;background:#fcfcfd;">' +
-        '<div style="font-size:12px;font-weight:800;color:var(--maroon);margin-bottom:8px;">' + title + '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + punch('In time', inValue) + punch('Out time', outValue) + '</div></div>';
-    }
-
-    var sessionHtml = dual
-      ? sessionBlock('Morning session', r.in1, r.out1) + sessionBlock('Afternoon session', r.in2, r.out2)
-      : sessionBlock('Attendance', r.in1, r.out1);
-
-    var lateHtml = '';
-    var lateMinutes = Number(r.lateByMinutes || 0);
-    var lateSession = String(r.lateSession || '').toLowerCase();
-    var latePunch = lateSession.indexOf('afternoon') >= 0 ? r.in2 : r.in1;
-    if (lateMinutes > 0 && latePunch) {
-      lateHtml = '<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e7;color:#7a5200;font-size:13px;"><b>Late arrival:</b> ' + esc(r.lateBy || 'Late') + (r.lateSession ? ' · ' + esc(r.lateSession) + ' session' : '') + '</div>';
-    }
-
-    var reasonText = '';
-    if (r.manualReason) reasonText = '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Reason:</b> ' + esc(r.manualReason) + '</div>';
-    else if (status === 'Half Day') {
-      var missingAfternoon = dual && !r.in2 && !r.out2 && (r.in1 || r.out1);
-      var missingMorning = dual && !r.in1 && !r.out1 && (r.in2 || r.out2);
-      var explanation = missingAfternoon ? 'Afternoon session not recorded' : (missingMorning ? 'Morning session not recorded' : 'Half-day attendance');
-      reasonText = '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Attendance note:</b> ' + explanation + '</div>';
-    } else if (status === 'Absent') {
-      reasonText = '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Attendance note:</b> No attendance punch recorded</div>';
-    }
-
+    function punch(label, value) { var missing = !value; return '<div style="border:1px solid #e4e7eb;border-radius:10px;padding:10px 12px;background:' + (missing ? '#fafafa' : '#fff') + ';min-width:0;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:700;">' + label + '</div><div style="font-size:15px;font-weight:800;margin-top:3px;color:' + (missing ? '#9aa1aa' : 'var(--text)') + ';">' + (missing ? 'Missing' : esc(value)) + '</div></div>'; }
+    function sessionBlock(title, inValue, outValue) { return '<div style="margin-top:12px;padding:12px;border:1px solid #e6e8eb;border-radius:12px;background:#fcfcfd;"><div style="font-size:12px;font-weight:800;color:var(--maroon);margin-bottom:8px;">' + title + '</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + punch('In time', inValue) + punch('Out time', outValue) + '</div></div>'; }
+    var sessionHtml = dual ? sessionBlock('Morning session', r.in1, r.out1) + sessionBlock('Afternoon session', r.in2, r.out2) : sessionBlock('Attendance', r.in1, r.out1);
+    var lateHtml = Number(r.lateByMinutes || 0) > 0 ? '<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e7;color:#7a5200;font-size:13px;"><b>Late arrival:</b> ' + esc(r.lateBy || "Late") + (r.lateSession ? ' · ' + esc(r.lateSession) + ' session' : '') + '</div>' : '';
+    var reasonText = r.manualReason ? '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Reason:</b> ' + esc(r.manualReason) + '</div>' : (r.gaps && r.gaps !== "-" ? '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Attendance note:</b> ' + esc(r.gaps) + '</div>' : '');
     return '<div style="border:1px solid #e1e4e8;border-radius:14px;margin:0 0 12px;padding:14px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03);">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
-        '<div><div style="font-size:15px;font-weight:800;color:var(--text);">' + esc(prettyDate(date)) + '</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px;">' + (dual ? 'Dual session' : 'Single session') + '</div></div>' +
-        '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">' +
-          '<span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;' + statusStyle + '">' + esc(statusText) + '</span>' +
-          '<span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;' + sourceClass + '">Source: ' + source + '</span>' +
-        '</div>' +
-      '</div>' +
-      sessionHtml + lateHtml + reasonText +
-      '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-secondary" data-edit-date="' + date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 14px;">Edit attendance</button></div>' +
-    '</div>';
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div><div style="font-size:15px;font-weight:800;color:var(--text);">' + esc(prettyDate(date)) + '</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px;">' + (dual ? 'Dual session' : 'Single session') + '</div></div>' +
+      '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;"><span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;' + statusStyle + '">' + esc(status === "HalfDay" ? "Half Day" : status) + '</span><span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;' + sourceStyle + '">Source: ' + source + '</span></div></div>' +
+      sessionHtml + lateHtml + reasonText + '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-secondary" data-edit-date="' + date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 14px;">Edit attendance</button></div></div>';
   }
 
   function openDay(k) {
@@ -235,6 +214,7 @@
     var first = (d.Late || []).length ? "Late" : ((d.HalfDay || []).length ? "HalfDay" : ((d.Absent || []).length ? "Absent" : ((d.Leave || []).length ? "Leave" : "Present")));
     showTab(first); P.openModal("saDayModal");
   }
+
   function tabBtn(key, cls, n) { var label = {Present:"Present",Late:"Late",HalfDay:"Half day",Absent:"Absent",Leave:"Leave"}[key] || key; return '<button class="' + cls + '" data-k="' + key + '"><span class="n">' + n + '</span><span class="l">' + label + '</span></button>'; }
   function showTab(key) {
     Array.prototype.forEach.call($("saDayTabs").querySelectorAll("button"), function (b) { b.classList.toggle("active", b.getAttribute("data-k") === key); });
@@ -253,101 +233,113 @@
 
   function populateUsers(selected) {
     var sel = $("saEditUser"), rep = current.staffDirectory || current.summaryReport || [];
-    sel.innerHTML = rep.slice().sort(function (a,b) { return String(a.name).localeCompare(String(b.name)); })
-      .map(function (r) { return '<option value="' + r.userId + '">' + esc(r.name) + ' — ' + esc(r.designation || '') + '</option>'; }).join("");
+    sel.innerHTML = rep.slice().sort(function (a,b) { return String(a.name).localeCompare(String(b.name)); }).map(function (r) { return '<option value="' + r.userId + '">' + esc(r.name) + ' — ' + esc(r.designation || '') + '</option>'; }).join("");
     if (selected) sel.value = String(selected);
   }
 
   function selectedStaff() {
     var uid = Number($("saEditUser").value);
-    return (current.staffDirectory || []).find(function (r) { return Number(r.userId) === uid; }) ||
-      (current.summaryReport || []).find(function (r) { return Number(r.userId) === uid; }) || null;
+    return (current.staffDirectory || []).find(function (r) { return Number(r.userId) === uid; }) || (current.summaryReport || []).find(function (r) { return Number(r.userId) === uid; }) || null;
   }
 
   function updateEditorForUser(uid) {
-    var st = (current.staffDirectory || []).find(function (r) { return Number(r.userId) === Number(uid); });
+    var st = (current.staffDirectory || []).find(function (r) { return Number(r.userId) === Number(uid); }) || (current.summaryReport || []).find(function (r) { return Number(r.userId) === Number(uid); });
     if (!st) return;
     var dual = String(st.shiftType || "").toUpperCase() === "DUAL";
     $("saEditShiftType").value = dual ? "DUAL" : "SINGLE";
     $("saSingleFields").style.display = dual ? "none" : "block";
     $("saDualFields").style.display = dual ? "block" : "none";
-    $("saShiftInfo").textContent = dual
-      ? "Dual session employee — enter the morning and afternoon punches."
-      : "Single session employee — enter the time they came in and went out.";
+    $("saShiftInfo").textContent = dual ? "Dual session employee — enter the morning and afternoon punches." : "Single session employee — enter the time they came in and went out.";
+    $("saEditEmployeeName").textContent = st.name + (st.designation ? " — " + st.designation : "");
   }
 
-  function openEditor(userId, date) {
-    populateUsers(userId);
-    var d = date || P.todayIso(), uid = Number(userId || $("saEditUser").value);
-    updateEditorForUser(uid);
-    $("saEditId").value = "";
-    $("saEditDate").value = d;
-    $("saEditType").value = "PUNCH";
+  function clearEditorFields() {
     $("saSingleIn").value = ""; $("saSingleOut").value = "";
     $("saMorningIn").value = ""; $("saMorningOut").value = "";
     $("saAfternoonIn").value = ""; $("saAfternoonOut").value = "";
-    $("saEditStatus").value = "Present";
-    $("saEditReason").value = "";
+    $("saEditStatus").value = "Present"; $("saEditReason").value = "";
+  }
+
+  function openEditor(userId, date) {
+    editorLockedUser = !!userId;
+    $("saEditEmployeePicker").style.display = editorLockedUser ? "none" : "block";
+    $("saEditEmployeeFixed").style.display = editorLockedUser ? "block" : "none";
+    if (editorLockedUser) updateEditorForUser(Number(userId)); else { populateUsers(); updateEditorForUser(Number($("saEditUser").value)); }
+    var d = date || P.todayIso();
+    if (editorLockedUser) $("saEditUser").value = String(userId);
+    $("saEditDate").value = d;
+    $("saEditId").value = "";
+    $("saEditType").value = "PUNCH";
+    clearEditorFields();
     toggleEditFields();
+    if (editorLockedUser) loadExistingAdjustment(Number(userId), d);
+    $("saEditTitle").textContent = editorLockedUser ? "Edit Attendance" : "Manual Attendance Entry";
     P.openModal("saEditModal");
+  }
+
+  function loadExistingAdjustment(uid, date) {
+    P.api("getAttendanceAdjustments", [uid, date], { text: "Loading attendance correction…" }).then(function (rows) {
+      rows = Array.isArray(rows) ? rows : [];
+      if (!rows.length) return;
+      var punchRows = rows.filter(function (r) { return String(r.entry_type || "").toUpperCase() === "PUNCH"; });
+      var status = rows.find(function (r) { return String(r.entry_type || "").toUpperCase() !== "PUNCH"; });
+      if (status) {
+        var t = String(status.entry_type || "").toUpperCase();
+        $("saEditType").value = t === "LEAVE" ? "LEAVE" : (t === "DUTY" || t === "OFFICIAL_DUTY" || t === "CONTINUOUS_DUTY" ? "DUTY" : "LEAVE");
+        $("saEditStatus").value = status.status || ($("saEditType").value === "LEAVE" ? "Leave" : "Present");
+        $("saEditReason").value = status.reason || "";
+      } else if (punchRows.length) {
+        $("saEditType").value = "PUNCH";
+        $("saEditReason").value = punchRows[0].reason || "";
+        punchRows.forEach(function (r) {
+          var s = String(r.session || "").toUpperCase(), pt = String(r.punch_type || "").toUpperCase(), tm = String(r.punch_time || "").slice(0,5);
+          if (s === "MORNING") { if (pt === "IN") $("saMorningIn").value = tm; if (pt === "OUT") $("saMorningOut").value = tm; }
+          else if (s === "AFTERNOON") { if (pt === "IN") $("saAfternoonIn").value = tm; if (pt === "OUT") $("saAfternoonOut").value = tm; }
+          else { if (pt === "IN") $("saSingleIn").value = tm; if (pt === "OUT") $("saSingleOut").value = tm; }
+        });
+      }
+      toggleEditFields();
+    }).catch(function () {});
   }
 
   function toggleEditFields() {
     var type = $("saEditType").value, punch = type === "PUNCH";
-    $("saSingleFields").style.display = "none";
-    $("saDualFields").style.display = "none";
-    $("saStatusFields").style.display = punch ? "none" : "block";
+    $("saSingleFields").style.display = "none"; $("saDualFields").style.display = "none"; $("saStatusFields").style.display = punch ? "none" : "block";
     if (punch) updateEditorForUser(Number($("saEditUser").value));
     if (type === "LEAVE") $("saEditStatus").value = "Leave";
     if (type === "DUTY") $("saEditStatus").value = "Present";
   }
 
-  function addPunch(arr, session, type, time) {
-    if (time) arr.push({ session: session, punchType: type, time: time });
-  }
+  function addPunch(arr, session, type, time) { if (time) arr.push({ session: session, punchType: type, time: time }); }
 
   function saveEdit() {
     var type = $("saEditType").value, uid = Number($("saEditUser").value), date = $("saEditDate").value;
     if (!uid || !date) return alert("Employee and date are required.");
-    var st = selectedStaff(), dual = st && String(st.shiftType || "").toUpperCase() === "DUAL";
-    var reason = $("saEditReason").value.trim();
-
-    if (type !== "PUNCH") {
-      var status = type === "LEAVE" ? "Leave" : "Present";
-      var payload = { userId:uid, date:date, entryType:type, statusOverride:status, reason:reason };
-      P.api("saveAttendanceAdjustment", [payload], { text:"Saving attendance correction…" })
-        .then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); })
-        .catch(function (e) { alert(e.message || e); });
-      return;
-    }
-
-    var punches = [];
-    if (dual) {
-      addPunch(punches, "MORNING", "IN", $("saMorningIn").value);
-      addPunch(punches, "MORNING", "OUT", $("saMorningOut").value);
-      addPunch(punches, "AFTERNOON", "IN", $("saAfternoonIn").value);
-      addPunch(punches, "AFTERNOON", "OUT", $("saAfternoonOut").value);
-    } else {
-      addPunch(punches, "SINGLE", "IN", $("saSingleIn").value);
-      addPunch(punches, "SINGLE", "OUT", $("saSingleOut").value);
-    }
-    if (!punches.length) return alert("Enter at least one punch time.");
-    var payload = { userId:uid, date:date, entryType:"PUNCH", punches:punches, reason:reason };
-    P.api("saveAttendanceAdjustment", [payload], { text:"Saving attendance correction…" })
-      .then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); })
-      .catch(function (e) { alert(e.message || e); });
+    var st = selectedStaff(), dual = st && String(st.shiftType || "").toUpperCase() === "DUAL", reason = $("saEditReason").value.trim();
+    var save = function () {
+      if (type !== "PUNCH") {
+        var status = type === "LEAVE" ? "Leave" : "Present";
+        return P.api("saveAttendanceAdjustment", [{ userId:uid, date:date, entryType:type, statusOverride:status, reason:reason }], { text:"Saving attendance correction…" });
+      }
+      var punches = [];
+      if (dual) { addPunch(punches, "MORNING", "IN", $("saMorningIn").value); addPunch(punches, "MORNING", "OUT", $("saMorningOut").value); addPunch(punches, "AFTERNOON", "IN", $("saAfternoonIn").value); addPunch(punches, "AFTERNOON", "OUT", $("saAfternoonOut").value); }
+      else { addPunch(punches, "SINGLE", "IN", $("saSingleIn").value); addPunch(punches, "SINGLE", "OUT", $("saSingleOut").value); }
+      if (!punches.length) return Promise.reject(new Error("Enter at least one punch time."));
+      return P.api("saveAttendanceAdjustment", [{ userId:uid, date:date, entryType:"PUNCH", punches:punches, reason:reason }], { text:"Saving attendance correction…" });
+    };
+    var replace = editorLockedUser ? P.api("clearAttendanceAdjustments", [uid, date], { text:"Replacing attendance correction…" }) : Promise.resolve();
+    replace.then(save).then(function () { P.closeModal("saEditModal"); monthCache = {}; P.Cache.remove && P.Cache.remove("staffmon_" + $("saMonth").value); loadMonth($("saMonth").value, true); }).catch(function (e) { alert(e.message || e); });
   }
 
   function resetDay() {
     var uid = Number($("saEditUser").value), date = $("saEditDate").value;
     if (!uid || !date) return;
     if (!confirm("Remove all manual corrections for this employee on " + prettyDate(date) + " and restore biometric attendance?")) return;
-    P.api("clearAttendanceAdjustments", [uid, date], { text:"Restoring biometric attendance…" })
-      .then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); })
-      .catch(function (e) { alert(e.message || e); });
+    P.api("clearAttendanceAdjustments", [uid, date], { text:"Restoring biometric attendance…" }).then(function () { P.closeModal("saEditModal"); monthCache = {}; loadMonth($("saMonth").value, true); }).catch(function (e) { alert(e.message || e); });
   }
 
 })();
+
 
 /* attendance-log.js — My Attendance Log (staff). Plain script; uses `Portal`.
    Backend: getTimesheetData(name, "YYYY-MM") for attendance.
