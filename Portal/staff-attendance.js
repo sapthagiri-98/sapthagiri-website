@@ -46,7 +46,7 @@
   }
 
   function employeeModal() {
-    return '<div class="modal-overlay" id="saEmployeeModal"><div class="modal-content" style="max-width:760px;">' +
+    return '<div class="modal-overlay" id="saEmployeeModal"><div class="modal-content" style="max-width:820px;">' +
       '<div class="modal-header-container"><h3 id="saEmployeeTitle">Attendance details</h3><button class="modal-close-icon" data-close="saEmployeeModal">&times;</button></div>' +
       '<div id="saEmployeeBody"></div>' +
       '<button class="btn btn-secondary" data-close="saEmployeeModal" style="margin-top:16px;">Close</button></div></div>';
@@ -154,23 +154,77 @@
       var arr = ((current.calendarMap[date] || {})[bucket] || []);
       arr.forEach(function (r) { if (Number(r.userId) === Number(userId)) rows.push({ date: date, r: r }); });
     });
-    $("saEmployeeTitle").textContent = rep.name + " — " + ({Present:"Present",Late:"Late",HalfDay:"Half days",Absent:"Absent",Leave:"Leave"}[category] || category);
+    var labels = {Present:"Present days",Late:"Late days",HalfDay:"Half days",Absent:"Absent days",Leave:"Leave days"};
+    $("saEmployeeTitle").textContent = rep.name + " — " + (labels[category] || category);
     if (!rows.length) {
       $("saEmployeeBody").innerHTML = '<div class="slip-empty">No matching dates.</div>';
       P.openModal("saEmployeeModal"); return;
     }
-    $("saEmployeeBody").innerHTML = '<div style="max-height:55vh;overflow:auto;">' + rows.map(function (x) {
-      var r = x.r, times = 'In ' + esc(r.in1 || "—") + ' · Out ' + esc(r.out1 || "—");
-      if (r.in2 || r.out2) times += ' · In2 ' + esc(r.in2 || "—") + ' · Out2 ' + esc(r.out2 || "—");
-      var late = Number(r.lateByMinutes) > 0 ? ' · Late by ' + esc(r.lateBy || "0m") + (r.lateSession ? ' (' + esc(r.lateSession) + ')' : '') : '';
-      var src = r.attendanceSource === "Manual" || r.source === "manual" ? "Manual" : "Biometric";
-      var reason = r.manualReason ? '<div class="meta">Reason: ' + esc(r.manualReason) + '</div>' : '';
-      return '<div class="list-row" style="align-items:flex-start;"><div class="idx">' + esc(prettyDate(x.date)) + '</div><div class="who"><div class="nm">' + esc(r.status) + '</div><div class="meta">' + times + late + (r.gaps && r.gaps !== "-" ? ' · ' + esc(r.gaps) : '') + ' · Source: ' + src + '</div>' + reason + '</div><button class="btn btn-secondary" data-edit-date="' + x.date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 10px;">Edit</button></div>';
+    $("saEmployeeBody").innerHTML = '<div style="max-height:62vh;overflow:auto;padding-right:4px;">' + rows.map(function (x) {
+      return employeeAttendanceCard(x.date, x.r, userId, category);
     }).join("") + '</div>';
     Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll("[data-edit-date]"), function (b) {
       b.addEventListener("click", function () { P.closeModal("saEmployeeModal"); openEditor(Number(b.getAttribute("data-edit-user")), b.getAttribute("data-edit-date")); });
     });
     P.openModal("saEmployeeModal");
+  }
+
+  function employeeAttendanceCard(date, r, userId, category) {
+    var manual = r.attendanceSource === "Manual" || r.source === "manual";
+    var status = String(r.status || category || "");
+    var dual = String(r.shiftType || "").toUpperCase() === "DUAL" || !!(r.in2 || r.out2 || r.lateSession === "Afternoon");
+    var source = manual ? "Manual correction" : "Biometric";
+    var sourceClass = manual ? "#eef6ff;color:#1769aa;" : "#f1f8f4;color:#287a55;";
+    var statusText = status === "Half Day" ? "Half Day" : status;
+    var statusStyle = status === "Late" ? "#fff4d6;color:#8a5a00;" : (status === "Absent" ? "#fdeaea;color:#a92828;" : (status === "Leave" ? "#eaf4ff;color:#1769aa;" : "#f2edff;color:#6b3bb8;"));
+
+    function punch(label, value) {
+      var missing = !value;
+      return '<div style="border:1px solid #e4e7eb;border-radius:10px;padding:10px 12px;background:' + (missing ? '#fafafa' : '#fff') + ';min-width:0;">' +
+        '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:700;">' + label + '</div>' +
+        '<div style="font-size:15px;font-weight:800;margin-top:3px;color:' + (missing ? '#9aa1aa' : 'var(--text)') + ';">' + (missing ? 'Missing' : esc(value)) + '</div></div>';
+    }
+
+    function sessionBlock(title, inValue, outValue) {
+      return '<div style="margin-top:12px;padding:12px;border:1px solid #e6e8eb;border-radius:12px;background:#fcfcfd;">' +
+        '<div style="font-size:12px;font-weight:800;color:var(--maroon);margin-bottom:8px;">' + title + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + punch('In time', inValue) + punch('Out time', outValue) + '</div></div>';
+    }
+
+    var sessionHtml = dual
+      ? sessionBlock('Morning session', r.in1, r.out1) + sessionBlock('Afternoon session', r.in2, r.out2)
+      : sessionBlock('Attendance', r.in1, r.out1);
+
+    var lateHtml = '';
+    var lateMinutes = Number(r.lateByMinutes || 0);
+    var lateSession = String(r.lateSession || '').toLowerCase();
+    var latePunch = lateSession.indexOf('afternoon') >= 0 ? r.in2 : r.in1;
+    if (lateMinutes > 0 && latePunch) {
+      lateHtml = '<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e7;color:#7a5200;font-size:13px;"><b>Late arrival:</b> ' + esc(r.lateBy || 'Late') + (r.lateSession ? ' · ' + esc(r.lateSession) + ' session' : '') + '</div>';
+    }
+
+    var reasonText = '';
+    if (r.manualReason) reasonText = '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Reason:</b> ' + esc(r.manualReason) + '</div>';
+    else if (status === 'Half Day') {
+      var missingAfternoon = dual && !r.in2 && !r.out2 && (r.in1 || r.out1);
+      var missingMorning = dual && !r.in1 && !r.out1 && (r.in2 || r.out2);
+      var explanation = missingAfternoon ? 'Afternoon session not recorded' : (missingMorning ? 'Morning session not recorded' : 'Half-day attendance');
+      reasonText = '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Attendance note:</b> ' + explanation + '</div>';
+    } else if (status === 'Absent') {
+      reasonText = '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Attendance note:</b> No attendance punch recorded</div>';
+    }
+
+    return '<div style="border:1px solid #e1e4e8;border-radius:14px;margin:0 0 12px;padding:14px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
+        '<div><div style="font-size:15px;font-weight:800;color:var(--text);">' + esc(prettyDate(date)) + '</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px;">' + (dual ? 'Dual session' : 'Single session') + '</div></div>' +
+        '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">' +
+          '<span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;' + statusStyle + '">' + esc(statusText) + '</span>' +
+          '<span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;' + sourceClass + '">Source: ' + source + '</span>' +
+        '</div>' +
+      '</div>' +
+      sessionHtml + lateHtml + reasonText +
+      '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-secondary" data-edit-date="' + date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 14px;">Edit attendance</button></div>' +
+    '</div>';
   }
 
   function openDay(k) {
