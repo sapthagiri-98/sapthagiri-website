@@ -189,12 +189,16 @@
       var isOldDue = (c.code === "OLD_DUE" || c.label.toLowerCase().includes("old due"));
       var allowEdit = !isOldDue || isDigitisationYear;
 
+      // Allow refreshing/syncing Old Due if viewing a post-migration year (e.g., 2026-27)
+      var showSyncOldDue = isOldDue && !isDigitisationYear;
+
       return (
         '<tr>' +
         '<td data-label="Fee Head"><b>' + esc(c.label) + '</b></td>' +
         '<td class="r" data-label="Assigned">' +
           money(c.assigned) + ' ' +
           (allowEdit ? '<button class="mini-edit btn-edit-charge" data-code="' + esc(c.code || c.label) + '" data-amt="' + c.assigned + '" title="Edit Fee Assignment"><i class="material-icons" style="font-size:14px">edit</i></button>' : '') +
+          (showSyncOldDue ? '<button class="mini-edit btn-sync-old-due" title="Recalculate & Sync from Previous Year Closing Due"><i class="material-icons" style="font-size:14px">sync</i></button>' : '') +
         '</td>' +
         '<td class="r" data-label="Collected">' + money(c.paid) + '</td>' +
         '<td class="r" data-label="Pending"><b>' + money(c.balance) + '</b></td>' +
@@ -267,94 +271,129 @@
   }
 
   function wireInLineEditButtons() {
-    Array.prototype.forEach.call($("lD").querySelectorAll(".btn-edit-charge"), function (btn) {
-      btn.onclick = function () {
-        var code = btn.getAttribute("data-code");
-        var currentAmt = Number(btn.getAttribute("data-amt")) || 0;
-        
-        var modalBody =
-          '<div class="fld"><label>Fee Head Code</label><input class="in" value="' + esc(code) + '" disabled/></div>' +
-          '<div class="fld"><label>New Assigned Amount (₹)</label><input id="inpNewCharge" class="in big" type="number" value="' + currentAmt + '"/></div>' +
-          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">' +
-          '<button class="btn btn-maroon" id="btnSaveCharge" style="flex:1;justify-content:center;"><i class="material-icons">save</i> Update Assigned Fee</button>' +
-          (L.yview === ((BOOT && BOOT.migrationYear) || "2025-26") ? '<button class="btn btn-outline" id="btnAssignNextOldDue" style="flex:1;justify-content:center;"><i class="material-icons">forward</i> Assign to ' + esc((BOOT && BOOT.currentYear) || "2026-27") + ' Old Due</button>' : '') +
-          '</div>';
+  // Sync Old Due from Previous Year
+  Array.prototype.forEach.call($("lD").querySelectorAll(".btn-sync-old-due"), function (btn) {
+    btn.onclick = function () {
+      var sourceYear = (BOOT && BOOT.migrationYear) || "2025-26";
+      var targetYear = L.yview || (BOOT && BOOT.currentYear) || "2026-27";
 
-        openModal("Edit Fee Charge · " + esc(L.yview), modalBody);
+      if (!confirm(
+        "Recalculate closing due from " + sourceYear + " and update " + targetYear + " Old Due for this student?"
+      )) return;
 
-        setTimeout(function () {
-          var carryBtn = $("btnAssignNextOldDue");
-          if (carryBtn) {
-            carryBtn.onclick = function () {
-              var sourceYear = L.yview;
-              var targetYear = (BOOT && BOOT.currentYear) || "2026-27";
-              if (!confirm(
-                "Recalculate " + sourceYear + " closing due from the updated fee assignments and " +
-                "payments, then assign that amount as this student's " + targetYear + " Old Due?\n\n" +
-                "This updates only this student's " + targetYear + " Old Due."
-              )) return;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="material-icons" style="font-size:14px">hourglass_empty</i>';
 
-              carryBtn.disabled = true;
-              carryBtn.innerHTML = '<i class="material-icons">sync</i> Assigning…';
+      P.api("feeAssignStudentOldDue", [L.student.id, ME], { text: "Recalculating Old Due…" })
+        .then(function (res) {
+          if (!res.success) {
+            toast("Could not sync Old Due.", "err");
+            return;
+          }
+          toast(targetYear + " Old Due updated to " + money(res.oldDue) + " (from " + sourceYear + ").", "ok");
+          REPORTS.totals = null;
+          L.stmt = null;
+          refresh();
+        })
+        .catch(function (e) {
+          toast(e.message || e, "err");
+        })
+        .finally(function () {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="material-icons" style="font-size:14px">sync</i>';
+        });
+    };
+  });
 
-              P.api("feeAssignStudentOldDue", [L.student.id, ME], { text: "Assigning Old Due…" })
-                .then(function (res) {
-                  if (!res.success) {
-                    toast("Could not assign Old Due.", "err");
-                    return;
-                  }
+  // Edit Fee Charge Modal Handler
+  Array.prototype.forEach.call($("lD").querySelectorAll(".btn-edit-charge"), function (btn) {
+    btn.onclick = function () {
+      var code = btn.getAttribute("data-code");
+      var currentAmt = Number(btn.getAttribute("data-amt")) || 0;
 
-                  toast(
-                    targetYear + " Old Due assigned: " + money(res.oldDue) +
-                    " (from " + sourceYear + " closing due).",
-                    "ok"
-                  );
-                  closeModal("mdl");
-                  REPORTS.totals = null;
-                  L.stmt = null;
-                  L.yview = targetYear;
-                  refresh();
-                })
-                .catch(function (e) {
-                  toast(e.message || e, "err");
-                })
-                .finally(function () {
-                  carryBtn.disabled = false;
-                  carryBtn.innerHTML = '<i class="material-icons">forward</i> Assign to ' + esc(targetYear) + ' Old Due';
-                });
-            };
+      var modalBody =
+        '<div class="fld"><label>Fee Head Code</label><input class="in" value="' + esc(code) + '" disabled/></div>' +
+        '<div class="fld"><label>New Assigned Amount (₹)</label><input id="inpNewCharge" class="in big" type="number" value="' + currentAmt + '"/></div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">' +
+        '<button class="btn btn-maroon" id="btnSaveCharge" style="flex:1;justify-content:center;"><i class="material-icons">save</i> Update Assigned Fee</button>' +
+        (L.yview === ((BOOT && BOOT.migrationYear) || "2025-26") ? '<button class="btn btn-outline" id="btnAssignNextOldDue" style="flex:1;justify-content:center;"><i class="material-icons">forward</i> Assign to ' + esc((BOOT && BOOT.currentYear) || "2026-27") + ' Old Due</button>' : '') +
+        '</div>';
+
+      openModal("Edit Fee Charge · " + esc(L.yview), modalBody);
+
+      setTimeout(function () {
+        var carryBtn = $("btnAssignNextOldDue");
+        if (carryBtn) {
+          carryBtn.onclick = function () {
+            var sourceYear = L.yview;
+            var targetYear = (BOOT && BOOT.currentYear) || "2026-27";
+            if (!confirm(
+              "Recalculate " + sourceYear + " closing due from the updated fee assignments and " +
+              "payments, then assign that amount as this student's " + targetYear + " Old Due?\n\n" +
+              "This updates only this student's " + targetYear + " Old Due."
+            )) return;
+
+            carryBtn.disabled = true;
+            carryBtn.innerHTML = '<i class="material-icons">sync</i> Assigning…';
+
+            P.api("feeAssignStudentOldDue", [L.student.id, ME], { text: "Assigning Old Due…" })
+              .then(function (res) {
+                if (!res.success) {
+                  toast("Could not assign Old Due.", "err");
+                  return;
+                }
+
+                toast(
+                  targetYear + " Old Due assigned: " + money(res.oldDue) +
+                  " (from " + sourceYear + " closing due).",
+                  "ok"
+                );
+                closeModal("mdl");
+                REPORTS.totals = null;
+                L.stmt = null;
+                L.yview = targetYear;
+                refresh();
+              })
+              .catch(function (e) {
+                toast(e.message || e, "err");
+              })
+              .finally(function () {
+                carryBtn.disabled = false;
+                carryBtn.innerHTML = '<i class="material-icons">forward</i> Assign to ' + esc(targetYear) + ' Old Due';
+              });
+          };
+        }
+
+        $("btnSaveCharge").onclick = function () {
+          var newAmt = Number($("inpNewCharge").value);
+          if (isNaN(newAmt) || newAmt < 0) return toast("Enter a valid fee amount.", "err");
+
+          var feesPayload = {};
+          var oldDueAmt = null;
+
+          if (code === "OLD_DUE") {
+            oldDueAmt = newAmt;
+          } else {
+            feesPayload[code] = newAmt;
           }
 
-          $("btnSaveCharge").onclick = function () {
-            var newAmt = Number($("inpNewCharge").value);
-            if (isNaN(newAmt) || newAmt < 0) return toast("Enter a valid fee amount.", "err");
-
-            var feesPayload = {};
-            var oldDueAmt = null;
-
-            if (code === "OLD_DUE") {
-              oldDueAmt = newAmt;
-            } else {
-              feesPayload[code] = newAmt;
-            }
-
-            P.api("feeSetStudentCharges", [L.student.id, L.yview, feesPayload, oldDueAmt, ME], { text: "Updating fee..." })
-              .then(function (res) {
-                if (res.success) {
-                  toast("Fee assignment updated.", "ok");
-                  closeModal("mdl");
-                  REPORTS.totals = null;
-                  L.stmt = null;
-                  refresh();
-                } else {
-                  toast(res.errors ? res.errors.join(", ") : "Failed to update.", "err");
-                }
-              }).catch(function (e) { toast(e.message || e, "err"); });
-          };
-        }, 50);
-      };
-    });
-  }
+          P.api("feeSetStudentCharges", [L.student.id, L.yview, feesPayload, oldDueAmt, ME], { text: "Updating fee..." })
+            .then(function (res) {
+              if (res.success) {
+                toast("Fee assignment updated.", "ok");
+                closeModal("mdl");
+                REPORTS.totals = null;
+                L.stmt = null;
+                refresh();
+              } else {
+                toast(res.errors ? res.errors.join(", ") : "Failed to update.", "err");
+              }
+            }).catch(function (e) { toast(e.message || e, "err"); });
+        };
+      }, 50);
+    };
+  });
+}
 
   function triggerFullAuditPrint() {
     P.api("feeGetFullAuditStatement", [L.student.id], { text: "Loading full audit ledger..." })
