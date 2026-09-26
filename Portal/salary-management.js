@@ -3,10 +3,11 @@
    ========================================================================= */
 (function () {
   "use strict";
-  var session = null, payrollPassword = "", currentMonth = "", rows = [], staff = [], editing = null, paying = null;
+  var session = null, payrollPassword = "", currentMonth = "", rows = [], staff = [], employees = [], aliasData = { linked: [], unlinked: [] }, editing = null, paying = null;
   var C = window.PORTAL_CONFIG || {};
   var BASE = C.SUPABASE_PAYROLL_BASE || "";
   var ANON = C.SUPABASE_ANON || "";
+  var USERS_BASE = C.SUPABASE_USERS_BASE || "";
 
   function esc(v){ return Portal.esc(v == null ? "" : v); }
   function money(v){ return "Rs. " + Number(v||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -113,6 +114,13 @@
     document.getElementById("refreshBtn").onclick=loadMonth;
     document.getElementById("monthlyTab").onclick=function(){this.classList.add("active");document.getElementById("assignmentTab").classList.remove("active");document.getElementById("employeesTab").classList.remove("active");render()};
     document.getElementById("assignmentTab").onclick=renderAssignments;
+    document.getElementById("employeesTab").onclick=async function(){
+      this.classList.add("active");
+      document.getElementById("monthlyTab").classList.remove("active");
+      document.getElementById("assignmentTab").classList.remove("active");
+      Portal.overlay(true, "Loading employees…");
+      try { await loadEmployees(); renderEmployees(); } catch(e){ toast(e.message||String(e), true); } finally { Portal.overlay(false); }
+    };
     bindMonthly();
   }
   function monthlyHtml(paid,pending,unassigned,unpaid,deduction,net){
@@ -166,7 +174,8 @@
         '</div>'+
         '<div class="row-actions">'+
           (r.status==='Paid'
-            ? '<button class="btn btn-primary mini" onclick="SalaryPayroll.download('+i+')"><i class="material-icons">download</i>Salary Slip</button>'
+            ? '<button class="btn btn-light mini" onclick="SalaryPayroll.editPaidDetails('+i+')"><i class="material-icons">edit_note</i>Edit Pay Details</button>'+
+              '<button class="btn btn-primary mini" onclick="SalaryPayroll.download('+i+')"><i class="material-icons">download</i>Salary Slip</button>'
             : '<button class="btn btn-light mini" onclick="SalaryPayroll.edit('+i+')"><i class="material-icons">edit</i>Edit</button>'+
               '<button class="btn btn-light mini" onclick="SalaryPayroll.adjustLeave('+i+')"><i class="material-icons">add_circle</i>Leave</button>'+
               '<button class="btn btn-success mini" onclick="SalaryPayroll.pay('+i+')"><i class="material-icons">payments</i>Pay</button>')+
@@ -398,9 +407,57 @@
   function pay(i){paying=i;var r=rows[i];document.getElementById('payEmployee').textContent=r.name+' · '+monthLabel(currentMonth);document.getElementById('payAmount').value=Number(r.netSalary||0).toFixed(2);document.getElementById('payDate').value=today();document.getElementById('payMode').value=r.paymentMode||'Bank Transfer';document.getElementById('payReference').value='';document.getElementById('payComment').value='';document.getElementById('payModal').classList.add('show');}
   function closePay(){document.getElementById('payModal').classList.remove('show');paying=null;}
   async function confirmPay(){var r=rows[paying], amount=Number(document.getElementById('payAmount').value||0), comment=document.getElementById('payComment').value.trim();if(Math.abs(amount-Number(r.netSalary||0))>0.005&&!comment){toast('Comment is required when changing the salary amount.',true);return}var b=document.getElementById('confirmPayBtn');try{b.disabled=true;await api('payrollSaveRow',[{month:currentMonth,userId:r.userId,salary:r.salary,annualLeaveEntitlement:r.annualLeaveEntitlement,paidLeaveCredit:r.paidLeaveCredit,paidLeaveUsed:r.paidLeaveUsed,paidLeaveBalance:r.paidLeaveBalance,calculatedUnpaidLeave:r.calculatedUnpaidLeave,manualUnpaidLeave:r.manualUnpaidLeave,unpaidLeave:r.unpaidLeave,dailyRate:r.dailyRate,calculatedDeduction:r.calculatedDeduction,manualDeduction:r.manualDeduction,totalDeduction:r.totalDeduction,calculatedNetSalary:r.calculatedNetSalary,manualNetSalary:Math.abs(amount-Number(r.calculatedNetSalary||0))>0.005?amount:r.manualNetSalary,netSalary:amount,joiningDate:r.joiningDate,joiningDaysUnpaid:r.joiningDaysUnpaid,latePenaltyLeave:r.latePenaltyLeave}]);await api('payrollMarkPaid',[{month:currentMonth,userId:r.userId,payDate:document.getElementById('payDate').value,paymentMode:document.getElementById('payMode').value,paymentReference:document.getElementById('payReference').value,paymentComment:comment,netSalary:amount}]);toast('Salary marked as paid.');closePay();await loadMonth()}catch(e){toast(e.message,true)}finally{b.disabled=false}}
+  
+  function editPaidDetails(i){
+    var r=rows[i];
+    var m=document.createElement('div');
+    m.className='modal-backdrop show';
+    m.id='editPaidDetailsModal';
+    m.innerHTML='<div class="modal"><h2>Edit Payment Details</h2><p><strong>'+esc(r.name)+'</strong> · '+monthLabel(currentMonth)+'</p>'+
+      '<div class="form-grid">'+
+      '<div class="field"><label>Paid Amount (₹)</label><input id="epdAmount" type="number" step="0.01" value="'+Number(r.netSalary||0).toFixed(2)+'"></div>'+
+      '<div class="field"><label>Payment Date</label><input id="epdDate" type="date" value="'+(r.payDate||today())+'"></div>'+
+      '<div class="field"><label>Payment Mode</label><select id="epdMode"><option value="Bank Transfer"'+(r.paymentMode==='Bank Transfer'?' selected':'')+'>Bank Transfer</option><option value="Cash"'+(r.paymentMode==='Cash'?' selected':'')+'>Cash</option><option value="Cheque"'+(r.paymentMode==='Cheque'?' selected':'')+'>Cheque</option><option value="UPI"'+(r.paymentMode==='UPI'?' selected':'')+'>UPI</option></select></div>'+
+      '<div class="field"><label>Reference / UTR</label><input id="epdReference" type="text" value="'+esc(r.paymentReference||'')+'" placeholder="Transaction ref / UTR"></div>'+
+      '<div class="field full"><label>Payment Comment / Note</label><textarea id="epdComment" rows="2" placeholder="Reason for update or remarks">'+esc(r.paymentComment||'')+'</textarea></div>'+
+      '</div>'+
+      '<div class="modal-footer"><button class="btn btn-light" id="epdCancel">Cancel</button><button class="btn btn-primary" id="epdSave">Save Payment Details</button></div></div>';
+
+    document.body.appendChild(m);
+    m.querySelector('#epdCancel').onclick=function(){m.remove()};
+    m.querySelector('#epdSave').onclick=async function(){
+      var b=this;
+      var amt=Number(m.querySelector('#epdAmount').value||0);
+      var dt=m.querySelector('#epdDate').value;
+      var mode=m.querySelector('#epdMode').value;
+      var ref=m.querySelector('#epdReference').value.trim();
+      var cmt=m.querySelector('#epdComment').value.trim();
+      if(!amt || amt <= 0){ toast('Please enter a valid salary amount.', true); return; }
+      if(!dt){ toast('Payment date is required.', true); return; }
+      try{
+        b.disabled=true;
+        await api('payrollMarkPaid',[{
+          month:currentMonth,
+          userId:r.userId,
+          payDate:dt,
+          paymentMode:mode,
+          paymentReference:ref,
+          paymentComment:cmt,
+          netSalary:amt
+        }]);
+        toast('Payment details updated.');
+        m.remove();
+        await loadMonth();
+      }catch(e){
+        toast(e.message||String(e),true);
+      }finally{
+        b.disabled=false;
+      }
+    };
+  }
+
   async function download(i){try{await window.generateSalarySlipPDF(rows[i],currentMonth)}catch(e){toast(e.message||String(e),true)}}
   function showAssignments(){document.getElementById('assignmentTab').click()}
-
 
   function usersApi(fn,args){
     if(!USERS_BASE) return Promise.reject(new Error("SUPABASE_USERS_BASE is missing in config.js."));
@@ -556,390 +613,17 @@
     }
   }
 
-  window.SalaryPayroll={edit:edit,pay:pay,download:download,adjustLeave:adjustLeave,closeEdit:closeEdit,closePay:closePay,showAssignments:showAssignments,editEmployee:editEmployee};
+  window.SalaryPayroll={
+    edit:edit,
+    pay:pay,
+    editPaidDetails:editPaidDetails,
+    download:download,
+    adjustLeave:adjustLeave,
+    closeEdit:closeEdit,
+    closePay:closePay,
+    showAssignments:showAssignments,
+    editEmployee:editEmployee
+  };
   document.addEventListener('click',function(e){if(e.target&&e.target.id==='saveEditBtn')saveEdit();if(e.target&&e.target.id==='confirmPayBtn')confirmPay()});
   document.addEventListener('DOMContentLoaded',boot);
-})();
-
-/* =========================================================================
-   Embedded salary-slip generator
-   Print-first, clean one-page A4 salary slip
-   ========================================================================= */
-(function () {
-  "use strict";
-
-  function slipNum(v) {
-    var x = Number(v || 0);
-    return Number.isInteger(x) ? String(x) : x.toFixed(1).replace(/\.0$/, "");
-  }
-
-  function slipMoney(v) {
-    return "Rs. " + Number(v || 0).toLocaleString("en-IN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
-  }
-
-  function slipDate(v) {
-    if (!v) return "";
-    var p = String(v).slice(0, 10).split("-");
-    if (p.length !== 3) return String(v);
-    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    var mi = Number(p[1]) - 1;
-    return p[2] + " " + (months[mi] || p[1]) + " " + p[0];
-  }
-
-  function slipMonth(v) {
-    var p = String(v || "").slice(0, 7).split("-");
-    if (p.length !== 2 || !p[0] || !p[1]) return String(v || "");
-    var months = ["January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"];
-    return (months[Number(p[1]) - 1] || p[1]) + " " + p[0];
-  }
-
-  function ones(n) {
-    return ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
-      "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen",
-      "Eighteen", "Nineteen"][n] || "";
-  }
-
-  function tens(n) {
-    return ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy",
-      "Eighty", "Ninety"][n] || "";
-  }
-
-  function under1000(n) {
-    n = Math.floor(n);
-    var s = "";
-    if (n >= 100) {
-      s += ones(Math.floor(n / 100)) + " Hundred";
-      n %= 100;
-      if (n) s += " ";
-    }
-    if (n < 20) s += ones(n);
-    else {
-      s += tens(Math.floor(n / 10));
-      if (n % 10) s += " " + ones(n % 10);
-    }
-    return s;
-  }
-
-  function amountWords(v) {
-    var n = Math.round(Number(v || 0));
-    if (n === 0) return "Zero Rupees Only";
-    var crore = Math.floor(n / 10000000); n %= 10000000;
-    var lakh = Math.floor(n / 100000); n %= 100000;
-    var thousand = Math.floor(n / 1000); n %= 1000;
-    var parts = [];
-    if (crore) parts.push(under1000(crore) + " Crore");
-    if (lakh) parts.push(under1000(lakh) + " Lakh");
-    if (thousand) parts.push(under1000(thousand) + " Thousand");
-    if (n) parts.push(under1000(n));
-    return parts.join(" ") + " Rupees Only";
-  }
-
-  function imageData(url) {
-    return fetch(url).then(function (r) {
-      if (!r.ok) throw new Error("Logo unavailable");
-      return r.blob();
-    }).then(function (blob) {
-      return new Promise(function (resolve, reject) {
-        var fr = new FileReader();
-        fr.onload = function () { resolve(fr.result); };
-        fr.onerror = reject;
-        fr.readAsDataURL(blob);
-      });
-    });
-  }
-
-  async function loadHeaderLogo() {
-    var candidates = [
-      "../assets/images/branding/header-logo.png",
-      "assets/images/branding/header-logo.png",
-      "/assets/images/branding/header-logo.png",
-      "../sapthagiri-website-main/assets/images/branding/header-logo.png",
-      "sapthagiri-website-main/assets/images/branding/header-logo.png",
-      "/sapthagiri-website-main/assets/images/branding/header-logo.png"
-    ];
-    for (var i = 0; i < candidates.length; i++) {
-      try {
-        return await imageData(candidates[i]);
-      } catch (e) {}
-    }
-    return null;
-  }
-
-  /* Helvetica is a clean, widely supported print font in jsPDF. */
-  function setFont(doc, size, color, style) {
-    doc.setFont("helvetica", style || "normal");
-    doc.setFontSize(size || 9);
-    doc.setTextColor(color || "#20252B");
-  }
-
-  function text(doc, value, x, y, size, color, style, opts) {
-    setFont(doc, size, color, style);
-    doc.text(String(value == null ? "" : value), x, y, opts || {});
-  }
-
-  function fill(doc, x, y, w, h, color) {
-    doc.setFillColor(color);
-    doc.rect(x, y, w, h, "F");
-  }
-
-  function stroke(doc, x, y, w, h, color, width) {
-    doc.setDrawColor(color);
-    doc.setLineWidth(width || 0.25);
-    doc.rect(x, y, w, h, "S");
-  }
-
-  function line(doc, x1, y1, x2, y2, color, width) {
-    doc.setDrawColor(color);
-    doc.setLineWidth(width || 0.25);
-    doc.line(x1, y1, x2, y2);
-  }
-
-  /* Print-oriented section heading: label first, then one restrained rule. */
-  function section(doc, title, y, left, width, C) {
-    fill(doc, left, y + 0.8, 1.8, 5.4, C.maroon);
-    text(doc, title, left + 5, y + 5.0, 7.5, C.maroon, "bold");
-    line(doc, left + 52, y + 3.8, left + width, y + 3.8, C.line, 0.35);
-    return y + 9;
-  }
-
-  function compactPairRow(doc, x, y, w, leftLabel, leftValue, rightLabel, rightValue, C, h) {
-    h = h || 8.5;
-    var half = w / 2;
-    var labelW = 36;
-
-    fill(doc, x, y, labelW, h, C.soft);
-    fill(doc, x + half, y, labelW, h, C.soft);
-    stroke(doc, x, y, w, h, C.line, 0.22);
-    line(doc, x + half, y, x + half, y + h, C.line, 0.22);
-    line(doc, x + labelW, y, x + labelW, y + h, C.line, 0.22);
-    line(doc, x + half + labelW, y, x + half + labelW, y + h, C.line, 0.22);
-
-    text(doc, leftLabel, x + 4, y + 5.5, 6.6, C.muted, "bold");
-    text(doc, leftValue == null || leftValue === "" ? "—" : leftValue,
-      x + labelW + 4, y + 5.5, 7.4, C.ink, "normal");
-
-    if (rightLabel) {
-      text(doc, rightLabel, x + half + 4, y + 5.5, 6.6, C.muted, "bold");
-      text(doc, rightValue == null || rightValue === "" ? "—" : rightValue,
-        x + half + labelW + 4, y + 5.5, 7.4, C.ink, "normal");
-    }
-
-    return h;
-  }
-
-  function salaryRow(doc, x, y, w, label, value, C, strong) {
-    var h = 8.5;
-    fill(doc, x, y, w, h, C.softer);
-    stroke(doc, x, y, w, h, C.line, 0.22);
-    text(doc, label, x + 5, y + 5.5, 6.8, C.muted, "bold");
-    text(doc, value, x + w - 5, y + 5.5, strong ? 8.2 : 7.8,
-      strong ? C.maroon : C.ink, strong ? "bold" : "normal", { align: "right" });
-    return h;
-  }
-
-  window.generateSalarySlipPDF = async function (row, month) {
-    if (!window.jspdf || !window.jspdf.jsPDF) {
-      throw new Error("PDF library is not loaded. Refresh the page once.");
-    }
-    if (!row || row.status !== "Paid") {
-      throw new Error("Salary is not marked as paid yet.");
-    }
-    if (typeof window.jspdf.jsPDF !== "function") {
-      throw new Error("jsPDF is unavailable.");
-    }
-
-    var jsPDF = window.jspdf.jsPDF;
-    var doc = new jsPDF({
-      unit: "mm",
-      format: "a4",
-      orientation: "portrait",
-      compress: true
-    });
-
-    var pageW = 210;
-    var pageH = 297;
-    var left = 14;
-    var right = 196;
-    var width = right - left;
-
-    var C = {
-      maroon: "#76161D",
-      maroonSoft: "#F7F0F1",
-      ink: "#252A30",
-      muted: "#69727C",
-      line: "#D6DBDF",
-      soft: "#F3F5F6",
-      softer: "#FAFBFB",
-      white: "#FFFFFF"
-    };
-
-    var name = String((row.staff && row.staff.name) || row.name || "");
-    var role = String((row.staff && row.staff.role) || row.role || "");
-
-    var payDate = row.payDate != null ? row.payDate : (row.pay_date || "");
-    var payMode = row.paymentMode != null ? row.paymentMode : (row.payment_mode || "Bank Transfer");
-    var payReference = row.paymentReference != null
-      ? row.paymentReference
-      : (row.payment_reference || "");
-
-    var salary = row.salary != null ? row.salary : row.monthly_salary;
-    var deduction = row.totalDeduction != null ? row.totalDeduction : row.total_deduction;
-    var net = row.netSalary != null ? row.netSalary : row.net_salary;
-    var used = row.paidLeaveUsed != null ? row.paidLeaveUsed : row.paid_leave_used;
-    var balance = row.paidLeaveBalance != null ? row.paidLeaveBalance : row.paid_leave_balance;
-    var opening = row.paidLeaveOpening != null ? row.paidLeaveOpening : row.paid_leave_opening;
-    var unpaid = row.unpaidLeave != null ? row.unpaidLeave : row.unpaid_leave;
-
-    if (opening == null) opening = Number(balance || 0) + Number(used || 0);
-
-    var rawEmployeeId = row.employeeId != null
-      ? row.employeeId
-      : (row.employee_id != null ? row.employee_id : row.userId);
-
-    var employeeId = "";
-    if (rawEmployeeId != null && rawEmployeeId !== "") {
-      var employeeNumber = Number(rawEmployeeId);
-      if (Number.isFinite(employeeNumber) && employeeNumber > 0) {
-        employeeId = "SHS-EMP-" + String(Math.floor(employeeNumber)).padStart(3, "0");
-      } else {
-        employeeId = "SHS-EMP-" + String(rawEmployeeId).replace(/[^a-z0-9]/gi, "").slice(-6);
-      }
-    }
-
-    var payrollKey = String(month || "").slice(0, 7);
-    var transactionReference = "Not available";
-    if (payrollKey >= "2026-08") {
-      transactionReference = String(payReference || "").trim() || "Not available";
-    }
-
-    fill(doc, 0, 0, pageW, pageH, C.white);
-    stroke(doc, 8.5, 8.5, 193, 280, C.line, 0.25);
-
-    /* ================================================================
-       HEADER
-       ================================================================ */
-    var logo = await loadHeaderLogo();
-
-    if (logo) {
-      doc.addImage(logo, "PNG", left, 13, 103, 18, undefined, "FAST");
-    }
-
-    /* The document identity lives here once. No duplicate title in the body. */
-    fill(doc, 151, 13, 45, 22, C.maroonSoft);
-    line(doc, 151, 35, 196, 35, C.maroon, 0.55);
-    text(doc, "SALARY SLIP", 173.5, 23.0, 11.2, C.maroon, "bold", { align: "center" });
-    text(doc, slipMonth(month), 173.5, 29.2, 7.2, C.ink, "normal", { align: "center" });
-
-    /* School information is deliberately aligned as a proper two-line block. */
-    text(doc,
-      "8-3-311/3, Vemulawada By-Pass Road, Sapthagiri Colony, Karimnagar - 505001",
-      left, 39.5, 6.9, C.ink, "normal");
-
-    text(doc,
-      "9381118421  |  sapthagiri.98@gmail.com  |  www.sapthagirischool.in",
-      left, 44.4, 6.7, C.muted, "normal");
-
-    text(doc,
-      "UDISE 36130790563  |  School Code 22227  |  PAN AAEAS6450K",
-      right, 44.4, 6.5, C.muted, "normal", { align: "right" });
-
-    /* One clear divider after the complete school information block. */
-    line(doc, left, 49.0, right, 49.0, C.maroon, 0.65);
-
-    var y = 56;
-
-    /* ================================================================
-       EMPLOYEE INFORMATION
-       ================================================================ */
-    y = section(doc, "EMPLOYEE INFORMATION", y, left, width, C);
-
-    y += compactPairRow(doc, left, y, width,
-      "Employee", name || "—", "Designation", role || "—", C, 8.5);
-    y += compactPairRow(doc, left, y, width,
-      "Employee ID", employeeId || "—", "Payroll Month", slipMonth(month), C, 8.5);
-    y += compactPairRow(doc, left, y, width,
-      "Pay Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—", C, 8.5);
-
-    y += 5;
-
-    /* ================================================================
-       LEAVE SUMMARY
-       ================================================================ */
-    y = section(doc, "LEAVE SUMMARY", y, left, width, C);
-    y += compactPairRow(doc, left, y, width,
-      "Opening Balance", slipNum(opening), "Paid Leave Used", slipNum(used), C, 8.5);
-    y += compactPairRow(doc, left, y, width,
-      "Closing Balance", slipNum(balance), "Unpaid Leave", slipNum(unpaid), C, 8.5);
-
-    y += 5;
-
-    /* ================================================================
-       SALARY DETAILS
-       ================================================================ */
-    y = section(doc, "SALARY DETAILS", y, left, width, C);
-    y += salaryRow(doc, left, y, width, "Monthly Salary", slipMoney(salary), C, false);
-    y += salaryRow(doc, left, y, width, "Unpaid Leave Deduction", slipMoney(deduction), C, false);
-    y += 4;
-
-    fill(doc, left, y, width, 12.5, C.maroonSoft);
-    stroke(doc, left, y, width, 12.5, C.maroon, 0.55);
-    text(doc, "NET SALARY PAYABLE", left + 6, y + 8.0, 8.0, C.maroon, "bold");
-    text(doc, slipMoney(net), right - 6, y + 8.0, 10.4, C.maroon, "bold", { align: "right" });
-    y += 17;
-
-    /* ================================================================
-       AMOUNT IN WORDS
-       ================================================================ */
-    y = section(doc, "AMOUNT IN WORDS", y, left, width, C);
-    text(doc, amountWords(net), left + 5, y + 5.0, 7.6, C.ink, "normal");
-    line(doc, left, y + 8.5, right, y + 8.5, C.line, 0.25);
-    y += 13;
-
-    /* ================================================================
-       PAYMENT INFORMATION
-       ================================================================ */
-    y = section(doc, "PAYMENT INFORMATION", y, left, width, C);
-    y += compactPairRow(doc, left, y, width,
-      "Payment Date", slipDate(payDate) || "—", "Payment Mode", payMode || "—", C, 8.5);
-    y += compactPairRow(doc, left, y, width,
-      "Transaction Reference", transactionReference, "", "", C, 8.5);
-
-    y += 5;
-
-    /* ================================================================
-       DECLARATION
-       ================================================================ */
-    y = section(doc, "DECLARATION", y, left, width, C);
-    var declaration =
-      "This is a computer-generated salary slip issued by Sapthagiri High School E/M. " +
-      "The salary details are based on the payroll record for the stated period.";
-    var declarationLines = doc.splitTextToSize(declaration, width - 10);
-    text(doc, declarationLines, left + 5, y + 5.0, 6.9, C.muted, "normal");
-    y += Math.max(1, declarationLines.length) * 3.6 + 8;
-
-    /* ================================================================
-       FOOTER
-       ================================================================ */
-    var footerY = 265;
-    line(doc, left, footerY, right, footerY, C.line, 0.35);
-
-    text(doc, "For Sapthagiri High School E/M", left, footerY + 7, 7.4, C.ink, "bold");
-    text(doc, "Authorised Administration", left, footerY + 12, 6.8, C.muted, "normal");
-
-    var generatedDate = new Date();
-    var generatedOn =
-      String(generatedDate.getDate()).padStart(2, "0") + " " +
-      ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][generatedDate.getMonth()] +
-      " " + generatedDate.getFullYear();
-
-    text(doc, "Generated " + generatedOn, right, footerY + 7, 6.8, C.muted, "normal", { align: "right" });
-
-    var safe = name.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "Staff";
-    var fileMonth = String(month || "").slice(0, 7) || "Payroll";
-    doc.save(safe + "_" + fileMonth + "_Salary_Slip.pdf");
-  };
 })();
