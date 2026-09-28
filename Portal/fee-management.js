@@ -848,11 +848,11 @@
 
     var body = d.rows.map(function (r, i) {
       var cells = d.feeTypes.map(function (t) {
-        return '<td class="r fs-input-cell"><div class="fee-input-wrap"><span>₹</span><input class="cell" data-i="' + i + '" data-ft="' + esc(t.code) + '" type="number" min="0" step="1" value="' + (r.fees[t.code] || 0) + '" aria-label="' + esc(t.name) + ' for ' + esc(r.name) + '"/></div></td>';
+        return '<td class="r fs-input-cell"><div class="fee-input-wrap"><span>₹</span><input class="cell" data-i="' + i + '" data-sid="' + esc(r.id) + '" data-ft="' + esc(t.code) + '" type="number" min="0" step="1" value="' + (r.fees[t.code] || 0) + '" aria-label="' + esc(t.name) + ' for ' + esc(r.name) + '"/></div></td>';
       }).join("");
 
       var oc = isMigrationYear
-        ? '<td class="r fs-old-cell"><div class="fee-input-wrap old-edit"><span>₹</span><input class="cell old" data-i="' + i + '" data-ft="__OLD__" type="number" min="0" step="1" value="' + (r.oldDue || 0) + '" aria-label="Old Due for ' + esc(r.name) + '"/></div></td>'
+        ? '<td class="r fs-old-cell"><div class="fee-input-wrap old-edit"><span>₹</span><input class="cell old" data-i="' + i + '" data-sid="' + esc(r.id) + '" data-ft="__OLD__" type="number" min="0" step="1" value="' + (r.oldDue || 0) + '" aria-label="Old Due for ' + esc(r.name) + '"/></div></td>'
         : '<td class="r fs-old-cell"><div class="locked-fee"><span>' + money(r.oldDue || 0) + '</span><i class="material-icons" title="Locked after opening year">lock</i></div></td>';
 
       return '<tr class="fs-row" data-name="' + esc(String(r.name || "").toLowerCase()) + '">' +
@@ -897,7 +897,20 @@
       '</div>';
 
     Array.prototype.forEach.call($("fB").querySelectorAll(".cell"), function (inp) {
-      inp.addEventListener("input", updateTotals);
+      inp.addEventListener("input", function () {
+        var i = Number(inp.getAttribute("data-i"));
+        var ft = inp.getAttribute("data-ft");
+        var n = Number(inp.value);
+        if (!Number.isFinite(n) || n < 0) n = 0;
+
+        // Keep the in-memory sheet synchronized with the edited cell.
+        if (d.rows[i]) {
+          if (ft === "__OLD__") d.rows[i].oldDue = n;
+          else d.rows[i].fees[ft] = n;
+        }
+
+        updateTotals();
+      });
     });
 
     $("fsSearch").addEventListener("input", function () {
@@ -916,17 +929,67 @@
     var migYear = (BOOT && BOOT.migrationYear) || "2025-26";
     var isMigrationYear = d.year === migYear;
 
-    var rows = d.rows.map(function (r, i) {
+    /*
+     * Read live values by stable student ID. This avoids relying on a row
+     * index after sorting/filtering and prevents a missing selector from
+     * silently turning an amount into zero.
+     */
+    var inputs = {};
+    Array.prototype.forEach.call($("fB").querySelectorAll(".cell[data-sid][data-ft]"), function (inp) {
+      var sid = String(inp.getAttribute("data-sid") || "");
+      var ft = String(inp.getAttribute("data-ft") || "");
+      if (!sid || !ft) return;
+      inputs[sid + "|" + ft] = inp;
+    });
+
+    var rows = d.rows.map(function (r) {
       var fees = {};
+
       d.feeTypes.forEach(function (t) {
-        var inp = $("fB").querySelector('.cell[data-i="' + i + '"][data-ft="' + t.code + '"]');
-        fees[t.code] = inp ? Number(inp.value) || 0 : Number(r.fees[t.code]) || 0;
+        var inp = inputs[String(r.id) + "|" + t.code];
+
+        if (inp) {
+          var raw = String(inp.value == null ? "" : inp.value).trim();
+          var n = Number(raw);
+
+          if (raw === "") {
+            n = 0;
+          } else if (!Number.isFinite(n) || n < 0) {
+            throw new Error("Invalid amount for " + r.name + " / " + t.name + ".");
+          }
+
+          fees[t.code] = n;
+        } else {
+          // Preserve the value loaded from the server when the input is not
+          // present in the DOM. Never replace it with an implicit zero.
+          fees[t.code] = Number(r.fees[t.code]) || 0;
+        }
       });
 
-      var od = $("fB").querySelector('.cell[data-i="' + i + '"][data-ft="__OLD__"]');
-      var oldDue = isMigrationYear ? (od ? Number(od.value) || 0 : Number(r.oldDue) || 0) : (Number(r.oldDue) || 0);
+      var oldDue = Number(r.oldDue) || 0;
 
-      return { id: r.id, fees: fees, oldDue: oldDue };
+      if (isMigrationYear) {
+        var oldInput = inputs[String(r.id) + "|__OLD__"];
+
+        if (oldInput) {
+          var oldRaw = String(oldInput.value == null ? "" : oldInput.value).trim();
+          var oldN = Number(oldRaw);
+
+          if (oldRaw === "") {
+            oldN = 0;
+          } else if (!Number.isFinite(oldN) || oldN < 0) {
+            throw new Error("Invalid Old Due for " + r.name + ".");
+          }
+
+          oldDue = oldN;
+        }
+      }
+
+      return {
+        id: r.id,
+        fees: fees,
+        oldDue: oldDue
+      };
     });
 
     var b = $("fS");
@@ -936,10 +999,22 @@
     P.api("feeSaveFeeSheet", [d.year, d.className, rows, ME], { text: "Saving…" })
       .then(function (res) {
         REPORTS.totals = null;
-        toast("Saved " + (res.changed || 0) + " change(s)." + (res.errors && res.errors.length ? " " + res.errors.length + " blocked." : ""), res.errors && res.errors.length ? "err" : "ok");
+
+        var hasErrors = !!(res && res.errors && res.errors.length);
+
+        toast(
+          "Saved " + ((res && res.changed) || 0) + " change(s)." +
+          (hasErrors ? " " + res.errors.length + " blocked." : ""),
+          hasErrors ? "err" : "ok"
+        );
+
         b.disabled = false;
         b.innerHTML = '<i class="material-icons">save</i> Save Fee Sheet';
-        loadSheet();
+
+        // Keep edited values on screen when some rows were blocked.
+        if (!hasErrors) {
+          loadSheet();
+        }
       })
       .catch(function (e) {
         toast(e.message || e, "err");
