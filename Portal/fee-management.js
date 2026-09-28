@@ -1002,19 +1002,17 @@
 
         var hasErrors = !!(res && res.errors && res.errors.length);
 
-        toast(
-          "Saved " + ((res && res.changed) || 0) + " change(s)." +
-          (hasErrors ? " " + res.errors.length + " blocked." : ""),
-          hasErrors ? "err" : "ok"
-        );
+        if (hasErrors) {
+          var errMsg = res.errors.join("\n");
+          alert("Failed to save fee assignments:\n\n" + errMsg);
+          toast("Save failed: " + res.errors.length + " record(s) blocked.", "err");
+        } else {
+          toast("Saved " + ((res && res.changed) || 0) + " change(s) successfully.", "ok");
+          loadSheet();
+        }
 
         b.disabled = false;
         b.innerHTML = '<i class="material-icons">save</i> Save Fee Sheet';
-
-        // Keep edited values on screen when some rows were blocked.
-        if (!hasErrors) {
-          loadSheet();
-        }
       })
       .catch(function (e) {
         toast(e.message || e, "err");
