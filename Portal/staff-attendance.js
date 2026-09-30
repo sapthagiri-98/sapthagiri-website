@@ -307,15 +307,15 @@
           else { if (pt === "IN") $("saSingleIn").value = tm; if (pt === "OUT") $("saSingleOut").value = tm; }
         });
       }
-      toggleEditFields();
+      toggleEditFields(true);
     }).catch(function () {});
   }
 
-  function toggleEditFields() {
+  function toggleEditFields(preserveStatus) {
     var type = $("saEditType").value, punch = type === "PUNCH";
     $("saSingleFields").style.display = "none"; $("saDualFields").style.display = "none"; $("saStatusFields").style.display = punch ? "none" : "block";
     if (punch) updateEditorForUser(Number($("saEditUser").value));
-    if (type === "LEAVE") $("saEditStatus").value = "Leave";
+    if (type === "LEAVE" && !preserveStatus) $("saEditStatus").value = "Leave";
     if (type === "DUTY") $("saEditStatus").value = "Present";
   }
 
@@ -327,7 +327,7 @@
     var st = selectedStaff(), dual = st && String(st.shiftType || "").toUpperCase() === "DUAL", reason = $("saEditReason").value.trim();
     var save = function () {
       if (type !== "PUNCH") {
-        var status = type === "LEAVE" ? "Leave" : "Present";
+        var status = $("saEditStatus").value || (type === "LEAVE" ? "Leave" : "Present");
         return P.api("saveAttendanceAdjustment", [{ userId:uid, date:date, entryType:type, statusOverride:status, reason:reason }], { text:"Saving attendance correction…" });
       }
       var punches = [];
