@@ -39,6 +39,7 @@
 
   css();
   var BOOT = null, YEAR = "", SCHOOL_TOTALS_PW = "";
+  var SEARCH = { ledger: 0 };
   var L = { student: null, account: null, fin: null, stmt: null, view: "ALL", yview: "", perYear: [] };
   var PAY = { student: null, account: null, choice: "" };
   var SHEET = { data: null };
@@ -85,8 +86,18 @@
       '<div class="or"><span>or pick</span></div><div class="pick">' + selc("event", "Academic Year", '<select id="lY" class="in">' + years + '</select>') + selc("groups", "Class", '<select id="lCl" class="in"><option value="">Loading…</option></select>') + selc("person", "Student", '<select id="lSt" class="in" disabled><option value="">Pick a class…</option></select>') + '</div></div>' +
       '<div id="lB"><div class="empty"><i class="material-icons">account_balance</i>Search or pick a student to view their ledger.</div></div>';
     var t = null;
-    $("lS").addEventListener("input", function () { var v = this.value; clearTimeout(t); t = setTimeout(function () { search("lR", v, openLedger); }, 250); });
-    $("lC").onclick = function () { $("lS").value = ""; $("lR").innerHTML = ""; };
+    $("lS").addEventListener("input", function () {
+      var v = this.value;
+      clearTimeout(t);
+      var seq = ++SEARCH.ledger;
+      t = setTimeout(function () { search("lR", v, openLedger, seq); }, 250);
+    });
+    $("lC").onclick = function () {
+      SEARCH.ledger++;
+      clearTimeout(t);
+      $("lS").value = "";
+      $("lR").innerHTML = "";
+    };
     $("lY").onchange = function () { YEAR = this.value; L.yview = YEAR; classes("lCl"); };
     $("lCl").onchange = function () { students("lCl", "lSt"); };
     $("lSt").onchange = function () { if (this.value) openLedger(this.value); };
@@ -97,23 +108,51 @@
   function students(clsId, stId) { var cls = $(clsId).value, s = $(stId); if (!cls) { s.disabled = true; s.innerHTML = '<option>Pick a class…</option>'; return; } s.disabled = true; s.innerHTML = '<option>Loading…</option>'; P.api("feeGetStudents", [YEAR, cls], { overlay: false }).then(function (list) { var rows = (list || []).slice().sort(feeStudentSort); s.disabled = false; s.innerHTML = '<option value="">Select student…</option>' + rows.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + (studentIsInactive(x) ? " · " + esc(studentStatus(x)) : "") + '</option>'; }).join(""); }); }
   function search(boxId, q, onPick, seq) {
     var box = $(boxId); q = (q || "").trim();
+    var inputId = boxId === "lR" ? "lS" : (boxId === "cR" ? "cS" : null);
+
     if (!q) { box.innerHTML = ""; return; }
     if (q.length < 2) { box.innerHTML = '<div class="rem">Type at least 2 characters.</div>'; return; }
+
+    // Every search request gets a generation number. A response is allowed
+    // to update the UI only when it still belongs to the current search.
+    function isCurrentSearch() {
+      if (seq === undefined) return true;
+      var input = inputId ? $(inputId) : null;
+      return !!input && input.value.trim() === q && (boxId !== "lR" || seq === SEARCH.ledger);
+    }
+
     box.innerHTML = ld("Searching…");
     P.api("feeSearchStudents", [q], { overlay: false }).then(function (res) {
-      if (seq !== undefined && boxId === "cR") {
-        var input = $("cS"); if (input && input.value.trim() !== q) return;
-      }
+      if (!isCurrentSearch()) return;
+
       var rows = (res.rows || []).slice().sort(function (a, b) {
         return gradeWeightLocal(a.className) - gradeWeightLocal(b.className) || feeStudentSort(a, b);
       }).slice(0, 20);
       box.innerHTML = rows.length ? rows.map(function (s) { return '<div class="row" data-id="' + esc(s.id) + '"><div class="rm"><b>' + esc(s.name) + '</b><span>' + esc(s.id) + (s.className ? ' · ' + esc(s.className) : '') + (s.phone ? ' · ' + esc(s.phone) : '') + ' · ' + esc(studentStatus(s)) + '</span></div><div>' + (s.outstanding > 0 ? '<span class="due">Due ' + money(s.outstanding) + '</span>' : '<span class="ok">Clear</span>') + '</div></div>'; }).join("") : '<div class="rem">No students found.</div>';
-      Array.prototype.forEach.call(box.querySelectorAll(".row"), function (el) { el.onclick = function () { box.innerHTML = ""; onPick(el.getAttribute("data-id"), true); }; });
-    }).catch(function (e) { box.innerHTML = eb(e); });
+      Array.prototype.forEach.call(box.querySelectorAll(".row"), function (el) {
+        el.onclick = function () {
+          if (boxId === "lR") {
+            // Invalidate all pending ledger searches before loading the student.
+            SEARCH.ledger++;
+            clearTimeout(t);
+          }
+          box.innerHTML = "";
+          var selectedName = el.querySelector("b") ? el.querySelector("b").textContent : "";
+          onPick(el.getAttribute("data-id"), selectedName);
+        };
+      });
+    }).catch(function (e) {
+      if (!isCurrentSearch()) return;
+      box.innerHTML = eb(e);
+    });
   }
 
-  function openLedger(id) {
-    $("lS").value = ""; $("lB").innerHTML = mt("Loading student ledger…");
+  function openLedger(id, selectedName) {
+    // Search selection passes the selected student's name so the field does
+    // not look like an empty search is still active while the ledger loads.
+    $("lS").value = selectedName || "";
+    $("lR").innerHTML = "";
+    $("lB").innerHTML = mt("Loading student ledger…");
     P.api("feeGetStudentFinance", [id], { overlay: false }).then(function (f) {
       L.fin = f; L.student = f.student; L.account = f.account; L.stmt = null; L.view = "ALL"; L.yview = YEAR;
       renderLedger();
