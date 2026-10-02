@@ -133,7 +133,6 @@
           if (boxId === "lR") {
             // Invalidate all pending ledger searches before loading the student.
             SEARCH.ledger++;
-            clearTimeout(t);
           }
           box.innerHTML = "";
           var selectedName = el.querySelector("b") ? el.querySelector("b").textContent : "";
