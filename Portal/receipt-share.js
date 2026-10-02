@@ -640,6 +640,185 @@
 </html>`;
     },
 
+    // ---------------------------------------------------------------------
+    // A4 FEE AGREEMENT LETTER
+    // ---------------------------------------------------------------------
+    buildFeeAgreementLetterHtml: function (d) {
+      var totalFee = Number(d.totalFee) || 0;
+      var paid = Number(d.paid) || 0;
+      var remaining = Math.max(0, Number(d.remaining) || 0);
+      var issuedDate = formatDate(d.issuedDate) || formatDate(new Date().toISOString().slice(0, 10));
+      var breakdown = (d.breakdown || []).map(function (item) {
+        return {
+          label: item.label || "Fee",
+          agreed: Number(item.agreed) || 0,
+          paid: Number(item.paid) || 0,
+          remaining: Math.max(0, Number(item.remaining) || 0)
+        };
+      });
+
+      var breakdownRows = breakdown.map(function (item) {
+        return '<tr>' +
+          '<td>' + esc(item.label) + '</td>' +
+          '<td class="money">₹ ' + formatInr(item.agreed) + '</td>' +
+          '<td class="money">₹ ' + formatInr(item.paid) + '</td>' +
+          '<td class="money' + (item.remaining > 0 ? ' balance' : '') + '">₹ ' + formatInr(item.remaining) + '</td>' +
+        '</tr>';
+      }).join("");
+
+      return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Fee Payment Agreement - ${esc(d.studentName || "Student")}</title>
+  <style>
+    @page { size: A4; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; margin: 0; padding: 0; background: #fff; }
+    .agreement-card { border: 2px solid #8a1618; padding: 15px 19px; max-width: 780px; margin: 0 auto; }
+
+    .hdr-logo-container { text-align: center; margin-bottom: 7px; border-bottom: 1.5px solid #8a1618; padding-bottom: 7px; }
+    .hdr-logo-img { width: 100%; height: auto; max-height: none; object-fit: contain; display: block; margin: 0 auto; }
+
+    .doc-title { color: #8a1618; font-size: 13px; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: 1px; margin: 9px 0 3px; }
+    .doc-subtitle { text-align: center; color: #64748b; font-size: 10px; margin: 0 0 12px; }
+
+    .meta-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    .meta-table td { border: 1px solid #b1b9c5; padding: 6px 9px; font-size: 11.5px; }
+    .meta-table td.lbl { background: #f8fafc; font-weight: 700; color: #334155; width: 18%; }
+    .meta-table td.val { font-weight: 700; color: #0f172a; width: 32%; }
+
+    .section-title { font-size: 11.5px; font-weight: 800; color: #8a1618; text-transform: uppercase; margin: 12px 0 5px; letter-spacing: .5px; border-bottom: 1px solid #8a1618; padding-bottom: 3px; }
+
+    .breakdown-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .breakdown-table th, .breakdown-table td { border: 1px solid #b1b9c5; padding: 7px 9px; font-size: 11px; }
+    .breakdown-table th { background: #f8fafc; color: #475569; text-align: left; font-weight: 700; }
+    .breakdown-table th.money, .breakdown-table td.money { text-align: right; white-space: nowrap; }
+    .breakdown-table td { font-weight: 600; }
+    .breakdown-table td.balance { color: #8a1618; font-weight: 800; }
+    .breakdown-table tr.total-row td { background: #fff1f2; color: #8a1618; font-weight: 800; border-top: 1.5px solid #8a1618; }
+
+    .payable-box { border: 1px solid #fecdd3; padding: 9px 12px; border-radius: 4px; background: #fff1f2; margin: 9px 0 11px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .payable-label { font-size: 10px; font-weight: 800; color: #8a1618; text-transform: uppercase; letter-spacing: .65px; }
+    .payable-note { font-size: 9.5px; color: #64748b; margin-top: 2px; }
+    .payable-amount { font-size: 20px; font-weight: 900; color: #8a1618; white-space: nowrap; }
+
+    .commitment-text { font-size: 11.5px; line-height: 1.55; color: #334155; margin: 0 0 8px; text-align: justify; }
+    .commitment-text b { color: #8a1618; }
+
+    .declaration-box { border: 1px solid #d6dbe2; border-left: 3px solid #8a1618; padding: 9px 11px; margin-top: 8px; background: #fafafa; }
+    .declaration-box p { margin: 0; font-size: 11.2px; line-height: 1.6; color: #334155; }
+    .declaration-te { margin-top: 6px !important; font-family: 'Noto Sans Telugu', 'Segoe UI', Arial, sans-serif; }
+
+    .signature-area { margin-top: 20px; }
+    .signature-table { width: 100%; border-collapse: collapse; }
+    .signature-table td { width: 50%; vertical-align: bottom; padding: 0 18px 0 0; }
+    .sig-space { height: 54px; border-bottom: 1px solid #334155; margin-bottom: 5px; }
+    .sig-caption { font-size: 10.5px; font-weight: 700; color: #334155; }
+    .sig-sub { font-size: 9.5px; color: #64748b; margin-top: 2px; }
+    .issue-line { margin-top: 9px; font-size: 9.5px; color: #64748b; }
+
+    .ftr-note { font-size: 9px; color: #64748b; font-style: italic; text-align: center; margin-top: 14px; border-top: 1px dashed #cbd5e1; padding-top: 7px; line-height: 1.35; }
+  </style>
+</head>
+<body>
+  <div class="agreement-card">
+    <div class="hdr-logo-container">
+      <img src="receipt-header-logo.png" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.style.display='none';"/>
+    </div>
+
+    <div class="doc-title">FEE PAYMENT AGREEMENT &amp; UNDERTAKING</div>
+    <div class="doc-subtitle">Academic fee record and parent / guardian payment commitment</div>
+
+    <table class="meta-table">
+      <tr>
+        <td class="lbl">Student Name</td>
+        <td class="val">${esc(d.studentName || "—")}</td>
+        <td class="lbl">Student ID</td>
+        <td class="val">${esc(d.studentId || "—")}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Class</td>
+        <td class="val">${esc(d.className || "—")}</td>
+        <td class="lbl">Academic Year</td>
+        <td class="val">${esc(d.academicYear || "—")}</td>
+      </tr>
+    </table>
+
+    <div class="section-title">Agreed Fee Breakdown</div>
+    <table class="breakdown-table">
+      <thead>
+        <tr>
+          <th>Fee Head</th>
+          <th class="money">Agreed (₹)</th>
+          <th class="money">Paid (₹)</th>
+          <th class="money">Remaining (₹)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${breakdownRows || '<tr><td colspan="4">No fee breakdown is available for this academic year.</td></tr>'}
+        <tr class="total-row">
+          <td>Total</td>
+          <td class="money">₹ ${formatInr(totalFee)}</td>
+          <td class="money">₹ ${formatInr(paid)}</td>
+          <td class="money">₹ ${formatInr(remaining)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="payable-box">
+      <div>
+        <div class="payable-label">Outstanding Amount Payable</div>
+        <div class="payable-note">Balance recorded in the school fee ledger as on ${esc(issuedDate)}.</div>
+      </div>
+      <div class="payable-amount">₹ ${formatInr(remaining)}</div>
+    </div>
+
+    <div class="section-title">Payment Commitment</div>
+    <p class="commitment-text">
+      The parent / guardian acknowledges the fee arrangement shown above for <b>${esc(d.studentName || "the student")}</b> for the academic year <b>${esc(d.academicYear || "the academic year")}</b> and agrees to clear the outstanding balance of <b>₹ ${formatInr(remaining)}</b> in full on or before the end of the academic year. Any subsequent payment or approved adjustment will be recorded in the student's fee ledger.
+    </p>
+
+    <div class="declaration-box">
+      <p><b>Declaration:</b> I / We confirm that the fee stated above is the final and mutually agreed fee for the academic year, and we shall not seek any further discount, reduction or waiver. We undertake to clear the outstanding amount within the agreed period and before leaving or transferring the student from the school. We shall maintain respectful and lawful conduct and shall not engage in fraud, threats, harassment or undue pressure in connection with the school or fee settlement.</p>
+      <p class="declaration-te">పై పేర్కొన్న ఫీజు వివరాలు మరియు మొత్తం పరస్పర అంగీకారంతో నిర్ణయించబడిన తుది ఫీజుగా మేము అంగీకరిస్తున్నాము. అంగీకరించిన ఫీజుపై ఇకపై అదనపు రాయితీ, తగ్గింపు, మాఫీ లేదా మార్పు కోరము. విద్యార్థి ఫీజు బకాయిని విద్యా సంవత్సరం ముగిసేలోపు లేదా విద్యార్థి పాఠశాలను విడిచిపెట్టే / బదిలీ అయ్యే ముందు, వర్తించే సందర్భంలో, పూర్తిగా చెల్లించడానికి మేము అంగీకరిస్తున్నాము. పాఠశాల యాజమాన్యం మరియు సిబ్బందితో ఎటువంటి మోసం, తప్పుడు సమాచారం, బెదిరింపు, వేధింపు, అనుచిత ఒత్తిడి లేదా అసభ్యకరమైన ప్రవర్తనకు పాల్పడము. పై నిబంధనలను పూర్తిగా చదివి, అర్థం చేసుకుని, స్వచ్ఛందంగా అంగీకరిస్తున్నాము.</p>
+    </div>
+
+    <div class="signature-area">
+      <table class="signature-table">
+        <tr>
+          <td>
+            <div class="sig-space"></div>
+            <div class="sig-caption">Parent / Guardian Signature</div>
+            <div class="sig-sub">Name: __________________________________</div>
+          </td>
+          <td>
+            <div class="sig-space"></div>
+            <div class="sig-caption">Authorised School Representative</div>
+            <div class="sig-sub">Name / Designation: _____________________</div>
+          </td>
+        </tr>
+      </table>
+      <div class="issue-line">Date of Issue: ${esc(issuedDate)}</div>
+    </div>
+
+    <div class="ftr-note">
+      This is a computer generated fee agreement prepared from the student's fee ledger. The amounts shown reflect the ledger data available on the date of issue.
+    </div>
+  </div>
+</body>
+</html>`;
+    },
+
+    printFeeAgreementLetter: function (agreementData) {
+      var win = window.open("", "_blank");
+      if (!win) return alert("Please allow pop-ups to print the fee agreement letter.");
+      win.document.write(this.buildFeeAgreementLetterHtml(agreementData));
+      win.document.close();
+      win.focus();
+      setTimeout(function () { win.print(); }, 300);
+    },
+
     shareAuditLedger: function (auditData) {
       var win = window.open("", "_blank");
       if (!win) return alert("Please allow pop-ups to print ledger.");
