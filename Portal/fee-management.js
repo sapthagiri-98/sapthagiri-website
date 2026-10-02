@@ -167,12 +167,13 @@
       '<div class="tots" id="lTot" style="margin-top:12px"></div>' +
       '<div class="actbar">' +
       selc("event", "Academic Year", '<select id="lYr" class="in">' + yearOptions() + '</select>') +
-      '<div class="acts"><button class="btn btn-outline btn-sm" id="pFullLg"><i class="material-icons">history_edu</i> Print Full Audit Ledger</button><button class="btn btn-maroon btn-sm" id="cP"><i class="material-icons">point_of_sale</i> Collect</button></div>' +
+      '<div class="acts"><button class="btn btn-outline btn-sm" id="pFullLg"><i class="material-icons">history_edu</i> Print Full Audit Ledger</button><button class="btn btn-outline btn-sm" id="pFeeAgreement"><i class="material-icons">description</i> Print Fee Agreement</button><button class="btn btn-maroon btn-sm" id="cP"><i class="material-icons">point_of_sale</i> Collect</button></div>' +
       '</div><div id="lD"></div>';
 
     $("lYr").value = L.yview;
     $("lYr").onchange = function () { L.yview = this.value; refresh(); };
     $("pFullLg").onclick = triggerFullAuditPrint;
+    $("pFeeAgreement").onclick = triggerFeeAgreementPrint;
     $("cP").onclick = function () { sw("collect"); setTimeout(function () { collectOpen(s.id); }, 40); };
     refresh();
   }
@@ -438,6 +439,48 @@
         ReceiptShare.shareAuditLedger(auditData);
       })
       .catch(function (e) { toast(e.message || e, "err"); });
+  }
+
+  function triggerFeeAgreementPrint() {
+    if (!L.student) return toast("Select a student first.", "err");
+
+    ensureStmt(function () {
+      var year = L.yview || YEAR;
+      var yearData = (L.stmt.perYear || []).find(function (y) { return y.year === year; });
+
+      if (!yearData) {
+        return toast("No fee data found for " + year + ".", "err");
+      }
+
+      var totalFee = Number(yearData.charged) || 0;
+      var paid = Number(yearData.collected) || 0;
+      var remaining = Math.max(0, Number(yearData.balance) || 0);
+      var s = L.student || {};
+      var a = L.account || {};
+
+      var breakdown = (yearData.charges || []).map(function (c) {
+        return {
+          label: c.label || c.code || "Fee",
+          agreed: Number(c.assigned) || 0,
+          paid: Number(c.paid) || 0,
+          remaining: Math.max(0, Number(c.balance) || 0)
+        };
+      }).filter(function (c) {
+        return c.agreed > 0 || c.paid > 0 || c.remaining > 0;
+      });
+
+      ReceiptShare.printFeeAgreementLetter({
+        studentName: s.name,
+        studentId: s.id,
+        className: a.className || yearData.className || "—",
+        academicYear: year,
+        totalFee: totalFee,
+        paid: paid,
+        remaining: remaining,
+        breakdown: breakdown,
+        issuedDate: new Date().toISOString().slice(0, 10)
+      });
+    });
   }
 
   function withReceipt(rid, year, cb) { P.api("feeGetReceipt", [rid, year], { text: "Preparing receipt…" }).then(cb).catch(function (e) { toast(e.message || e, "err"); }); }
