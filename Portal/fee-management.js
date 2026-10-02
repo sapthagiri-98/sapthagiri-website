@@ -88,7 +88,6 @@
     var t = null;
     $("lS").addEventListener("input", function () {
       var v = this.value;
-      clearTimeout(t);
       var seq = ++SEARCH.ledger;
       t = setTimeout(function () { search("lR", v, openLedger, seq); }, 250);
     });
