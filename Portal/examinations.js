@@ -446,7 +446,13 @@
       if (t === "schedule") initSchedule();
       else if (t === "marks" && !st.marksMounted) { st.marksMounted = true; $("exPaneMarks").innerHTML = ""; mountAdminMarks("exPaneMarks", me); }
       else if (t === "locks") initLocks();
-      else if (t === "reports" && !$("exPaneReports").innerHTML) initReports();
+      else if (t === "reports") {
+        /* Always rebuild Reports when the tab is opened. Marks can be entered
+           from another tab/session, so keeping the old report DOM/data here
+           can make the tabulation look stale until the user manually reloads. */
+        $("exPaneReports").innerHTML = "";
+        initReports();
+      }
       else if (t === "holistic" && !st.holisticMounted) { st.holisticMounted = true; initAdminHolistic(); }
     }
 
@@ -1157,7 +1163,11 @@
           esc(((d.holisticParams || [])[2] || {}).parameter || 'Assembly & Spoken Skills');
       }
       var hp = d.holisticParams || [];
-      return '<b>Academic :</b> 1 - Class Test 1, 2 - Class Test 2, 3 - Home Assignment, 4 - Unit Test; ' +
+      var c1 = String((d.colLabels || {}).CT1 || "Class Test 1").match(/Test\s*(\d+)/i);
+      var c2 = String((d.colLabels || {}).CT2 || "Class Test 2").match(/Test\s*(\d+)/i);
+      var ct1 = c1 ? "Class Test " + c1[1] : "Class Test 1";
+      var ct2 = c2 ? "Class Test " + c2[1] : "Class Test 2";
+      return '<b>Academic :</b> 1 - ' + esc(ct1) + ', 2 - ' + esc(ct2) + ', 3 - Home Assignment, 4 - Unit Test; ' +
         '<b>Holistic :</b> 1 - ' + esc((hp[0] || {}).parameter || 'Attendance & Punctuality') +
         ', 2 - ' + esc((hp[1] || {}).parameter || 'Extra & Co-curriculars') +
         ', 3 - ' + esc((hp[2] || {}).parameter || 'Assembly & Spoken Skills');
