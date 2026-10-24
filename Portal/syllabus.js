@@ -175,30 +175,47 @@
   }
 
   function setManualState(btn, cls, subject) {
-    var seg = btn.parentNode, key = seg.getAttribute("data-key"), idx = seg.getAttribute("data-idx");
-    var state = btn.getAttribute("data-state");
-    // visual
-    Array.prototype.forEach.call(seg.querySelectorAll("button"), function (b) { b.classList.remove("on-pending", "on-active", "on-done"); });
-    btn.classList.add(state === "TRUE" ? "on-done" : (state === "IN_PROGRESS" ? "on-active" : "on-pending"));
-    var pct = state === "TRUE" ? 100 : (state === "IN_PROGRESS" ? 50 : 0);
-    var pcolor = pct === 100 ? "var(--success)" : (pct > 0 ? "var(--warning)" : "#cbd5e1");
-    var card = $("sylcard-" + idx);
-    if (card) {
-      var fill = card.querySelector(".syl-prog-fill"), lbl = card.querySelector(".syl-prog-lbl");
-      if (fill) { fill.style.width = pct + "%"; fill.style.background = pcolor; }
-      if (lbl) { lbl.textContent = pct + "%"; lbl.style.color = pcolor; }
-      card.classList.remove("done", "active", "pending");
-      card.classList.add(pct === 100 ? "done" : (pct > 0 ? "active" : "pending"));
-    }
-    // keep cache in sync
-    var ck = cls + "||" + subject, cat = catalogCache[ck];
-    if (cat && cat[idx]) cat[idx].currentState = state;
-    // silent save (no overlay)
-    var checked = state === "TRUE" ? true : (state === "IN_PROGRESS" ? "IN_PROGRESS" : false);
-    P.api("saveTaskProgress", [key, checked, me, "Status: " + state], { overlay: false }).catch(function (e) { console.warn("save failed", e); });
-  }
+    var seg = btn.parentNode, key = seg.getAttribute("data-key"), idx = seg.getAttribute("data-idx");
+    var requestedState = btn.getAttribute("data-state");
+    var ck = cls + "||" + subject, cat = catalogCache[ck];
+    var previousState = (cat && cat[idx] && cat[idx].currentState) || "FALSE";
+    var card = $("sylcard-" + idx);
 
-  /* ---------------- sessions drilldown (AstraGen) ---------------- */
+    function paintState(state) {
+      Array.prototype.forEach.call(seg.querySelectorAll("button"), function (b) {
+        b.classList.remove("on-pending", "on-active", "on-done");
+        if (b.getAttribute("data-state") === state) {
+          b.classList.add(state === "TRUE" ? "on-done" : (state === "IN_PROGRESS" ? "on-active" : "on-pending"));
+        }
+      });
+      var pct = state === "TRUE" ? 100 : (state === "IN_PROGRESS" ? 50 : 0);
+      var pcolor = pct === 100 ? "var(--success)" : (pct > 0 ? "var(--warning)" : "#cbd5e1");
+      if (card) {
+        var fill = card.querySelector(".syl-prog-fill"), lbl = card.querySelector(".syl-prog-lbl");
+        if (fill) { fill.style.width = pct + "%"; fill.style.background = pcolor; }
+        if (lbl) { lbl.textContent = pct + "%"; lbl.style.color = pcolor; }
+        card.classList.remove("done", "active", "pending");
+        card.classList.add(pct === 100 ? "done" : (pct > 0 ? "active" : "pending"));
+      }
+      if (cat && cat[idx]) cat[idx].currentState = state;
+    }
+
+    // Show the requested state immediately, but roll it back if persistence fails.
+    // Previously failures were logged only to the console, leaving a false Done state.
+    paintState(requestedState);
+    Array.prototype.forEach.call(seg.querySelectorAll("button"), function (b) { b.disabled = true; });
+    var checked = requestedState === "TRUE" ? true : (requestedState === "IN_PROGRESS" ? "IN_PROGRESS" : false);
+    P.api("saveTaskProgress", [key, checked, me, "Status: " + requestedState], { overlay: false })
+      .catch(function (e) {
+        paintState(previousState);
+        alert("Could not save this lesson status. The previous status has been restored.\n\n" + (e && e.message ? e.message : e));
+      })
+      .finally(function () {
+        if (seg && seg.isConnected) Array.prototype.forEach.call(seg.querySelectorAll("button"), function (b) { b.disabled = false; });
+      });
+  }
+
+  /* ---------------- sessions drilldown (AstraGen) ---------------- */
   var curLesson = null, curSessions = {};
   function openSessions(cls, subject, lessonName) {
     curLesson = { grade: cls, subject: subject, lesson: lessonName };
