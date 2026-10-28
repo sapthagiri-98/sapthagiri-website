@@ -155,6 +155,10 @@ window.PORTAL_CONFIG = {
     "regenerateTeluguForTask",
     "getManagementLessonTasks",
     "getSessionDetailedExplanation",
+    "getSyllabusEditorData",
+     "saveSyllabusLesson",
+     "deleteSyllabusLesson",
+     "reorderSyllabusLessons",
     "getManagementTimelineAuditReport"
   ],
 
