@@ -622,6 +622,10 @@
   // switching between classes or the Manual/AstraGen tabs.
   var syllabusEditorPendingValues = Object.create(null);
   var syllabusEditorPendingDeletes = Object.create(null);
+  // Manual row order is staged per class/subject and persisted with the same
+  // class-level Update action. IDs include temporary draft keys until saved.
+  var syllabusEditorPendingOrder = Object.create(null);
+  var syllabusEditorOrderDirty = Object.create(null);
   var syllabusEditorSaving = false;
 
   function openSyllabusEditor() {
@@ -697,6 +701,7 @@
     var m = String(value == null ? "" : value).trim().match(/\d+(?:\.\d+)?/);
     return m ? Number(m[0]) : NaN;
   }
+  // Preserve the existing AstraGen ordering by lesson number.
   function editorLessonSort(a, b) {
     var an = lessonNumberValue(a.lesson_no), bn = lessonNumberValue(b.lesson_no);
     if (isFinite(an) && isFinite(bn) && an !== bn) return an - bn;
@@ -705,6 +710,35 @@
     if (!isFinite(as)) as = 999999999;
     if (!isFinite(bs)) bs = 999999999;
     return as - bs || String(a.name || "").localeCompare(String(b.name || ""));
+  }
+  // Manual rows use the persisted sort_order because the teacher tracker uses
+  // that exact order before grouping lessons by target month.
+  function editorManualBaseSort(a, b) {
+    var ad = !!(a && a._draftKey), bd = !!(b && b._draftKey);
+    if (ad !== bd) return ad ? 1 : -1;
+    var as = Number(a && a.sort_order), bs = Number(b && b.sort_order);
+    if (!isFinite(as)) as = 999999999;
+    if (!isFinite(bs)) bs = 999999999;
+    if (as !== bs) return as - bs;
+    var an = lessonNumberValue(a && a.lesson_no), bn = lessonNumberValue(b && b.lesson_no);
+    if (isFinite(an) && isFinite(bn) && an !== bn) return an - bn;
+    if (isFinite(an) !== isFinite(bn)) return isFinite(an) ? -1 : 1;
+    return String(a && a.name || "").localeCompare(String(b && b.name || ""));
+  }
+  function editorManualRowsInDisplayOrder(pair, rows) {
+    var key = editorPairKey(pair), requested = syllabusEditorPendingOrder[key];
+    if (!requested || !requested.length) return rows.slice().sort(editorManualBaseSort);
+    var byId = Object.create(null), out = [];
+    rows.forEach(function (row) { byId[String(row._draftKey || row.id)] = row; });
+    requested.forEach(function (id) {
+      var row = byId[String(id)];
+      if (row) { out.push(row); delete byId[String(id)]; }
+    });
+    rows.forEach(function (row) {
+      var id = String(row._draftKey || row.id);
+      if (byId[id]) { out.push(row); delete byId[id]; }
+    });
+    return out;
   }
   function currentEditorPair() {
     var i = $("sylEditorPair") ? Number($("sylEditorPair").value) : -1;
@@ -763,7 +797,7 @@
       return editorPairPendingDeletes(pair).indexOf(String(l.id)) < 0;
     });
     if (syllabusEditorMode === "Manual") rows = rows.concat(syllabusEditorDrafts.filter(function (d) { return d._pairKey === editorPairKey(pair); }));
-    syllabusEditorRows = rows.slice().sort(editorLessonSort);
+    syllabusEditorRows = syllabusEditorMode === "Manual" ? editorManualRowsInDisplayOrder(pair, rows) : rows.slice().sort(editorLessonSort);
     $("sylEditorCount").textContent = rows.length + (rows.length === 1 ? " row" : " rows");
     $("sylEditorAdd").innerHTML = '<i class="material-icons">add</i> ' + (syllabusEditorMode === "AstraGen" ? "Add AstraGen plan" : "Add lesson row");
     $("sylEditorAdd").style.display = "";
@@ -787,7 +821,7 @@
     syllabusEditorSaving = !!disabled;
     var modal = $("sylEditorModal");
     if (!modal) return;
-    Array.prototype.forEach.call(modal.querySelectorAll(".syl-cell-input, #sylEditorPair, #sylEditorAdd, #sylEditorBulkSave, .syl-editor-mode, .syl-row-remove"), function (el) {
+    Array.prototype.forEach.call(modal.querySelectorAll(".syl-cell-input, #sylEditorPair, #sylEditorAdd, #sylEditorBulkSave, .syl-editor-mode, .syl-row-remove, .syl-ed-drag-handle"), function (el) {
       el.disabled = !!disabled;
     });
     var save = $("sylEditorBulkSave");
@@ -797,22 +831,24 @@
     var drafts = syllabusEditorDrafts.filter(function (d) { return d._pairKey === editorPairKey(pair); });
     var stagedDeleteIds = editorPairPendingDeletes(pair);
     var visibleSavedRows = savedRows.filter(function (l) { return stagedDeleteIds.indexOf(String(l.id)) < 0; });
-    var rows = visibleSavedRows.concat(drafts).slice().sort(editorLessonSort);
+    var rows = editorManualRowsInDisplayOrder(pair, visibleSavedRows.concat(drafts));
     var missing = editorMissingNumbers(visibleSavedRows);
+    var dragHint = '<div class="syl-editor-note">Drag a lesson using the grip at the start of its row to change its order within the target-month section of the syllabus tracker. Change <b>Target Month</b> to move it to another month. Click <b>Update class syllabus</b> to save.</div>';
     var alertHtml = missing.length
       ? '<div class="syl-editor-gap"><i class="material-icons">info</i><span>Lesson numbers not present between 1 and ' + Math.max.apply(Math, visibleSavedRows.map(function (l) { return lessonNumberValue(l.lesson_no); }).filter(isFinite)) + ': <b>' + esc(missing.join(", ")) + '</b>. Add a row for any missing chapter you need.</span></div>'
-      : '<div class="syl-editor-note">Edit the lesson number to change the chapter sequence. All changes remain here until you click <b>Update class syllabus</b>.</div>';
+      : '';
     var pendingDeleteCount = editorPairPendingDeletes(pair).length;
     var deleteNote = pendingDeleteCount ? '<div class="syl-editor-gap"><i class="material-icons">delete_outline</i><span>' + pendingDeleteCount + ' lesson ' + (pendingDeleteCount === 1 ? 'row is' : 'rows are') + ' marked for removal. The removal will be applied with the class update.</span></div>' : '';
     if (!rows.length) {
       $("sylEditorList").innerHTML = alertHtml + deleteNote + '<div class="syl-empty"><i class="material-icons">menu_book</i>No manual lessons are listed for ' + esc(pair.grade) + ' · ' + esc(pair.subject) + '. Use <b>Add lesson row</b> to create the first chapter.</div>';
       return;
     }
-    var html = alertHtml + deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-no">Lesson No.</th><th>Lesson name</th><th class="syl-col-month">Target month</th><th class="syl-col-link">PDF / resource link (optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
+    var html = dragHint + alertHtml + deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-drag" title="Drag to reorder">Move</th><th class="syl-col-no">Lesson No.</th><th>Lesson name</th><th class="syl-col-month">Target month</th><th class="syl-col-link">PDF / resource link (optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
     rows.forEach(function (l) {
       var isDraft = !!l._draftKey;
       var id = isDraft ? l._draftKey : String(l.id);
       html += '<tr data-editor-row="' + esc(id) + '" data-editor-draft="' + (isDraft ? "1" : "0") + '" data-class="' + esc(l.class || "") + '" data-subject="' + esc(l.subject || "") + '" data-strand="' + esc(l.strand_subject || "") + '">' +
+        '<td class="syl-col-drag"><button type="button" class="syl-ed-drag-handle" draggable="true" aria-label="Drag to reorder lesson" title="Drag to reorder"><i class="material-icons">drag_indicator</i></button></td>' +
         '<td><input class="syl-cell-input syl-cell-number" data-field="lesson_no" value="' + esc(editorManualValue(pair, l, "lesson_no")) + '" placeholder="1" inputmode="numeric"></td>' +
         '<td><input class="syl-cell-input syl-cell-title" data-field="name" value="' + esc(editorManualValue(pair, l, "name")) + '" placeholder="Enter chapter name"></td>' +
         '<td><select class="syl-cell-input" data-field="target_month">' + editorMonthOptions(editorManualValue(pair, l, "target_month")) + '</select></td>' +
@@ -834,6 +870,49 @@
     });
     Array.prototype.forEach.call($("sylEditorList").querySelectorAll("[data-editor-delete]"), function (b) {
       b.onclick = function () { removeEditorRow(b.getAttribute("data-editor-delete")); };
+    });
+    bindManualEditorDrag(pair);
+  }
+  function bindManualEditorDrag(pair) {
+    var list = $("sylEditorList"), tbody = list && list.querySelector(".syl-manual-table tbody");
+    if (!tbody) return;
+    var draggedRow = null;
+    tbody.addEventListener("dragstart", function (event) {
+      var handle = event.target && event.target.closest ? event.target.closest(".syl-ed-drag-handle") : null;
+      var row = event.target && event.target.closest ? event.target.closest("tr[data-editor-row]") : null;
+      if (!handle || !row || syllabusEditorSaving) { event.preventDefault(); return; }
+      draggedRow = row;
+      row.classList.add("syl-row-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", row.getAttribute("data-editor-row") || "");
+      }
+    });
+    tbody.addEventListener("dragover", function (event) {
+      if (!draggedRow) return;
+      var target = event.target && event.target.closest ? event.target.closest("tr[data-editor-row]") : null;
+      if (!target || target === draggedRow || target.parentNode !== tbody) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      var rect = target.getBoundingClientRect();
+      var after = event.clientY > rect.top + rect.height / 2;
+      var reference = after ? target.nextSibling : target;
+      if (reference !== draggedRow) tbody.insertBefore(draggedRow, reference);
+    });
+    tbody.addEventListener("drop", function (event) {
+      if (!draggedRow) return;
+      event.preventDefault();
+      var order = Array.prototype.map.call(tbody.querySelectorAll("tr[data-editor-row]"), function (row) {
+        return row.getAttribute("data-editor-row");
+      });
+      var key = editorPairKey(pair);
+      syllabusEditorPendingOrder[key] = order;
+      syllabusEditorOrderDirty[key] = true;
+      editorStatus("Lesson order changed. Click Update class syllabus to save the new order.", false);
+    });
+    tbody.addEventListener("dragend", function () {
+      if (draggedRow) draggedRow.classList.remove("syl-row-dragging");
+      draggedRow = null;
     });
   }
   function renderAstraGenEditorTable(rows) {
@@ -921,7 +1000,11 @@
     if (validationError) return editorStatus(validationError, true);
     if (invalidDuplicate) return editorStatus("Two lessons have the same lesson number. Give each chapter a unique number before updating.", true);
     var deletions = editorPairPendingDeletes(pair).slice();
-    if (!changes.length && !deletions.length) return editorStatus("There are no unsaved changes for this class and subject.", false);
+    var orderChanged = !!syllabusEditorOrderDirty[pairKey];
+    if (!changes.length && !deletions.length && !orderChanged) return editorStatus("There are no unsaved changes for this class and subject.", false);
+    // Any catalog mutation also persists the currently displayed row order.
+    // Keep this dirty until reorder succeeds so a failed request can be retried.
+    if (changes.length || deletions.length) syllabusEditorOrderDirty[pairKey] = true;
 
     editorSetSaving(true);
     var saved = 0, removed = 0;
@@ -967,13 +1050,30 @@
         return deleteNext(index + 1);
       });
     }
-    saveNext(0).then(deleteNext.bind(null, 0)).then(function () {
+    function persistCurrentRowOrder() {
+      var table = $("sylEditorList");
+      var ids = table ? Array.prototype.map.call(table.querySelectorAll("tbody tr[data-editor-row]"), function (tr) {
+        return Number(tr.getAttribute("data-editor-row"));
+      }).filter(function (id) { return Number.isInteger(id) && id > 0; }) : [];
+      if (!ids.length) return Promise.resolve({ success: true, count: 0 });
+      return P.api("reorderSyllabusLessons", [ids], { overlay: false }).then(function (res) {
+        if (!res || !res.success) throw new Error((res && res.error) || "The lesson rows were saved, but their display order could not be updated.");
+        ids.forEach(function (id, index) {
+          var lesson = findEditorLesson(id);
+          if (lesson) lesson.sort_order = (index + 1) * 10;
+        });
+        return res;
+      });
+    }
+    saveNext(0).then(deleteNext.bind(null, 0)).then(persistCurrentRowOrder).then(function () {
       syllabusEditorPendingDeletes[pairKey] = [];
+      delete syllabusEditorPendingOrder[pairKey];
+      syllabusEditorOrderDirty[pairKey] = false;
       Object.keys(syllabusEditorPendingValues).forEach(function (key) {
         if (key.indexOf(pairKey + "::") === 0) delete syllabusEditorPendingValues[key];
       });
       editorSetSaving(false);
-      editorStatus("Class syllabus updated successfully. " + saved + " row change" + (saved === 1 ? "" : "s") + " saved and " + removed + " row" + (removed === 1 ? "" : "s") + " removed.", false);
+      editorStatus("Class syllabus updated successfully. " + saved + " row change" + (saved === 1 ? "" : "s") + " saved, " + removed + " row" + (removed === 1 ? "" : "s") + " removed and lesson order updated.", false);
       reloadEditorData(true);
     }).catch(function (e) {
       editorSetSaving(false);
@@ -1295,6 +1395,7 @@
       ".syl-editor-list{max-height:58vh;min-height:120px;overflow:auto;border:1px solid var(--border);border-radius:11px;background:#fff}" +
       ".syl-editor-table-wrap{overflow:auto}.syl-editor-table{width:100%;min-width:960px;border-collapse:separate;border-spacing:0;font-size:12px}.syl-editor-table th{position:sticky;top:0;z-index:2;background:#f3f5f8;color:#566174;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.45px;padding:12px;border-bottom:1px solid var(--border);white-space:nowrap}.syl-editor-table td{padding:8px 10px;border-bottom:1px solid #edf0f4;vertical-align:middle}.syl-editor-table tbody tr:hover{background:#fbfcfe}.syl-editor-table tbody tr:last-child td{border-bottom:0}" +
       ".syl-manual-table .syl-col-no{width:105px}.syl-manual-table .syl-col-month{width:150px}.syl-manual-table .syl-col-link{width:240px}.syl-manual-table .syl-col-actions{width:150px}" +
+      ".syl-col-drag{width:44px;text-align:center}.syl-ed-drag-handle{display:inline-grid;place-items:center;width:32px;height:34px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#64748b;cursor:grab;padding:0;touch-action:none}.syl-ed-drag-handle:hover{background:#f1f5f9;color:var(--maroon);border-color:#cbd5e1}.syl-ed-drag-handle:active{cursor:grabbing}.syl-ed-drag-handle i{font-size:20px}.syl-manual-table tbody tr.syl-row-dragging{opacity:.42;background:#fff7ed}.syl-manual-table tbody tr.syl-row-dragging td{border-top:2px dashed var(--maroon)}" +
       ".syl-cell-input{display:block;box-sizing:border-box;width:100%;min-width:0;min-height:38px;padding:8px 9px;border:1px solid #d7dee8;border-radius:7px;background:#fff;color:var(--text-main);font:600 13px var(--font,Arial,sans-serif);outline:none}" +
       ".syl-cell-input:focus{border-color:var(--maroon);box-shadow:0 0 0 3px rgba(128,29,39,.08)}.syl-cell-number{text-align:center;font-weight:800}.syl-cell-title{min-width:260px}" +
       ".syl-row-actions{display:flex;align-items:center;gap:7px;white-space:nowrap}.syl-row-remove{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:86px;height:34px;padding:6px 9px!important;color:#b91c1c!important;border-color:#fecaca!important}.syl-row-remove i{font-size:17px}" +
