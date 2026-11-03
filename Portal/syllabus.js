@@ -617,13 +617,18 @@
   var syllabusEditorMode = "Manual";
   var syllabusEditorDrafts = [];
   var syllabusEditorDraftSeq = 0;
+  // Manual syllabus edits stay in the editor until the class-level save is pressed.
+  // Keys are <class-subject-pair>::<row-id>; this also preserves edits while
+  // switching between classes or the Manual/AstraGen tabs.
+  var syllabusEditorPendingValues = Object.create(null);
+  var syllabusEditorPendingDeletes = Object.create(null);
+  var syllabusEditorSaving = false;
 
   function openSyllabusEditor() {
     P.openModal("sylEditorModal");
     $("sylEditorList").innerHTML = '<div class="inline-loader"><i class="material-icons">sync</i>Loading syllabus rows…</div>';
     $("sylEditorStatus").textContent = "";
     $("sylEditorFormHost").innerHTML = "";
-    syllabusEditorDrafts = [];
     P.api("getSyllabusEditorData", [], { text: "Loading syllabus catalog…" }).then(function (data) {
       syllabusEditorData = data || { lessons: [], classSubjects: [] };
       syllabusEditorPairs = (syllabusEditorData.classSubjects || []).slice().sort(function (a, b) {
@@ -638,7 +643,6 @@
         return '<option value="' + i + '">' + esc(p.grade) + ' · ' + esc(p.subject) + '</option>';
       }).join("");
       $("sylEditorPair").onchange = function () {
-        syllabusEditorDrafts = [];
         var pair = currentEditorPair();
         var rows = pair ? getEditorPairRows(pair) : [];
         syllabusEditorMode = rows.some(function (l) { return l.item_type === "AstraGen"; }) &&
@@ -647,6 +651,7 @@
         renderSyllabusEditorRows();
       };
       $("sylEditorAdd").onclick = addEditorRow;
+      $("sylEditorBulkSave").onclick = saveManualEditorClass;
       var initialPair = currentEditorPair();
       var initialRows = initialPair ? getEditorPairRows(initialPair) : [];
       syllabusEditorMode = initialRows.some(function (l) { return l.item_type === "AstraGen"; }) &&
@@ -754,41 +759,78 @@
     Array.prototype.forEach.call($("sylEditorModes").querySelectorAll("[data-editor-mode]"), function (b) {
       b.onclick = function () { syllabusEditorMode = b.getAttribute("data-editor-mode"); $("sylEditorFormHost").innerHTML = ""; renderSyllabusEditorRows(); };
     });
-    var rows = syllabusEditorMode === "AstraGen" ? astragen : manual;
+    var rows = syllabusEditorMode === "AstraGen" ? astragen : manual.filter(function (l) {
+      return editorPairPendingDeletes(pair).indexOf(String(l.id)) < 0;
+    });
     if (syllabusEditorMode === "Manual") rows = rows.concat(syllabusEditorDrafts.filter(function (d) { return d._pairKey === editorPairKey(pair); }));
     syllabusEditorRows = rows.slice().sort(editorLessonSort);
     $("sylEditorCount").textContent = rows.length + (rows.length === 1 ? " row" : " rows");
     $("sylEditorAdd").innerHTML = '<i class="material-icons">add</i> ' + (syllabusEditorMode === "AstraGen" ? "Add AstraGen plan" : "Add lesson row");
+    $("sylEditorAdd").style.display = "";
+    $("sylEditorBulkSave").style.display = syllabusEditorMode === "Manual" ? "" : "none";
     if (syllabusEditorMode === "Manual") renderManualEditorTable(pair, manual);
     else renderAstraGenEditorTable(astragen);
   }
   function editorPairKey(pair) { var n = editorGradeNumber(pair.grade); return (n === null ? String(pair.grade || "").trim().toLowerCase() : String(n)) + "|" + editorNormSubject(pair.subject); }
+  function editorPendingKey(pair, id) { return editorPairKey(pair) + "::" + String(id); }
+  function editorManualValue(pair, row, field) {
+    var id = row._draftKey || row.id;
+    var pending = syllabusEditorPendingValues[editorPendingKey(pair, id)];
+    return pending && Object.prototype.hasOwnProperty.call(pending, field) ? pending[field] : (row[field] == null ? "" : row[field]);
+  }
+  function editorPairPendingDeletes(pair) {
+    var key = editorPairKey(pair);
+    if (!syllabusEditorPendingDeletes[key]) syllabusEditorPendingDeletes[key] = [];
+    return syllabusEditorPendingDeletes[key];
+  }
+  function editorSetSaving(disabled) {
+    syllabusEditorSaving = !!disabled;
+    var modal = $("sylEditorModal");
+    if (!modal) return;
+    Array.prototype.forEach.call(modal.querySelectorAll(".syl-cell-input, #sylEditorPair, #sylEditorAdd, #sylEditorBulkSave, .syl-editor-mode, .syl-row-remove"), function (el) {
+      el.disabled = !!disabled;
+    });
+    var save = $("sylEditorBulkSave");
+    if (save) save.innerHTML = disabled ? '<i class="material-icons">sync</i> Updating class…' : '<i class="material-icons">save</i> Update class syllabus';
+  }
   function renderManualEditorTable(pair, savedRows) {
     var drafts = syllabusEditorDrafts.filter(function (d) { return d._pairKey === editorPairKey(pair); });
-    var rows = savedRows.concat(drafts).slice().sort(editorLessonSort);
-    var missing = editorMissingNumbers(savedRows);
+    var stagedDeleteIds = editorPairPendingDeletes(pair);
+    var visibleSavedRows = savedRows.filter(function (l) { return stagedDeleteIds.indexOf(String(l.id)) < 0; });
+    var rows = visibleSavedRows.concat(drafts).slice().sort(editorLessonSort);
+    var missing = editorMissingNumbers(visibleSavedRows);
     var alertHtml = missing.length
-      ? '<div class="syl-editor-gap"><i class="material-icons">info</i><span>Lesson numbers not present between 1 and ' + Math.max.apply(Math, savedRows.map(function (l) { return lessonNumberValue(l.lesson_no); }).filter(isFinite)) + ': <b>' + esc(missing.join(", ")) + '</b>. Add a row for any missing chapter you need.</span></div>'
-      : '<div class="syl-editor-note">Edit the lesson number to change the chapter sequence. The table is always displayed by lesson number; the internal database order value is not shown.</div>';
+      ? '<div class="syl-editor-gap"><i class="material-icons">info</i><span>Lesson numbers not present between 1 and ' + Math.max.apply(Math, visibleSavedRows.map(function (l) { return lessonNumberValue(l.lesson_no); }).filter(isFinite)) + ': <b>' + esc(missing.join(", ")) + '</b>. Add a row for any missing chapter you need.</span></div>'
+      : '<div class="syl-editor-note">Edit the lesson number to change the chapter sequence. All changes remain here until you click <b>Update class syllabus</b>.</div>';
+    var pendingDeleteCount = editorPairPendingDeletes(pair).length;
+    var deleteNote = pendingDeleteCount ? '<div class="syl-editor-gap"><i class="material-icons">delete_outline</i><span>' + pendingDeleteCount + ' lesson ' + (pendingDeleteCount === 1 ? 'row is' : 'rows are') + ' marked for removal. The removal will be applied with the class update.</span></div>' : '';
     if (!rows.length) {
-      $("sylEditorList").innerHTML = alertHtml + '<div class="syl-empty"><i class="material-icons">menu_book</i>No manual lessons are listed for ' + esc(pair.grade) + ' · ' + esc(pair.subject) + '. Use <b>Add lesson row</b> to create the first chapter.</div>';
+      $("sylEditorList").innerHTML = alertHtml + deleteNote + '<div class="syl-empty"><i class="material-icons">menu_book</i>No manual lessons are listed for ' + esc(pair.grade) + ' · ' + esc(pair.subject) + '. Use <b>Add lesson row</b> to create the first chapter.</div>';
       return;
     }
-    var html = alertHtml + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-no">Lesson No.</th><th>Lesson name</th><th class="syl-col-month">Target month</th><th class="syl-col-link">PDF / resource link (optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
+    var html = alertHtml + deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-no">Lesson No.</th><th>Lesson name</th><th class="syl-col-month">Target month</th><th class="syl-col-link">PDF / resource link (optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
     rows.forEach(function (l) {
       var isDraft = !!l._draftKey;
       var id = isDraft ? l._draftKey : String(l.id);
       html += '<tr data-editor-row="' + esc(id) + '" data-editor-draft="' + (isDraft ? "1" : "0") + '" data-class="' + esc(l.class || "") + '" data-subject="' + esc(l.subject || "") + '" data-strand="' + esc(l.strand_subject || "") + '">' +
-        '<td><input class="syl-cell-input syl-cell-number" data-field="lesson_no" value="' + esc(l.lesson_no || "") + '" placeholder="1" inputmode="numeric"></td>' +
-        '<td><input class="syl-cell-input syl-cell-title" data-field="name" value="' + esc(l.name || "") + '" placeholder="Enter chapter name"></td>' +
-        '<td><select class="syl-cell-input" data-field="target_month">' + editorMonthOptions(l.target_month) + '</select></td>' +
-        '<td><input class="syl-cell-input" data-field="drive_link" type="url" value="' + esc(l.drive_link || "") + '" placeholder="https://…"></td>' +
-        '<td><div class="syl-row-actions"><button type="button" class="btn btn-primary syl-row-save" data-editor-save="' + esc(id) + '"><i class="material-icons">save</i> ' + (isDraft ? "Add" : "Save") + '</button><button type="button" class="btn btn-secondary syl-row-remove" data-editor-delete="' + esc(id) + '"><i class="material-icons">delete_outline</i></button></div></td></tr>';
+        '<td><input class="syl-cell-input syl-cell-number" data-field="lesson_no" value="' + esc(editorManualValue(pair, l, "lesson_no")) + '" placeholder="1" inputmode="numeric"></td>' +
+        '<td><input class="syl-cell-input syl-cell-title" data-field="name" value="' + esc(editorManualValue(pair, l, "name")) + '" placeholder="Enter chapter name"></td>' +
+        '<td><select class="syl-cell-input" data-field="target_month">' + editorMonthOptions(editorManualValue(pair, l, "target_month")) + '</select></td>' +
+        '<td><input class="syl-cell-input" data-field="drive_link" type="url" value="' + esc(editorManualValue(pair, l, "drive_link")) + '" placeholder="https://…"></td>' +
+        '<td><div class="syl-row-actions">' + (isDraft ? '<span class="syl-ed-tag manual">New</span>' : '') + '<button type="button" class="btn btn-secondary syl-row-remove" data-editor-delete="' + esc(id) + '"><i class="material-icons">delete_outline</i> Remove</button></div></td></tr>';
     });
     html += '</tbody></table></div>';
     $("sylEditorList").innerHTML = html;
-    Array.prototype.forEach.call($("sylEditorList").querySelectorAll("[data-editor-save]"), function (b) {
-      b.onclick = function () { saveManualEditorRow(b.getAttribute("data-editor-save")); };
+    Array.prototype.forEach.call($("sylEditorList").querySelectorAll("[data-field]"), function (el) {
+      function rememberValue() {
+        var tr = el.closest("[data-editor-row]");
+        if (!tr) return;
+        var key = editorPendingKey(pair, tr.getAttribute("data-editor-row"));
+        if (!syllabusEditorPendingValues[key]) syllabusEditorPendingValues[key] = {};
+        syllabusEditorPendingValues[key][el.getAttribute("data-field")] = el.value;
+      }
+      el.addEventListener("input", rememberValue);
+      el.addEventListener("change", rememberValue);
     });
     Array.prototype.forEach.call($("sylEditorList").querySelectorAll("[data-editor-delete]"), function (b) {
       b.onclick = function () { removeEditorRow(b.getAttribute("data-editor-delete")); };
@@ -821,7 +863,7 @@
   }
   function addEditorRow() {
     var pair = currentEditorPair();
-    if (!pair) return;
+    if (!pair || syllabusEditorSaving) return;
     if (syllabusEditorMode === "AstraGen") {
       showSyllabusLessonForm(null, "AstraGen");
       return;
@@ -842,31 +884,100 @@
     for (var i = 0; i < rows.length; i++) if (String(rows[i].id) === String(id)) return rows[i];
     return null;
   }
-  function saveManualEditorRow(id) {
-    var tr = $("sylEditorList").querySelector('[data-editor-row="' + cssEsc(id) + '"]');
-    if (!tr) return;
-    function field(name) { var el = tr.querySelector('[data-field="' + name + '"]'); return el ? String(el.value || "").trim() : ""; }
-    var lessonNo = field("lesson_no"), name = field("name"), url = field("drive_link");
-    if (!lessonNo || !name) return editorStatus("Enter both the lesson number and lesson name.", true);
-    if (url && !/^https?:\/\//i.test(url)) return editorStatus("The resource link must start with http:// or https://.", true);
-    var no = lessonNumberValue(lessonNo);
-    var payload = {
-      id: tr.getAttribute("data-editor-draft") === "1" ? null : id,
-      class: tr.getAttribute("data-class"), subject: tr.getAttribute("data-subject"),
-      strand_subject: tr.getAttribute("data-strand") || "", item_type: "Manual",
-      lesson_no: lessonNo, name: name, target_month: field("target_month"), drive_link: url,
-      sort_order: isFinite(no) ? Math.round(no * 10) : 0
-    };
-    var button = tr.querySelector("[data-editor-save]");
-    button.disabled = true; button.innerHTML = '<i class="material-icons">sync</i> Saving';
-    P.api("saveSyllabusLesson", [payload], { overlay: false }).then(function (res) {
-      if (!res || !res.success) throw new Error((res && res.error) || "The lesson could not be saved.");
-      syllabusEditorDrafts = syllabusEditorDrafts.filter(function (d) { return d._draftKey !== id; });
-      editorStatus(tr.getAttribute("data-editor-draft") === "1" ? "Lesson added." : "Lesson updated.", false);
-      reloadEditorData(true, res.lesson || payload);
+  function saveManualEditorClass() {
+    var pair = currentEditorPair();
+    if (!pair || syllabusEditorMode !== "Manual" || syllabusEditorSaving) return;
+    var pairKey = editorPairKey(pair), changes = [], seenNumbers = Object.create(null), invalidDuplicate = false, validationError = "";
+    var tableRows = Array.prototype.slice.call($("sylEditorList").querySelectorAll("tr[data-editor-row]"));
+    tableRows.forEach(function (tr) {
+      var id = tr.getAttribute("data-editor-row"), isDraft = tr.getAttribute("data-editor-draft") === "1";
+      function field(name) { var el = tr.querySelector('[data-field="' + name + '"]'); return el ? String(el.value || "").trim() : ""; }
+      var lessonNo = field("lesson_no"), name = field("name"), month = field("target_month"), url = field("drive_link");
+      var baseline = isDraft ? null : findEditorLesson(id);
+      var changed = isDraft || !baseline ||
+        lessonNo !== String(baseline.lesson_no == null ? "" : baseline.lesson_no).trim() ||
+        name !== String(baseline.name == null ? "" : baseline.name).trim() ||
+        month !== String(baseline.target_month == null ? "" : baseline.target_month).trim() ||
+        url !== String(baseline.drive_link == null ? "" : baseline.drive_link).trim();
+      var parsedLessonNo = lessonNumberValue(lessonNo);
+      var numberKey = isFinite(parsedLessonNo) ? String(parsedLessonNo) : lessonNo.toLocaleLowerCase();
+      if (numberKey) {
+        if (seenNumbers[numberKey]) {
+          if (changed || seenNumbers[numberKey].changed) invalidDuplicate = true;
+        } else seenNumbers[numberKey] = { changed: changed, id: id };
+      }
+      if (!changed) return;
+      if (!lessonNo || !name) { validationError = "Enter both the lesson number and lesson name for every changed or new row."; return; }
+      if (url && !/^https?:\/\//i.test(url)) { validationError = "A resource link must start with http:// or https://."; return; }
+      var no = lessonNumberValue(lessonNo);
+      changes.push({ tr: tr, oldId: id, isDraft: isDraft, payload: {
+        id: isDraft ? null : id,
+        class: tr.getAttribute("data-class"), subject: tr.getAttribute("data-subject"),
+        strand_subject: tr.getAttribute("data-strand") || "", item_type: "Manual",
+        lesson_no: lessonNo, name: name, target_month: month, drive_link: url,
+        sort_order: isFinite(no) ? Math.round(no * 10) : 0
+      }});
+    });
+    if (validationError) return editorStatus(validationError, true);
+    if (invalidDuplicate) return editorStatus("Two lessons have the same lesson number. Give each chapter a unique number before updating.", true);
+    var deletions = editorPairPendingDeletes(pair).slice();
+    if (!changes.length && !deletions.length) return editorStatus("There are no unsaved changes for this class and subject.", false);
+
+    editorSetSaving(true);
+    var saved = 0, removed = 0;
+    function saveNext(index) {
+      if (index >= changes.length) return Promise.resolve();
+      var change = changes[index];
+      return P.api("saveSyllabusLesson", [change.payload], { overlay: false }).then(function (res) {
+        if (!res || !res.success) throw new Error((res && res.error) || "Could not save lesson " + change.payload.lesson_no + ".");
+        var lesson = res.lesson;
+        if (!lesson || !lesson.id) throw new Error("The server saved a row but did not return its lesson ID. Refresh the editor before retrying.");
+        // Promote a new draft to a real database row immediately. If a later row
+        // fails, retrying the class save updates this ID instead of inserting a duplicate.
+        var oldPendingKey = editorPendingKey(pair, change.oldId);
+        delete syllabusEditorPendingValues[oldPendingKey];
+        if (change.isDraft) {
+          change.tr.setAttribute("data-editor-row", String(lesson.id));
+          change.tr.setAttribute("data-editor-draft", "0");
+          var newBadge = change.tr.querySelector(".syl-ed-tag.manual");
+          if (newBadge) newBadge.parentNode.removeChild(newBadge);
+          var removeButton = change.tr.querySelector("[data-editor-delete]");
+          if (removeButton) removeButton.setAttribute("data-editor-delete", String(lesson.id));
+          syllabusEditorDrafts = syllabusEditorDrafts.filter(function (d) { return d._draftKey !== change.oldId; });
+        }
+        var catalog = syllabusEditorData.lessons || (syllabusEditorData.lessons = []), replaced = false;
+        for (var i = 0; i < catalog.length; i++) {
+          if (String(catalog[i].id) === String(lesson.id)) { catalog[i] = lesson; replaced = true; break; }
+        }
+        if (!replaced) catalog.push(lesson);
+        saved++;
+        editorStatus("Saving class syllabus… " + saved + " of " + changes.length + " changed rows saved.", false);
+        return saveNext(index + 1);
+      });
+    }
+    function deleteNext(index) {
+      if (index >= deletions.length) return Promise.resolve();
+      var id = deletions[index];
+      return P.api("deleteSyllabusLesson", [id], { overlay: false }).then(function (res) {
+        if (!res || !res.success) throw new Error((res && res.error) || "Could not remove lesson ID " + id + ".");
+        removed++;
+        var pending = editorPairPendingDeletes(pair);
+        syllabusEditorPendingDeletes[pairKey] = pending.filter(function (v) { return String(v) !== String(id); });
+        syllabusEditorData.lessons = (syllabusEditorData.lessons || []).filter(function (l) { return String(l.id) !== String(id); });
+        return deleteNext(index + 1);
+      });
+    }
+    saveNext(0).then(deleteNext.bind(null, 0)).then(function () {
+      syllabusEditorPendingDeletes[pairKey] = [];
+      Object.keys(syllabusEditorPendingValues).forEach(function (key) {
+        if (key.indexOf(pairKey + "::") === 0) delete syllabusEditorPendingValues[key];
+      });
+      editorSetSaving(false);
+      editorStatus("Class syllabus updated successfully. " + saved + " row change" + (saved === 1 ? "" : "s") + " saved and " + removed + " row" + (removed === 1 ? "" : "s") + " removed.", false);
+      reloadEditorData(true);
     }).catch(function (e) {
-      editorStatus(e.message || e, true);
-      button.disabled = false; button.innerHTML = '<i class="material-icons">save</i> ' + (tr.getAttribute("data-editor-draft") === "1" ? "Add" : "Save");
+      editorSetSaving(false);
+      editorStatus((saved || removed ? "Partial update: " + saved + " row changes saved and " + removed + " rows removed. " : "") + (e && e.message ? e.message : e) + " Your remaining edits are still in the table. Click Update class syllabus to retry.", true);
     });
   }
   function showSyllabusLessonForm(row, forcedType) {
@@ -948,19 +1059,32 @@
     }).catch(function (e) { editorStatus(e.message || e, true); });
   }
   function removeEditorRow(id) {
+    if (syllabusEditorSaving) return;
+    var pair = currentEditorPair();
     var draft = syllabusEditorDrafts.find(function (d) { return d._draftKey === id; });
     if (draft) {
       syllabusEditorDrafts = syllabusEditorDrafts.filter(function (d) { return d._draftKey !== id; });
+      if (pair) delete syllabusEditorPendingValues[editorPendingKey(pair, id)];
       renderSyllabusEditorRows();
       return;
     }
     var row = findEditorLesson(id);
     if (!row) return;
-    var message = 'Remove "' + row.name + '" from the syllabus list?\n\nSaved completion records and AstraGen session-task rows will be preserved.';
+    if (row.item_type !== "AstraGen") {
+      if (!pair) return;
+      if (!confirm('Mark "' + row.name + '" for removal from this class syllabus?\n\nIt will be removed only when you click Update class syllabus.')) return;
+      var pending = editorPairPendingDeletes(pair);
+      if (pending.indexOf(String(id)) < 0) pending.push(String(id));
+      delete syllabusEditorPendingValues[editorPendingKey(pair, id)];
+      renderSyllabusEditorRows();
+      editorStatus('Lesson marked for removal. Click Update class syllabus to apply all class changes.', false);
+      return;
+    }
+    var message = 'Remove AstraGen plan "' + row.name + '"?\n\nSaved session tasks and completion records will be preserved.';
     if (!confirm(message)) return;
-    P.api("deleteSyllabusLesson", [id], { text: "Removing syllabus entry…" }).then(function (res) {
-      if (!res || !res.success) throw new Error((res && res.error) || "The lesson could not be removed.");
-      editorStatus("Lesson removed. Existing progress and session records were preserved.", false);
+    P.api("deleteSyllabusLesson", [id], { text: "Removing AstraGen syllabus entry…" }).then(function (res) {
+      if (!res || !res.success) throw new Error((res && res.error) || "The AstraGen lesson plan could not be removed.");
+      editorStatus("AstraGen lesson plan removed. Existing session and progress records were preserved.", false);
       reloadEditorData(true);
     }).catch(function (e) { editorStatus(e.message || e, true); });
   }
@@ -1057,10 +1181,10 @@
   function syllabusEditorModal() {
     return '<div class="modal-overlay" id="sylEditorModal" style="z-index:1150;"><div class="modal-content syl-editor-modal">' +
       '<div class="modal-header-container"><div><h3 style="margin:0;">Edit Syllabus</h3><p class="syl-editor-intro">Edit manual chapters directly in a table. AstraGen PDF lesson plans remain separate and keep their Gemini session workflow.</p></div><button class="modal-close-icon" data-close="sylEditorModal">&times;</button></div>' +
-      '<div class="syl-editor-toolbar"><label>Class · Subject<select id="sylEditorPair"><option value="">Loading…</option></select></label><div class="syl-editor-addwrap"><span id="sylEditorCount">Loading…</span><button type="button" class="btn btn-primary" id="sylEditorAdd"><i class="material-icons">add</i> Add lesson row</button></div></div>' +
+      '<div class="syl-editor-toolbar"><label>Class · Subject<select id="sylEditorPair"><option value="">Loading…</option></select></label><div class="syl-editor-addwrap"><span id="sylEditorCount">Loading…</span><button type="button" class="btn btn-primary" id="sylEditorAdd"><i class="material-icons">add</i> Add lesson row</button><button type="button" class="btn btn-primary syl-editor-bulk-save" id="sylEditorBulkSave"><i class="material-icons">save</i> Update class syllabus</button></div></div>' +
       '<div class="syl-editor-modebar" id="sylEditorModes"></div>' +
       '<div id="sylEditorStatus" class="syl-editor-status"></div><div id="sylEditorFormHost"></div><div id="sylEditorList" class="syl-editor-list"><div class="inline-loader"><i class="material-icons">sync</i>Loading…</div></div>' +
-      '<div class="syl-editor-footnote"><i class="material-icons">info</i><span>Manual chapters are sorted by Lesson No. Change that number to change their sequence. Removing a row deletes only its syllabus entry; saved progress is retained. AstraGen PDF extraction, Gemini analysis, sessions and task records are not changed by this editor.</span></div>' +
+      '<div class="syl-editor-footnote"><i class="material-icons">info</i><span>For Manual syllabus, add, edit and remove all rows first, then click <b>Update class syllabus</b> once. Changes are kept in the table until that button is pressed. AstraGen PDF extraction, Gemini analysis, sessions and task records continue through their separate workflow.</span></div>' +
       '<button class="btn btn-secondary" data-close="sylEditorModal" style="margin-top:14px;width:100%;">Close</button></div></div>';
   }
 
@@ -1173,9 +1297,10 @@
       ".syl-manual-table .syl-col-no{width:105px}.syl-manual-table .syl-col-month{width:150px}.syl-manual-table .syl-col-link{width:240px}.syl-manual-table .syl-col-actions{width:150px}" +
       ".syl-cell-input{display:block;box-sizing:border-box;width:100%;min-width:0;min-height:38px;padding:8px 9px;border:1px solid #d7dee8;border-radius:7px;background:#fff;color:var(--text-main);font:600 13px var(--font,Arial,sans-serif);outline:none}" +
       ".syl-cell-input:focus{border-color:var(--maroon);box-shadow:0 0 0 3px rgba(128,29,39,.08)}.syl-cell-number{text-align:center;font-weight:800}.syl-cell-title{min-width:260px}" +
-      ".syl-row-actions{display:flex;align-items:center;gap:5px;white-space:nowrap}.syl-row-save{display:inline-flex;align-items:center;gap:3px;padding:8px 10px!important;font-size:11px!important}.syl-row-save i{font-size:14px}.syl-row-remove{display:grid;place-items:center;width:36px;height:34px;padding:0!important;color:#b91c1c!important;border-color:#fecaca!important}.syl-row-remove i{font-size:17px}" +
+      ".syl-row-actions{display:flex;align-items:center;gap:7px;white-space:nowrap}.syl-row-remove{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:86px;height:34px;padding:6px 9px!important;color:#b91c1c!important;border-color:#fecaca!important}.syl-row-remove i{font-size:17px}" +
       ".syl-ed-number{display:inline-flex;min-width:35px;justify-content:center;padding:6px 8px;border-radius:7px;background:#f1f5f9;color:var(--maroon);font-size:13px}" +
       ".syl-editor-intro{max-width:850px}.syl-editor-footnote{padding:11px 2px 0;font-size:11.5px}" +
+      ".syl-editor-addwrap{flex-wrap:wrap}.syl-editor-bulk-save{background:#8f1d1d!important;border-color:#8f1d1d!important;color:#fff!important;font-weight:600!important;white-space:nowrap}.syl-editor-bulk-save:disabled{opacity:.65;cursor:wait}" +
       /* Keep editor typography calm and readable; do not inherit the portal's heavy button weights. */
       "#sylEditorModal{font-weight:400}#sylEditorModal button{font-weight:600!important}#sylEditorModal .syl-editor-toolbar label,#sylEditorModal .syl-editor-fields label{font-weight:600}" +
       "#sylEditorModal .syl-editor-toolbar select,#sylEditorModal .syl-editor-toolbar input,#sylEditorModal .syl-editor-fields input,#sylEditorModal .syl-editor-fields select{font-weight:400}" +
@@ -1183,7 +1308,7 @@
       "#sylEditorModal .syl-editor-mode.active{background:#fff7f6;border-color:var(--maroon);color:var(--maroon)}#sylEditorModal .syl-editor-mode.active span{background:#f4e1df;color:var(--maroon)}" +
       "#sylEditorModal .syl-editor-table th{font-weight:600}#sylEditorModal .syl-editor-table td{font-weight:400}" +
       "#sylEditorModal .syl-ed-title{font-weight:600}#sylEditorModal .syl-ed-link{font-weight:600}" +
-      "#sylEditorModal .syl-ed-action,#sylEditorModal .syl-row-save{font-weight:500!important}" +
+      "#sylEditorModal .syl-ed-action{font-weight:500!important}" +
       "#sylEditorModal .syl-cell-input{font-weight:400}#sylEditorModal .syl-cell-number{font-weight:600}" +
       "#sylEditorModal .syl-ed-number{font-weight:600}" +
       "@media(max-width:760px){.syl-editor-modal{width:calc(100% - 12px);padding:14px!important}.syl-editor-toolbar{grid-template-columns:1fr}.syl-editor-addwrap{justify-content:space-between}.syl-editor-list{max-height:55vh}.syl-editor-intro{max-width:none}}";
