@@ -802,14 +802,15 @@
     }
     var html = '<div class="syl-editor-note">AstraGen lesson plans keep their existing PDF-to-Gemini session workflow. This table manages the lesson mapping only; stored session tasks and completion records are preserved.</div>' +
       '<div class="syl-editor-table-wrap"><table class="syl-editor-table"><thead><tr><th>Lesson No.</th><th>Lesson plan title</th><th>Target month</th><th>PDF / Drive</th><th>Actions</th></tr></thead><tbody>';
-    rows.slice().sort(editorLessonSort).forEach(function (l) {
+    var rowHtml = rows.slice().sort(editorLessonSort).map(function (l) {
       var url = String(l.drive_link || "").trim();
       var link = url ? '<a class="syl-ed-link" href="' + esc(url) + '" target="_blank" rel="noopener">Open PDF</a>' : '<span class="syl-ed-muted">No link</span>';
-      html += '<tr><td><b class="syl-ed-number">' + esc(l.lesson_no || "—") + '</b></td>' +
+      return '<tr><td><span class="syl-ed-number">' + esc(l.lesson_no || "—") + '</span></td>' +
         '<td><div class="syl-ed-title">' + esc(l.name || "Untitled lesson plan") + '</div><div class="syl-ed-meta">' + esc(l.class) + ' · ' + esc(l.subject) + (l.strand_subject ? ' · ' + esc(l.strand_subject) : '') + '</div></td>' +
         '<td>' + esc(l.target_month || "Not scheduled") + '</td><td>' + link + '</td>' +
         '<td><div class="syl-ed-actions"><button type="button" class="btn btn-secondary syl-ed-action" data-editor-edit="' + esc(l.id) + '"><i class="material-icons">edit</i> Edit</button><button type="button" class="btn btn-secondary syl-ed-action danger" data-editor-delete="' + esc(l.id) + '"><i class="material-icons">delete_outline</i> Remove</button></div></td></tr>';
-    }).join("") + '</tbody></table></div>';
+    }).join("");
+    html += rowHtml + '</tbody></table></div>';
     $("sylEditorList").innerHTML = html;
     Array.prototype.forEach.call($("sylEditorList").querySelectorAll("[data-editor-edit]"), function (b) {
       b.onclick = function () { var row = findEditorLesson(b.getAttribute("data-editor-edit")); if (row) showSyllabusLessonForm(row, "AstraGen"); };
@@ -1175,6 +1176,16 @@
       ".syl-row-actions{display:flex;align-items:center;gap:5px;white-space:nowrap}.syl-row-save{display:inline-flex;align-items:center;gap:3px;padding:8px 10px!important;font-size:11px!important}.syl-row-save i{font-size:14px}.syl-row-remove{display:grid;place-items:center;width:36px;height:34px;padding:0!important;color:#b91c1c!important;border-color:#fecaca!important}.syl-row-remove i{font-size:17px}" +
       ".syl-ed-number{display:inline-flex;min-width:35px;justify-content:center;padding:6px 8px;border-radius:7px;background:#f1f5f9;color:var(--maroon);font-size:13px}" +
       ".syl-editor-intro{max-width:850px}.syl-editor-footnote{padding:11px 2px 0;font-size:11.5px}" +
+      /* Keep editor typography calm and readable; do not inherit the portal's heavy button weights. */
+      "#sylEditorModal{font-weight:400}#sylEditorModal button{font-weight:600!important}#sylEditorModal .syl-editor-toolbar label,#sylEditorModal .syl-editor-fields label{font-weight:600}" +
+      "#sylEditorModal .syl-editor-toolbar select,#sylEditorModal .syl-editor-toolbar input,#sylEditorModal .syl-editor-fields input,#sylEditorModal .syl-editor-fields select{font-weight:400}" +
+      "#sylEditorModal .syl-editor-addwrap span{font-weight:600}#sylEditorModal .syl-editor-mode{font-weight:600}" +
+      "#sylEditorModal .syl-editor-mode.active{background:#fff7f6;border-color:var(--maroon);color:var(--maroon)}#sylEditorModal .syl-editor-mode.active span{background:#f4e1df;color:var(--maroon)}" +
+      "#sylEditorModal .syl-editor-table th{font-weight:600}#sylEditorModal .syl-editor-table td{font-weight:400}" +
+      "#sylEditorModal .syl-ed-title{font-weight:600}#sylEditorModal .syl-ed-link{font-weight:600}" +
+      "#sylEditorModal .syl-ed-action,#sylEditorModal .syl-row-save{font-weight:500!important}" +
+      "#sylEditorModal .syl-cell-input{font-weight:400}#sylEditorModal .syl-cell-number{font-weight:600}" +
+      "#sylEditorModal .syl-ed-number{font-weight:600}" +
       "@media(max-width:760px){.syl-editor-modal{width:calc(100% - 12px);padding:14px!important}.syl-editor-toolbar{grid-template-columns:1fr}.syl-editor-addwrap{justify-content:space-between}.syl-editor-list{max-height:55vh}.syl-editor-intro{max-width:none}}";
     var st = document.createElement("style"); st.id = "syl-css"; st.textContent = css; document.head.appendChild(st);
   }
