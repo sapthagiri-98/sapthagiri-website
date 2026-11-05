@@ -687,7 +687,9 @@
     if (!editorGradeEqual(row.class, pair.grade)) return false;
     var selected = editorNormSubject(pair.subject), base = editorNormSubject(row.subject), strand = editorNormSubject(row.strand_subject);
     var gn = editorGradeNumber(pair.grade);
-    if (selected === "maths-2") return strand === "maths-2";
+    // Support both stored Maths-2 shapes: an explicit strand mapping, or
+    // subject="Maths-2" with no strand_subject (legacy manual syllabus rows).
+    if (selected === "maths-2") return strand === "maths-2" || (!strand && base === "maths-2");
     if (gn !== null && gn >= 6 && gn <= 10 && (selected === "maths" || selected === "maths-1")) {
       return (base === "maths" || base === "maths-1") && strand !== "maths-2";
     }
