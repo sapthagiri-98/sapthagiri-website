@@ -448,10 +448,29 @@
     }
   }
   function openRejoin(s) {
+    var targetYear = BOOT.currentYear;
+    var sameYear = (s.enrollments || []).filter(function (e) { return String(e.year) === String(targetYear); })[0];
+    var defaultClass = sameYear ? sameYear.className : (s.currentClass || "");
+    var d = new Date();
+    var todayDmy = String(d.getDate()).padStart(2, "0") + "-" +
+      String(d.getMonth() + 1).padStart(2, "0") + "-" + d.getFullYear();
     openModal("Rejoin · " + esc(s.name),
-      '<div class="sm-note"><i class="material-icons">info</i>Creates a fresh enrollment (the previous years stay intact).</div>' +
-      '<div class="sm-row2">' + field("Academic Year", inp("rjYear", BOOT.currentYear)) + field("Class", inp("rjClass", "", "e.g. 6")) + '</div>',
-      "Rejoin", function () { var c = $("rjClass").value.trim(); if (!c) throw new Error("Class is required."); return P.api("smRejoinStudent", [s.id, $("rjYear").value.trim(), c, ME], { text: "Updating…" }).then(function () { toast("Rejoined.", "ok"); reloadAll(); }); });
+      '<div class="sm-note"><i class="material-icons">info</i>This creates a NEW enrollment row. The previous enrollment and its Leaving Date remain unchanged. Enter the actual date the student rejoined.</div>' +
+      '<div class="sm-row2">' +
+        field("Academic Year", inp("rjYear", targetYear)) +
+        field("Class", inp("rjClass", defaultClass, "e.g. 6")) +
+      '</div>' +
+      field("Rejoining Date", inp("rjDate", todayDmy, "dd-mm-yyyy")),
+      "Add Rejoin Record", function () {
+        var c = $("rjClass").value.trim();
+        var dt = $("rjDate").value.trim();
+        if (!c) throw new Error("Class is required.");
+        if (!dt) throw new Error("Rejoining Date is required.");
+        return P.api("smRejoinStudent", [s.id, $("rjYear").value.trim(), c, ME, dt], { text: "Adding rejoin record…" }).then(function (result) {
+          toast(result && result.alreadyApplied ? "This rejoin record already exists." : "New rejoin record added. Previous leaving history preserved.", "ok");
+          reloadAll();
+        });
+      });
   }
 
   /* ======================= ENROLLMENT EDIT ============================= */
