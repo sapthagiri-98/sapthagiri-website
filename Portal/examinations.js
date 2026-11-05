@@ -984,7 +984,88 @@
       rows.forEach(function (r, position) { if (previous === null || Math.abs(r.score - previous) > 0.000001) rank = position + 1; out[r.index] = rank; previous = r.score; });
       return out;
     }
-    function passFailWord(pct) { return pct >= 33 ? "PASSED" : "NOT PASSED"; }
+    /* -----------------------------------------------------------------
+       SA RESULT RULES
+       - SA-1 / SA-2 are passed subject-by-subject, never by aggregate %.
+       - Grades 6-8 use the school's 35% per-subject benchmark.
+       - Grade 9 uses the Telangana SCERT 35% subject threshold.
+       - Grade 10 uses the 2026 SSC overall subject thresholds: 35% for
+         regular subjects and 20% for the school's Second Language (Hindi).
+       - The separate 28/80 (or 16/80 for Second Language) external minimum
+         is a PUBLIC SSC examination rule. It is intentionally not applied
+         to school-conducted SA-1 / SA-2 papers.
+       - In Grades 9-10, Physical Science + Biological Science form the
+         single Science subject for pass/fail evaluation. The report still
+         displays the two school subject components separately.
+       - A missing subject total is INCOMPLETE, not PASSED.
+       ----------------------------------------------------------------- */
+    function assessmentResult(student, subjects, bucket, className, maxPerSubject) {
+      var isSummative = bucket === "SA-1" || bucket === "SA-2";
+      var pct = student && student.hasAny ? Number(student.percent) : 0;
+      if (!isSummative) {
+        var faStatus = pct >= 33 ? "PASSED" : "NOT PASSED";
+        return { status: faStatus, failed: [], missing: [] };
+      }
+
+      if (!student || !student.hasAny) return { status: "INCOMPLETE", failed: [], missing: (subjects || []).slice() };
+
+      var grade = gradeNumFromClass(className);
+      var maximum = Number(maxPerSubject) > 0 ? Number(maxPerSubject) : 100;
+      var regularMinimum = maximum * 0.35;
+      var failed = [], missing = [], checked = {};
+      var cells = student.subjects || {};
+
+      // The Telangana SSC structure treats Physical Science and Biological
+      // Science as the two parts of one Science subject in Classes IX-X.
+      if (grade === 9 || grade === 10) {
+        var hasPhysics = subjects.indexOf("Physics") >= 0;
+        var hasBiology = subjects.indexOf("Biology") >= 0;
+        if (hasPhysics && hasBiology) {
+          var physics = subjectTotalValue(student, "Physics");
+          var biology = subjectTotalValue(student, "Biology");
+          var physicsAbsent = isAbsentCell((cells.Physics || {}).Exam);
+          var biologyAbsent = isAbsentCell((cells.Biology || {}).Exam);
+          checked.Physics = true;
+          checked.Biology = true;
+          if (physics == null || biology == null) {
+            missing.push("Science (Physics + Biology)");
+          } else if (physicsAbsent || biologyAbsent || ((physics + biology) / 2) + 0.000001 < regularMinimum) {
+            failed.push("Science");
+          }
+        }
+      }
+
+      (subjects || []).forEach(function (subject) {
+        if (checked[subject]) return;
+        var value = subjectTotalValue(student, subject);
+        if (value == null) {
+          missing.push(subject);
+          return;
+        }
+        if (isAbsentCell((cells[subject] || {}).Exam)) {
+          failed.push(subject);
+          return;
+        }
+
+        // In this English-medium school's subject map, Hindi is the
+        // Second Language for Grade 10. Other grades retain 35%.
+        var minimum = (grade === 10 && String(subject).trim().toLowerCase() === "hindi")
+          ? maximum * 0.20
+          : regularMinimum;
+        if (value + 0.000001 < minimum) failed.push(subject);
+      });
+
+      if (failed.length) return { status: "NOT PASSED", failed: failed, missing: missing };
+      if (missing.length) return { status: "INCOMPLETE", failed: [], missing: missing };
+      return { status: "PASSED", failed: [], missing: [] };
+    }
+    function passFailWord(student, subjects, bucket, className, maxPerSubject) {
+      return assessmentResult(student, subjects, bucket, className, maxPerSubject).status;
+    }
+    function passFailCode(student, subjects, bucket, className, maxPerSubject) {
+      var status = passFailWord(student, subjects, bucket, className, maxPerSubject);
+      return status === "PASSED" ? "P" : (status === "NOT PASSED" ? "F" : "I");
+    }
 
     function initReports() {
       $("exPaneReports").innerHTML =
@@ -1146,7 +1227,7 @@
           '<td class="student-name">' + esc(s.name) + '</td>' + cells +
           '<td class="grp grand-total">' + (s.hasAny ? roundHalfValue(s.totalScored) : '&ndash;') + '</td>' +
           '<td class="grand-total">' + (s.hasAny ? s.percent : '&ndash;') + '</td>' +
-          '<td class="grand-total">' + (s.hasAny ? (pct >= 33 ? 'P' : 'F') : '&ndash;') + '</td>' +
+          '<td class="grand-total">' + ((s.hasAny || d.isSA) ? passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject) : '&ndash;') + '</td>' +
           '<td class="grand-total">' + (rankByIndex[idx] || '&ndash;') + '</td></tr>';
       });
 
@@ -1157,7 +1238,13 @@
     }
     function buildLegendHtml(d, isSABucket) {
       if (isSABucket) {
-        return '<b>Academic :</b> 1 - Summative Exam, 2 - Internal Marks, T - Total; <b>Holistic :</b> 1 - ' +
+        var grade = gradeNumFromClass(d.class);
+        var passRule = grade === 10
+          ? 'Pass rule: 35% in each subject; Hindi (Second Language) 20%; Science combines Physics + Biology.'
+          : (grade === 9
+            ? 'Pass rule: 35% in each subject; Science combines Physics + Biology.'
+            : 'Pass rule: school benchmark of 35% in each academic subject.');
+        return '<b>Academic :</b> 1 - Summative Exam, 2 - Internal Marks, T - Total; <b>Result :</b> P - all subjects passed, F - one or more subjects below minimum, I - marks incomplete; <b>' + esc(passRule) + '</b> <b>Holistic :</b> 1 - ' +
           esc(((d.holisticParams || [])[0] || {}).parameter || 'Attendance & Punctuality') + ', 2 - ' +
           esc(((d.holisticParams || [])[1] || {}).parameter || 'Extra & Co-curriculars') + ', 3 - ' +
           esc(((d.holisticParams || [])[2] || {}).parameter || 'Assembly & Spoken Skills');
@@ -1189,7 +1276,7 @@
           subCols.forEach(function (k) { var v = c[k]; row.push(v && v.value !== "" && v.value != null ? v.value : ""); });
         });
         (d.holisticParams || []).forEach(function (p) { var v = s.holistic ? s.holistic[p.parameter] : null; row.push(v && v.value !== "" ? v.value : ""); });
-        row.push(s.hasAny ? s.totalScored : "", s.totalMax, s.hasAny ? s.percent : "", s.hasAny ? (Number(s.percent) >= 33 ? "P" : "F") : "");
+        row.push(s.hasAny ? s.totalScored : "", s.totalMax, s.hasAny ? s.percent : "", (s.hasAny || d.isSA) ? passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject) : "");
         lines.push(row.map(csvEsc).join(","));
       });
       var blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -1334,15 +1421,24 @@
         var totalRow = '<tr class="pr-component-total"><td>Component Total</td>' + componentTotals.map(function (value, i) {
           return '<td>' + (value == null ? '&ndash;' : esc(roundHalfValue(value)) + ' / ' + esc(roundHalfValue(componentMaximums[i]))) + '</td>';
         }).join('') + '</tr>';
+        var saResult = assessmentResult(s, subjects, d.bucket, d.class, maxPerSubject);
+        var resultDetail = saResult.failed.length
+          ? '<small>Below minimum: ' + esc(saResult.failed.join(', ')) + '</small>'
+          : (saResult.missing.length ? '<small>Marks pending: ' + esc(saResult.missing.join(', ')) + '</small>' : '');
         var resultStrip = '<div class="pr-result-strip">' +
           '<div class="pr-result-card"><span>Percentage</span><b>' + (s.hasAny ? esc(s.percent) + '%' : '&ndash;') + '</b></div>' +
           '<div class="pr-result-card"><span>Rank</span><b>' + (ranks[idx] || '&ndash;') + '</b></div>' +
-          '<div class="pr-result-card"><span>Overall Result</span><b>' + esc(passFailWord(pct)) + '</b></div>' +
+          '<div class="pr-result-card"><span>Overall Result</span><b>' + esc(saResult.status) + '</b>' + resultDetail + '</div>' +
         '</div>';
         var chartVals = subjects.map(function (subject) { var value = subjectTotalValue(s, subject); return value == null ? 0 : value; });
         var attendance = attendanceRowsForStudent(d, s);
         var assessmentAbsent = studentHasAssessmentAbsence(s, subjects, academicKeys.filter(function (k) { return k !== "CTAvg" && k !== "Tot"; }));
         var impression = intelligentImpression(s, subjects, maxPerSubject, attendance.overallPercentage, assessmentAbsent);
+        if (isSABucket && saResult.status === "NOT PASSED") {
+          impression = 'The student has not met the minimum pass mark in ' + saResult.failed.join(', ') + '. Focused teaching, revision and correction of mistakes are needed in these areas.';
+        } else if (isSABucket && saResult.status === "INCOMPLETE") {
+          impression = 'The assessment is incomplete. Marks are still required for ' + saResult.missing.join(', ') + '. The overall result should be reviewed after all subject marks are entered.';
+        }
         function attendanceTableHtml(rows) {
           var head = rows.map(function (row) { return '<th>' + esc(row.month) + '</th>'; }).join('');
           var present = rows.map(function (row) { return '<td>' + (row.present == null ? '&ndash;' : esc(roundHalfValue(row.present))) + '</td>'; }).join('');
