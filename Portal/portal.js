@@ -219,7 +219,6 @@
     { id: "feemgmt",     label: "Fee Management System",    icon: "account_balance_wallet", href: "fee-management.html",     perm: "Fee Management System", mgmt: true, desc: "Collect fees · Students · Reports" },
     { id: "studentmgmt", label: "Student Management",        icon: "badge",                  href: "student-management.html", perm: "Student Management", mgmt: true, desc: "Central student database · Admissions · Promotions" },
     { id: "usermgmt",    label: "User Management",           icon: "manage_accounts",        href: "user-management.html",    perm: "User Management", mgmt: true, desc: "Logins · Shift profiles · Campus & module access" },
-    { id: "dashboard",   label: "Management Dashboard",     icon: "dashboard",            href: "management-dashboard.html", perm: "Management Dashboard", mgmt: true, desc: "Live school-wide overview" },
     { id: "payroll", label: "Payroll Management", icon: "payments", href: "salary-management.html", perm: "Payroll Management", mgmt: true, desc: "Salary assignments · Monthly payroll · Salary slips" },
     { id: "timetable", label: "Timetable Management", icon: "calendar_view_week", href: "timetable.html", perm: "Timetable Management", mgmt: true, desc: "Master class timetable · Drives Homework & Exams" }
   ];
@@ -245,7 +244,11 @@
 
   function _visibleMenu(session) {
     var isMgmt = session.role === "Management", perms = session.permissions || {};
+    var isMob = (window.innerWidth || document.documentElement.clientWidth || 0) < MOBILE_ADMIN_BP;
     return MENU.filter(function (m) {
+      // Hide Users page in mobile admin view
+      if (isMob && isMgmt && m.id === "usermgmt") return false;
+
       /*
        * Explicit user permissions are authoritative.
        *
@@ -280,7 +283,7 @@
     var side = document.getElementById("nav");
     if (side) side.innerHTML = '<div class="pv2-sidebar-inner"><div class="pv2-sidebar-title">Portal Modules</div>' + items.map(function (m) { return '<a class="pv2-navitem ' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + m.label + '</span>' + (m.soon ? '<em class="pv2-soon">Soon</em>' : "") + '</a>'; }).join("") + '</div>';
     var mob = document.getElementById("mobileNav");
-    var SHORT = { home: "Home", attendance: "Attendance", homework: "Homework", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", feemgmt: "Fee Mgmt", studentmgmt: "Students", usermgmt: "Users", dashboard: "Dashboard" };
+    var SHORT = { home: "Home", attendance: "Attendance", homework: "Homework", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", feemgmt: "Fee Mgmt", studentmgmt: "Students", usermgmt: "Users", payroll: "Payroll", timetable: "Timetable" };
     // Mobile bottom navigation: a permanent "Home" (dashboard launcher) followed
     // by the same permission-filtered modules used on desktop. No duplicate logic.
     var homeItem = '<a class="' + (activeId === "home" ? "active" : "") + '" href="dashboard.html"><i class="material-icons">home</i><span>Home</span></a>';
@@ -291,11 +294,14 @@
   function _subtabCss() {
     if (document.getElementById("pv2-subtab-css")) return;
     var css = ".pv2-subtabs{display:inline-flex;gap:6px;background:#f1f5f9;border:1px solid var(--border);border-radius:999px;padding:4px;margin:0 0 18px}" +
+      "@media(max-width:900px){.pv2-subtabs{display:none!important}}" +
       ".pv2-subtab{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:999px;font-weight:700;font-size:13px;color:var(--text-muted)}" +
       ".pv2-subtab i{font-size:17px}.pv2-subtab:hover{color:var(--maroon)}.pv2-subtab.active{background:var(--maroon);color:#fff}.pv2-subtab.active i{color:#fff}";
     var st = document.createElement("style"); st.id = "pv2-subtab-css"; st.textContent = css; document.head.appendChild(st);
   }
   function renderSubtabs(activeId, session) {
+    var isMob = (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+    if (isMob) return; // Keep mobile pages single-purpose and clutter-free
     var group = _groupOf(activeId); if (!group) return;
     var isMgmt = session.role === "Management";
     var isAttendanceEntry = String(session.name || "").trim().toLowerCase() === "attendance entry";
@@ -369,6 +375,11 @@
 
   function bootPage(activeId) {
     var session = Session.require(); if (!session) return null;
+    var isMob = (window.innerWidth || document.documentElement.clientWidth || 0) < MOBILE_ADMIN_BP;
+    if (activeId === "usermgmt" && isMob && session.role === "Management") {
+      location.replace("dashboard.html");
+      return null;
+    }
     renderChrome({ app: true, userName: session.name });
     renderNav(activeId, session); renderSubtabs(activeId, session);
     _applyReadOnlyClass(session);

@@ -414,6 +414,218 @@
     return n;
   }
 
+  var curMobileGrade = null;
+  var sylSearchQuery = "";
+
+  function renderMobileManagement(rep, byGrade, grades) {
+    var host = $("sylClassView");
+    if (!host) return;
+
+    // Level 2: Dedicated Class View
+    if (curMobileGrade && byGrade[curMobileGrade]) {
+      var g = curMobileGrade;
+      var subs = byGrade[g].slice().sort(function (a, b) { return String(a.subject).localeCompare(String(b.subject)); });
+      var done = 0, tot = 0, gLag = 0;
+      subs.forEach(function (s) { done += s._done; tot += s._total; gLag += s._lag; });
+      var pct = tot > 0 ? Math.round(done / tot * 100) : 0;
+      var pcolor = pct === 100 ? "#15803d" : (pct >= 50 ? "#0284c7" : (pct > 0 ? "#b45309" : "#64748b"));
+
+      var selectOptions = grades.map(function (gradeName) {
+        return '<option value="' + esc(gradeName) + '" ' + (gradeName === g ? 'selected' : '') + '>' + esc(gradeName) + '</option>';
+      }).join("");
+
+      var html =
+        '<div class="syl-mob-class-view">' +
+          '<div class="syl-mob-top-nav">' +
+            '<button type="button" class="syl-mob-back-btn" id="sylMobBack"><i class="material-icons">arrow_back</i> All Classes</button>' +
+            '<select class="syl-mob-class-select mob-select" id="sylMobClassSelect">' + selectOptions + '</select>' +
+          '</div>' +
+          '<div class="syl-mob-banner">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+              '<h3 style="margin:0;font-size:18px;font-weight:900;color:#0f172a;">' + esc(g) + '</h3>' +
+              (gLag > 0 ? '<span class="syl-gbadge behind">' + gLag + ' behind</span>' : '<span class="syl-gbadge ok"><i class="material-icons">check</i>On track</span>') +
+            '</div>' +
+            '<div class="syl-mob-cc-stats">' +
+              '<div class="syl-mob-stat-col"><div class="syl-mob-stat-val">' + tot + '</div><div class="syl-mob-stat-lbl">Total Lessons</div></div>' +
+              '<div class="syl-mob-stat-col"><div class="syl-mob-stat-val" style="color:#15803d;">' + done + '</div><div class="syl-mob-stat-lbl">Completed</div></div>' +
+              '<div class="syl-mob-stat-col"><div class="syl-mob-stat-val" style="color:#b91c1c;">' + (tot > done ? (tot - done) : 0) + '</div><div class="syl-mob-stat-lbl">Pending</div></div>' +
+            '</div>' +
+            '<div class="syl-mob-cc-prog"><div class="syl-mob-cc-bar" style="width:' + pct + '%;background:' + pcolor + ';"></div></div>' +
+            '<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#64748b;">' +
+              '<span>' + subs.length + ' subjects</span>' +
+              '<span style="color:' + pcolor + ';font-weight:800;">' + pct + '% Complete</span>' +
+            '</div>' +
+          '</div>' +
+          '<div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin:8px 0 2px;">Subjects (' + subs.length + ')</div>' +
+          '<div style="display:flex;flex-direction:column;gap:8px;">';
+
+      subs.forEach(function (s, subIdx) {
+        var pk = "d_" + gw(g) + "_" + subIdx;
+        _drillCache[pk] = s;
+        var subPct = s._total > 0 ? Math.round(s._done / s._total * 100) : 0;
+        var subColor = subPct === 100 ? "#15803d" : (subPct >= 50 ? "#0284c7" : (subPct > 0 ? "#b45309" : "#64748b"));
+        var badgeHtml = "";
+        if (s._total === 0) badgeHtml = '<span class="syl-cpill grey">No lesson plan</span>';
+        else if (s._lag > 0) badgeHtml = '<span class="syl-cpill red"><i class="material-icons">schedule</i>' + s._lag + ' behind</span>';
+        else if (s._active > 0) badgeHtml = '<span class="syl-cpill amber">In progress</span>';
+        else badgeHtml = '<span class="syl-cpill green"><i class="material-icons">check</i>On track</span>';
+
+        var clickable = Array.isArray(s.lessonsList) && s.lessonsList.length > 0;
+
+        html +=
+          '<div class="syl-mob-subj-card ' + (clickable ? '' : 'no-drill') + '" data-pk="' + pk + '" data-drill="' + (clickable ? '1' : '0') + '">' +
+            '<div class="syl-mob-sc-head">' +
+              '<div>' +
+                '<div class="syl-mob-sc-name">' + esc(s.subject) + '</div>' +
+                '<div class="syl-mob-sc-teacher">' + esc(s.teacherName || "No teacher assigned") + '</div>' +
+              '</div>' +
+              badgeHtml +
+            '</div>' +
+            '<div class="syl-mob-cc-prog" style="margin:6px 0;"><div class="syl-mob-cc-bar" style="width:' + subPct + '%;background:' + subColor + ';"></div></div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#64748b;font-weight:700;">' +
+              '<span>' + s._done + '/' + s._total + ' lessons (' + subPct + '%)</span>' +
+              (clickable ? '<span style="color:#7a151a;font-weight:800;display:inline-flex;align-items:center;">Lessons <i class="material-icons" style="font-size:16px;">chevron_right</i></span>' : '') +
+            '</div>' +
+          '</div>';
+      });
+
+      html += '</div></div>';
+      host.innerHTML = html;
+
+      $("sylMobBack").addEventListener("click", function () {
+        curMobileGrade = null;
+        renderMobileManagement(rep, byGrade, grades);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+
+      $("sylMobClassSelect").addEventListener("change", function () {
+        curMobileGrade = this.value;
+        renderMobileManagement(rep, byGrade, grades);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+
+      Array.prototype.forEach.call(host.querySelectorAll('.syl-mob-subj-card[data-drill="1"]'), function (card) {
+        card.addEventListener("click", function () {
+          openDrill(card.getAttribute("data-pk"));
+        });
+      });
+      return;
+    }
+
+    // Level 1: Classes Overview
+    var totalLag = 0, subjLagCount = 0, classesAffected = 0;
+    grades.forEach(function (g) {
+      var gl = 0; byGrade[g].forEach(function (s) { if (s._lag > 0) { gl += s._lag; subjLagCount++; } });
+      if (gl > 0) classesAffected++; totalLag += gl;
+    });
+
+    var visGrades = grades;
+    if (mgmtFilter === "attention") {
+      visGrades = grades.filter(function (g) {
+        var gl = 0; byGrade[g].forEach(function (s) { gl += s._lag; });
+        return gl > 0;
+      });
+    } else if (mgmtFilter === "ontrack") {
+      visGrades = grades.filter(function (g) {
+        var gl = 0; byGrade[g].forEach(function (s) { gl += s._lag; });
+        return gl <= 0;
+      });
+    }
+    if (sylSearchQuery) {
+      var q = sylSearchQuery.toLowerCase();
+      visGrades = visGrades.filter(function (g) {
+        if (g.toLowerCase().indexOf(q) >= 0) return true;
+        return byGrade[g].some(function (s) {
+          return (s.subject && s.subject.toLowerCase().indexOf(q) >= 0) ||
+                 (s.teacherName && s.teacherName.toLowerCase().indexOf(q) >= 0);
+        });
+      });
+    }
+
+    var onTrackCount = grades.length - classesAffected;
+    var html =
+      '<div class="syl-mob-overview">' +
+        '<div class="syl-mob-kpis">' +
+          '<div class="syl-mob-kpi ' + (mgmtFilter === "all" ? "active" : "") + '" data-f="all">' +
+            '<div class="syl-mob-kpi-val">' + grades.length + '</div>' +
+            '<div class="syl-mob-kpi-lbl">Classes</div>' +
+          '</div>' +
+          '<div class="syl-mob-kpi ' + (mgmtFilter === "ontrack" ? "active" : "") + '" data-f="ontrack">' +
+            '<div class="syl-mob-kpi-val" style="color:#15803d;">' + onTrackCount + '</div>' +
+            '<div class="syl-mob-kpi-lbl">On Track</div>' +
+          '</div>' +
+          '<div class="syl-mob-kpi ' + (mgmtFilter === "attention" ? "active" : "") + '" data-f="attention">' +
+            '<div class="syl-mob-kpi-val" style="color:#b91c1c;">' + classesAffected + '</div>' +
+            '<div class="syl-mob-kpi-lbl">Attention</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="position:relative;margin-bottom:8px;">' +
+          '<i class="material-icons" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:18px;pointer-events:none;">search</i>' +
+          '<input type="search" id="sylMobSearchInput" class="syl-mob-search mob-search" placeholder="Search class or subject…" value="' + esc(sylSearchQuery) + '">' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:10px;">';
+
+    if (!visGrades.length) {
+      html += '<div class="syl-empty"><i class="material-icons">verified</i>' + (mgmtFilter === "attention" ? 'No classes need attention. Everything is on track!' : (mgmtFilter === "ontrack" ? 'No classes are fully on track yet.' : 'No classes match your search.')) + '</div>';
+    } else {
+      visGrades.forEach(function (g) {
+        var subs = byGrade[g];
+        var done = 0, tot = 0, gLag = 0;
+        subs.forEach(function (s) { done += s._done; tot += s._total; gLag += s._lag; });
+        var pct = tot > 0 ? Math.round(done / tot * 100) : 0;
+        var pcolor = pct === 100 ? "#15803d" : (pct >= 50 ? "#0284c7" : (pct > 0 ? "#b45309" : "#64748b"));
+        var badge = gLag > 0
+          ? '<span class="syl-mob-cc-badge behind">' + gLag + ' behind</span>'
+          : '<span class="syl-mob-cc-badge ok"><i class="material-icons">check</i>On track</span>';
+
+        html +=
+          '<div class="syl-mob-class-card" data-grade="' + esc(g) + '">' +
+            '<div class="syl-mob-cc-head">' +
+              '<div class="syl-mob-cc-title">' + esc(g) + '</div>' +
+              badge +
+            '</div>' +
+            '<div class="syl-mob-cc-stats">' +
+              '<div class="syl-mob-stat-col"><div class="syl-mob-stat-val">' + tot + '</div><div class="syl-mob-stat-lbl">Total Lessons</div></div>' +
+              '<div class="syl-mob-stat-col"><div class="syl-mob-stat-val" style="color:#15803d;">' + done + '</div><div class="syl-mob-stat-lbl">Completed</div></div>' +
+              '<div class="syl-mob-stat-col"><div class="syl-mob-stat-val" style="color:#b91c1c;">' + (tot > done ? (tot - done) : 0) + '</div><div class="syl-mob-stat-lbl">Pending</div></div>' +
+            '</div>' +
+            '<div class="syl-mob-cc-prog"><div class="syl-mob-cc-bar" style="width:' + pct + '%;background:' + pcolor + ';"></div></div>' +
+            '<div class="syl-mob-cc-foot">' +
+              '<span>' + subs.length + ' subjects · ' + pct + '% complete</span>' +
+              '<span class="syl-mob-cc-link">View Subjects <i class="material-icons" style="font-size:16px;">chevron_right</i></span>' +
+            '</div>' +
+          '</div>';
+      });
+    }
+
+    html += '</div></div>';
+    host.innerHTML = html;
+
+    Array.prototype.forEach.call(host.querySelectorAll(".syl-mob-kpi[data-f]"), function (kpi) {
+      kpi.addEventListener("click", function () {
+        var f = kpi.getAttribute("data-f");
+        mgmtFilter = (mgmtFilter === f && f !== "all") ? "all" : f;
+        renderMobileManagement(rep, byGrade, grades);
+      });
+    });
+
+    var sInput = $("sylMobSearchInput");
+    if (sInput) {
+      sInput.addEventListener("input", function () {
+        sylSearchQuery = this.value.trim();
+        renderMobileManagement(rep, byGrade, grades);
+      });
+    }
+
+    Array.prototype.forEach.call(host.querySelectorAll(".syl-mob-class-card"), function (card) {
+      card.addEventListener("click", function () {
+        curMobileGrade = card.getAttribute("data-grade");
+        renderMobileManagement(rep, byGrade, grades);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+  }
+
   function renderReport(rep) {
     var host = $("sylClassView");
     if (!rep.length) { host.innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No syllabus data found.</div>'; return; }
@@ -422,17 +634,68 @@
     rep.forEach(function (s) {
       s._lag = subjLagging(s);
       s._taskPlan = !!s.hasTaskPlan;
-      s._done = s._taskPlan ? (s.completedTasks || 0) : (s.completedLessonsCount || 0);
-      s._total = s._taskPlan ? (s.totalTasks || 0) : (s.totalLessonsCount || 0);
-      s._active = s._taskPlan
-        ? ((s._total > 0 && s._done > 0 && s._done < s._total) ? 1 : 0)
-        : (s.inProgressLessonsCount || 0);
+
+      // Always count actual LESSONS for curriculum progress (not individual micro-tasks)
+      var lessonTotal = Number(s.totalLessonsCount || 0);
+      if (!lessonTotal && Array.isArray(s.lessonsList) && s.lessonsList.length > 0) {
+        // In AstraGen (grades 1 to 5) or session plans, check if items are session tasks
+        var distinctLessons = {};
+        s.lessonsList.forEach(function (l) {
+          var id = (l.lessonName || l.lesson || l.chapter || "").trim();
+          if (!id && l.session) {
+            id = (l.name || "Lesson") + "::" + l.session;
+          }
+          if (id) distinctLessons[id] = true;
+        });
+        var distCount = Object.keys(distinctLessons).length;
+        if (distCount > 0 && distCount < s.lessonsList.length) {
+          lessonTotal = distCount;
+        } else {
+          lessonTotal = s.lessonsList.length;
+        }
+      }
+      var lessonDone = Number(s.completedLessonsCount || 0);
+      if (Array.isArray(s.lessonsList)) {
+        var doneInList = s.lessonsList.filter(function (l) {
+          if (l.completed === true || String(l.completed).toLowerCase() === "true") return true;
+          if (l.status === "Done" || l.status === "Completed") return true;
+          if (l.totalTasks > 0 && l.completedTasks >= l.totalTasks) return true;
+          return false;
+        }).length;
+        if (doneInList > lessonDone) lessonDone = doneInList;
+      }
+
+      // If no lesson count exists at all, fall back to sessions or sensible estimate (never raw micro-tasks)
+      if (!lessonTotal && s.totalTasks > 0) {
+        if (s.totalSessions > 0) {
+          s._total = s.totalSessions;
+          s._done = s.completedSessions || 0;
+        } else {
+          // Average session has ~4 tasks; do not inflate lesson count with raw tasks
+          s._total = Math.max(1, Math.round(s.totalTasks / 4));
+          s._done = Math.min(s._total, Math.round((s.completedTasks || 0) / 4));
+        }
+      } else {
+        s._total = lessonTotal;
+        s._done = Math.min(lessonTotal, lessonDone);
+      }
+
+      s._active = Number(s.inProgressLessonsCount || 0);
+      if (!s._active && s._total > 0 && s._done > 0 && s._done < s._total) {
+        s._active = 1;
+      }
     });
 
     var byGrade = {};
     rep.forEach(function (r) { (byGrade[r.grade] = byGrade[r.grade] || []).push(r); });
     var grades = Object.keys(byGrade).sort(function (a, b) { return gw(a) - gw(b); });
     _drillCache = {};
+
+    var isMobile = (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+    if (isMobile) {
+      renderMobileManagement(rep, byGrade, grades);
+      return;
+    }
 
     // system-wide "behind" summary
     var totalLag = 0, subjLagCount = 0, classesAffected = 0;
@@ -1414,7 +1677,45 @@
       "#sylEditorModal .syl-ed-action{font-weight:500!important}" +
       "#sylEditorModal .syl-cell-input{font-weight:400}#sylEditorModal .syl-cell-number{font-weight:600}" +
       "#sylEditorModal .syl-ed-number{font-weight:600}" +
-      "@media(max-width:760px){.syl-editor-modal{width:calc(100% - 12px);padding:14px!important}.syl-editor-toolbar{grid-template-columns:1fr}.syl-editor-addwrap{justify-content:space-between}.syl-editor-list{max-height:55vh}.syl-editor-intro{max-width:none}}";
+      "@media(max-width:760px){.syl-editor-modal{width:calc(100% - 12px);padding:14px!important}.syl-editor-toolbar{grid-template-columns:1fr}.syl-editor-addwrap{justify-content:space-between}.syl-editor-list{max-height:55vh}.syl-editor-intro{max-width:none}}" +
+      "@media(max-width:900px){" +
+        "#sylViewSeg, .syl-admin-toolbar, #sylTiming, .syl-mob-filter-bar{display:none!important;}" +
+        ".syl-mob-overview{display:flex;flex-direction:column;gap:10px;margin-top:10px;}" +
+        ".syl-mob-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;}" +
+        ".syl-mob-kpi{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:9px 6px;text-align:center;box-shadow:0 1px 3px rgba(15,23,42,0.03);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;transition:all 0.15s ease;}" +
+        ".syl-mob-kpi:active{transform:scale(0.97);}" +
+        ".syl-mob-kpi.active{border:2px solid var(--brand-primary,#800000)!important;background:#fff5f5!important;box-shadow:0 2px 6px rgba(122,21,26,0.12)!important;}" +
+        ".syl-mob-kpi-val{font-size:16px;font-weight:900;color:#0f172a;line-height:1.2;font-variant-numeric:tabular-nums;}" +
+        ".syl-mob-kpi-lbl{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;letter-spacing:0.02em;}" +
+        ".syl-mob-filter-bar{display:flex;gap:6px;margin-bottom:10px;}" +
+        ".syl-mob-pill{padding:5px 12px;border-radius:999px;border:1px solid #e2e8f0;background:#fff;font-size:11.5px;font-weight:700;color:#64748b;cursor:pointer;}" +
+        ".syl-mob-pill.active{background:#7a151a;color:#fff;border-color:#7a151a;}" +
+        ".syl-mob-search{width:100%!important;height:38px!important;padding:6px 10px 6px 34px!important;border:1px solid #cbd5e1!important;border-radius:9px!important;font-size:13px!important;box-sizing:border-box!important;background:#fff!important;pointer-events:auto!important;user-select:text!important;}" +
+        ".syl-mob-class-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 4px rgba(15,23,42,0.04);cursor:pointer;touch-action:manipulation;transition:transform 0.1s;}" +
+        ".syl-mob-class-card:active{background:#f8fafc;transform:scale(0.99);}" +
+        ".syl-mob-cc-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}" +
+        ".syl-mob-cc-title{font-size:15.5px;font-weight:900;color:#0f172a;}" +
+        ".syl-mob-cc-badge{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;}" +
+        ".syl-mob-cc-badge.ok{background:#dcfce7;color:#15803d;}" +
+        ".syl-mob-cc-badge.behind{background:#fee2e2;color:#b91c1c;}" +
+        ".syl-mob-cc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:#f8fafc;padding:7px 10px;border-radius:10px;margin:8px 0;text-align:center;}" +
+        ".syl-mob-stat-val{font-size:14px;font-weight:900;color:#0f172a;line-height:1.2;font-variant-numeric:tabular-nums;}" +
+        ".syl-mob-stat-lbl{font-size:9.5px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:1px;letter-spacing:0.02em;}" +
+        ".syl-mob-cc-prog{height:6px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-bottom:8px;}" +
+        ".syl-mob-cc-bar{height:100%;border-radius:999px;transition:width 0.3s ease;}" +
+        ".syl-mob-cc-foot{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #f1f5f9;padding-top:7px;font-size:11.5px;color:#64748b;font-weight:700;}" +
+        ".syl-mob-cc-link{color:#7a151a;font-weight:800;display:inline-flex;align-items:center;gap:2px;}" +
+        ".syl-mob-class-view{display:flex;flex-direction:column;gap:10px;margin-top:10px;}" +
+        ".syl-mob-top-nav{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;box-shadow:0 1px 3px rgba(15,23,42,0.03);}" +
+        ".syl-mob-back-btn{display:inline-flex;align-items:center;gap:3px;border:none;background:transparent;color:#7a151a;font-size:13px;font-weight:800;cursor:pointer;padding:6px 4px;white-space:nowrap;}" +
+        ".syl-mob-class-select{padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;max-width:160px;min-height:36px;}" +
+        ".syl-mob-banner{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 3px rgba(15,23,42,0.03);}" +
+        ".syl-mob-subj-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 3px rgba(15,23,42,0.03);cursor:pointer;transition:transform 0.1s;}" +
+        ".syl-mob-subj-card:active{background:#f8fafc;transform:scale(0.99);}" +
+        ".syl-mob-sc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px;}" +
+        ".syl-mob-sc-name{font-size:15px;font-weight:900;color:#0f172a;}" +
+        ".syl-mob-sc-teacher{font-size:11.5px;color:#64748b;margin-top:2px;}" +
+      "}";
     var st = document.createElement("style"); st.id = "syl-css"; st.textContent = css; document.head.appendChild(st);
   }
 })();

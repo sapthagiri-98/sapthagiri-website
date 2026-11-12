@@ -14,6 +14,36 @@
   var $ = function (id) { return document.getElementById(id); };
   var isMgmt = (session.role === "Management" || session.role === "Tutor");
   var currentClass = "", currentSubject = "", mgmtOverviewCache = [];
+  var curMobileHwClass = null;
+
+  function isMobile() {
+    return (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+  }
+
+  function injectHwCss() {
+    if (document.getElementById("hw-mob-css")) return;
+    var st = document.createElement("style");
+    st.id = "hw-mob-css";
+    st.textContent =
+      "@media(max-width:900px){" +
+        ".hw-role{display:none!important;}" +
+        "#hwMgmtActions{width:100%;margin-top:6px;}" +
+        "#hwMgmtActions .btn{width:100%!important;justify-content:center;}" +
+        ".hw-mob-class-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.03);margin-bottom:10px;cursor:pointer;touch-action:manipulation;transition:transform 0.1s;}" +
+        ".hw-mob-class-card:active{background:#f8fafc;transform:scale(0.99);}" +
+        ".hw-mob-cc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}" +
+        ".hw-mob-cc-title{font-size:16px;font-weight:800;color:#0f172a;}" +
+        ".hw-mob-cc-status{font-size:11.5px;font-weight:800;padding:3px 8px;border-radius:999px;}" +
+        ".hw-mob-cc-status.done{background:#dcfce7;color:#15803d;}" +
+        ".hw-mob-cc-status.pending{background:#fef3c7;color:#b45309;}" +
+        ".hw-mob-cc-meta{font-size:12px;color:#64748b;display:flex;justify-content:space-between;align-items:center;margin-top:4px;}" +
+        ".hw-mob-cc-bar{height:5px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-top:6px;}" +
+        ".hw-mob-cc-fill{height:100%;border-radius:999px;background:#15803d;}" +
+        ".hw-mob-detail-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-bottom:12px;}" +
+      "}";
+    document.head.appendChild(st);
+  }
+  injectHwCss();
 
   // build a WhatsApp anchor without a literal <a> tag in source (paste-safe)
   var LT = String.fromCharCode(60), GT = String.fromCharCode(62);
@@ -128,30 +158,105 @@
     var date = $("hwDate").value, displayDate = date.split("-").reverse().join("-");
     var canOverride = session.role === "Management", canRemind = session.role === "Management";
     sortGrades(classes, function (item) { return item.className; });
-    c.innerHTML = classes.map(function (cls) {
-      var pending = cls.subjects.filter(function (s) { return !s.homework && !s.isActivity; }).length;
-      var status = pending === 0 ? '<span style="color:var(--success);font-weight:700;">✔ Completed</span>' : '<span style="color:var(--warning);font-weight:700;">⚠ ' + pending + ' Pending</span>';
-      var shareTxt = "*Sapthagiri Homework Diary*\n*Date:* " + displayDate + "\n*Class:* " + cls.className + "\n\n";
-      cls.subjects.forEach(function (s) { if (s.homework && !s.isActivity) shareTxt += "*" + s.subject + ":* " + s.homework + "\n\n"; });
-      // Share Class Diary → WhatsApp Desktop (no phone → chat picker)
-      var shareBtn = (session.role === "Tutor") ? "" :
-        waAnchor("btn btn-whatsapp", "width:auto;padding:8px 14px;font-size:13px;", "", shareTxt,
-          '<i class="material-icons" style="color:#fff;">share</i> Share Class Diary');
-      var cards = cls.subjects.map(function (s) {
-        var done = s.homework && String(s.homework).trim() !== "";
-        var locked = (session.role === "Tutor" && s.teacher !== session.name) || s.isActivity;
-        var clickable = locked ? "" : "clickable";
-        var dataAttr = locked ? "" : ('data-cls="' + esc(cls.className) + '" data-sub="' + esc(s.subject) + '"');
-        var remindMsg = encodeURIComponent("Hello " + s.teacher + ", please fill missing diary updates for Class " + cls.className + " - " + s.subject + " on " + displayDate + ".");
-        var remindBtn = (!done && s.phone && !s.isActivity && canRemind) ? '<button class="btn-remind" data-remind="' + s.phone + '|' + remindMsg + '"><i class="material-icons" style="font-size:14px;color:var(--warning);">notifications</i> Remind</button>' : "";
-        return '<div class="subject-status-card ' + clickable + ' ' + (done ? "status-complete" : "status-pending") + '" ' + dataAttr + '>' +
-          '<div><div class="ssc-top"><span class="ssc-name">' + esc(s.subject) + '</span><span class="period-badge">' + esc(s.periodLabel || "") + '</span></div>' +
-          '<div class="ssc-teacher">Instructor: ' + esc(s.teacher || "-") + '</div>' +
-          '<div class="ssc-hw">' + (done ? esc(s.homework) : '<em style="color:var(--text-muted);">No diary entry logged…</em>') + '</div></div>' +
-          '<div class="ssc-actions">' + remindBtn + '</div></div>';
+
+    // MOBILE VIEW: Display compact class list first; clicking navigates into class detail view with close/back button
+    if (isMobile()) {
+      if (curMobileHwClass) {
+        var cls = classes.filter(function (it) { return it.className === curMobileHwClass; })[0];
+        if (!cls) { curMobileHwClass = null; renderMgmt(classes); return; }
+        var pending = cls.subjects.filter(function (s) { return !s.homework && !s.isActivity; }).length;
+        var status = pending === 0 ? '<span style="color:var(--success);font-weight:700;">✔ Completed</span>' : '<span style="color:var(--warning);font-weight:700;">⚠ ' + pending + ' Pending</span>';
+        var shareTxt = "*Sapthagiri Homework Diary*\n*Date:* " + displayDate + "\n*Class:* " + cls.className + "\n\n";
+        cls.subjects.forEach(function (s) { if (s.homework && !s.isActivity) shareTxt += "*" + s.subject + ":* " + s.homework + "\n\n"; });
+        var shareBtn = (session.role === "Tutor") ? "" :
+          waAnchor("btn btn-whatsapp", "width:auto;padding:8px 14px;font-size:13px;", "", shareTxt,
+            '<i class="material-icons" style="color:#fff;">share</i> Share Class Diary');
+
+        var cards = cls.subjects.map(function (s) {
+          var done = s.homework && String(s.homework).trim() !== "";
+          var locked = (session.role === "Tutor" && s.teacher !== session.name) || s.isActivity;
+          var clickable = locked ? "" : "clickable";
+          var dataAttr = locked ? "" : ('data-cls="' + esc(cls.className) + '" data-sub="' + esc(s.subject) + '"');
+          var remindMsg = encodeURIComponent("Hello " + s.teacher + ", please fill missing diary updates for Class " + cls.className + " - " + s.subject + " on " + displayDate + ".");
+          var remindBtn = (!done && s.phone && !s.isActivity && canRemind) ? '<button class="btn-remind" data-remind="' + s.phone + '|' + remindMsg + '"><i class="material-icons" style="font-size:14px;color:var(--warning);">notifications</i> Remind</button>' : "";
+          return '<div class="subject-status-card ' + clickable + ' ' + (done ? "status-complete" : "status-pending") + '" ' + dataAttr + '>' +
+            '<div><div class="ssc-top"><span class="ssc-name">' + esc(s.subject) + '</span><span class="period-badge">' + esc(s.periodLabel || "") + '</span></div>' +
+            '<div class="ssc-teacher">Instructor: ' + esc(s.teacher || "-") + '</div>' +
+            '<div class="ssc-hw">' + (done ? esc(s.homework) : '<em style="color:var(--text-muted);">No diary entry logged…</em>') + '</div></div>' +
+            '<div class="ssc-actions">' + remindBtn + '</div></div>';
+        }).join("");
+
+        c.innerHTML =
+          '<div class="hw-mob-detail-bar">' +
+            '<button type="button" class="btn btn-secondary" id="hwMobBackBtn" style="padding:6px 12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:4px;">' +
+              '<i class="material-icons" style="font-size:16px;">arrow_back</i> All Classes' +
+            '</button>' +
+            '<div style="font-size:15px;font-weight:800;color:var(--brand-primary,#800000);">Class ' + esc(cls.className) + '</div>' +
+          '</div>' +
+          '<div class="mgmt-class-row">' +
+            '<div class="mgmt-class-header"><div>Class ' + esc(cls.className) + ' &nbsp;&nbsp; ' + status + '</div>' + shareBtn + '</div>' +
+            '<div class="mgmt-subject-grid">' + cards + '</div>' +
+          '</div>';
+
+        var backBtn = $("hwMobBackBtn");
+        if (backBtn) {
+          backBtn.addEventListener("click", function () {
+            curMobileHwClass = null;
+            renderMgmt(classes);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          });
+        }
+      } else {
+        // Class list overview
+        c.innerHTML = '<div class="hw-mob-class-grid">' + classes.map(function (cls) {
+          var totalSub = cls.subjects.filter(function (s) { return !s.isActivity; }).length;
+          var pending = cls.subjects.filter(function (s) { return !s.homework && !s.isActivity; }).length;
+          var completed = totalSub - pending;
+          var pct = totalSub > 0 ? Math.round((completed / totalSub) * 100) : 100;
+          var statusBadge = pending === 0
+            ? '<span class="hw-mob-cc-status done">✔ Completed</span>'
+            : '<span class="hw-mob-cc-status pending">⚠ ' + pending + ' Pending</span>';
+          return '<div class="hw-mob-class-card" data-mob-cls="' + esc(cls.className) + '">' +
+            '<div class="hw-mob-cc-top"><span class="hw-mob-cc-title">Class ' + esc(cls.className) + '</span>' + statusBadge + '</div>' +
+            '<div class="hw-mob-cc-meta"><span>' + totalSub + ' Subjects</span><span>' + completed + '/' + totalSub + ' Logged (' + pct + '%)</span></div>' +
+            '<div class="hw-mob-cc-bar"><div class="hw-mob-cc-fill" style="width:' + pct + '%;' + (pending > 0 ? 'background:#d97706;' : '') + '"></div></div>' +
+          '</div>';
+        }).join("") + '</div>';
+
+        Array.prototype.forEach.call(c.querySelectorAll(".hw-mob-class-card[data-mob-cls]"), function (card) {
+          card.addEventListener("click", function () {
+            curMobileHwClass = card.getAttribute("data-mob-cls");
+            renderMgmt(classes);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          });
+        });
+      }
+    } else {
+      // DESKTOP VIEW
+      c.innerHTML = classes.map(function (cls) {
+        var pending = cls.subjects.filter(function (s) { return !s.homework && !s.isActivity; }).length;
+        var status = pending === 0 ? '<span style="color:var(--success);font-weight:700;">✔ Completed</span>' : '<span style="color:var(--warning);font-weight:700;">⚠ ' + pending + ' Pending</span>';
+        var shareTxt = "*Sapthagiri Homework Diary*\n*Date:* " + displayDate + "\n*Class:* " + cls.className + "\n\n";
+        cls.subjects.forEach(function (s) { if (s.homework && !s.isActivity) shareTxt += "*" + s.subject + ":* " + s.homework + "\n\n"; });
+        var shareBtn = (session.role === "Tutor") ? "" :
+          waAnchor("btn btn-whatsapp", "width:auto;padding:8px 14px;font-size:13px;", "", shareTxt,
+            '<i class="material-icons" style="color:#fff;">share</i> Share Class Diary');
+        var cards = cls.subjects.map(function (s) {
+          var done = s.homework && String(s.homework).trim() !== "";
+          var locked = (session.role === "Tutor" && s.teacher !== session.name) || s.isActivity;
+          var clickable = locked ? "" : "clickable";
+          var dataAttr = locked ? "" : ('data-cls="' + esc(cls.className) + '" data-sub="' + esc(s.subject) + '"');
+          var remindMsg = encodeURIComponent("Hello " + s.teacher + ", please fill missing diary updates for Class " + cls.className + " - " + s.subject + " on " + displayDate + ".");
+          var remindBtn = (!done && s.phone && !s.isActivity && canRemind) ? '<button class="btn-remind" data-remind="' + s.phone + '|' + remindMsg + '"><i class="material-icons" style="font-size:14px;color:var(--warning);">notifications</i> Remind</button>' : "";
+          return '<div class="subject-status-card ' + clickable + ' ' + (done ? "status-complete" : "status-pending") + '" ' + dataAttr + '>' +
+            '<div><div class="ssc-top"><span class="ssc-name">' + esc(s.subject) + '</span><span class="period-badge">' + esc(s.periodLabel || "") + '</span></div>' +
+            '<div class="ssc-teacher">Instructor: ' + esc(s.teacher || "-") + '</div>' +
+            '<div class="ssc-hw">' + (done ? esc(s.homework) : '<em style="color:var(--text-muted);">No diary entry logged…</em>') + '</div></div>' +
+            '<div class="ssc-actions">' + remindBtn + '</div></div>';
+        }).join("");
+        return '<div class="mgmt-class-row"><div class="mgmt-class-header"><div>Class ' + esc(cls.className) + ' &nbsp;&nbsp; ' + status + '</div>' + shareBtn + '</div><div class="mgmt-subject-grid">' + cards + '</div></div>';
       }).join("");
-      return '<div class="mgmt-class-row"><div class="mgmt-class-header"><div>Class ' + esc(cls.className) + ' &nbsp;&nbsp; ' + status + '</div>' + shareBtn + '</div><div class="mgmt-subject-grid">' + cards + '</div></div>';
-    }).join("");
+    }
     if (canOverride) Array.prototype.forEach.call(c.querySelectorAll(".subject-status-card.clickable[data-cls]"), function (card) { card.addEventListener("click", function () { openEdit(card.getAttribute("data-cls"), card.getAttribute("data-sub")); }); });
     // Remind teacher → WhatsApp Desktop
     Array.prototype.forEach.call(c.querySelectorAll("[data-remind]"), function (b) {

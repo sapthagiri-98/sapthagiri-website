@@ -11,6 +11,85 @@
   var esc = P.esc, prettyDate = P.prettyDate, monthLabel = P.monthLabel;
   var $ = function (id) { return document.getElementById(id); };
   var monthCache = {}, current = null, drillDate = "", editorLockedUser = false;
+  var saSearchQuery = "";
+  var cachedSummaryReport = [];
+  var saMobileMode = "today";
+  var saMobileDate = P.todayIso();
+  var saTodayFilter = "all";
+  var saTodaySearch = "";
+
+  function isMobile() {
+    return (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+  }
+
+  function injectStaffAttendanceMobileStyles() {
+    if (document.getElementById("sa-mob-redesign-css")) return;
+    var st = document.createElement("style");
+    st.id = "sa-mob-redesign-css";
+    st.textContent =
+      "@media(max-width:900px){" +
+        "#saManual, .mod-toolbar{display:none!important;}" +
+        ".sa-mob-mode-toggle{display:flex;background:#f1f5f9;border-radius:12px;padding:4px;gap:6px;width:100%;box-sizing:border-box;margin-bottom:12px;}" +
+        ".sa-mob-mode-btn{flex:1;border:none;background:transparent;padding:9px 12px;border-radius:9px;font-weight:700;font-size:13px;color:#64748b;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;min-height:42px;}" +
+        ".sa-mob-mode-btn.active{background:var(--maroon);color:#fff;box-shadow:0 1px 4px rgba(107,29,47,0.25);}" +
+        ".sa-mob-mode-btn i{font-size:17px;}" +
+        ".sa-today-header{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,23,42,0.03);}" +
+        ".sa-today-day{font-size:15px;font-weight:900;color:#0f172a;}" +
+        ".sa-today-sub{font-size:11px;font-weight:600;color:#64748b;margin-top:2px;}" +
+        ".sa-today-picker{border:1px solid #cbd5e1;border-radius:9px;padding:6px 8px;font-size:12px;font-weight:700;color:#0f172a;background:#f8fafc;}" +
+        ".sa-today-kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:12px;}" +
+        ".sa-today-kpi{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:9px 2px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.02);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;transition:all 0.15s ease;}" +
+        ".sa-today-kpi:active{transform:scale(0.96);}" +
+        ".sa-today-kpi.active{box-shadow:0 0 0 2.5px currentColor,0 3px 8px rgba(0,0,0,0.12)!important;font-weight:900;transform:translateY(-1px);}" +
+        ".sa-today-kpi-val{font-size:16px;font-weight:900;line-height:1;}" +
+        ".sa-today-kpi-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;margin-top:3px;}" +
+        ".sa-today-kpi.k-pres{color:#047857;border-color:#bbf7d0;}" +
+        ".sa-today-kpi.k-late{color:#b45309;border-color:#fde68a;}" +
+        ".sa-today-kpi.k-half{color:#7c3aed;border-color:#ddd6fe;}" +
+        ".sa-today-kpi.k-abse{color:#b91c1c;border-color:#fecaca;}" +
+        ".sa-today-kpi.k-leav{color:#0369a1;border-color:#bae6fd;}" +
+        ".sa-today-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.03);cursor:pointer;}" +
+        ".sa-today-card:active{background:#f8fafc;}" +
+        ".sa-today-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;}" +
+        ".sa-today-name{font-size:14.5px;font-weight:800;color:#0f172a;}" +
+        ".sa-today-role{font-size:11.5px;color:#64748b;margin-top:2px;}" +
+        ".sa-today-times{font-size:12px;font-weight:600;color:#334155;display:flex;align-items:center;gap:6px;margin-top:4px;}" +
+        ".sa-today-times i{font-size:14px;color:var(--maroon);}" +
+        ".sa-mob-month-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:8px 10px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,23,42,0.03);}" +
+        ".sa-mob-step-btn{width:38px;height:38px;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;font-size:20px;font-weight:800;color:#0f172a;display:grid;place-items:center;cursor:pointer;flex:0 0 auto;}" +
+        ".sa-mob-month-center{display:flex;align-items:center;gap:6px;flex:1;justify-content:center;}" +
+        ".sa-mob-month-center input[type='month']{border:1px solid #cbd5e1;border-radius:9px;padding:6px 10px;font-size:13px;font-weight:800;color:#0f172a;background:#fff;}" +
+        ".sa-cal-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;font-size:12.5px;font-weight:700;color:#475569;cursor:pointer;margin-bottom:10px;}" +
+        ".sa-cal-collapsible{display:none;margin-bottom:14px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px;}" +
+        ".sa-cal-collapsible.open{display:block;}" +
+        ".sa-mob-search-input{width:100%!important;height:38px!important;padding:6px 10px 6px 34px!important;border:1px solid #cbd5e1!important;border-radius:9px!important;font-size:13px!important;box-sizing:border-box!important;background:#fff!important;pointer-events:auto!important;user-select:text!important;}" +
+        ".sa-mob-list{display:flex;flex-direction:column;gap:10px;margin-top:10px;}" +
+        ".sa-mob-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 4px rgba(15,23,42,0.03);cursor:pointer;touch-action:manipulation;transition:transform 0.1s;}" +
+        ".sa-mob-card:active{background:#f8fafc;transform:scale(0.99);}" +
+        ".sa-mob-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;}" +
+        ".sa-mob-card-name{font-size:15px;font-weight:900;color:#0f172a;letter-spacing:-0.01em;}" +
+        ".sa-mob-card-role{font-size:11px;font-weight:600;color:#64748b;margin-top:2px;}" +
+        ".sa-mob-metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;background:#f8fafc;padding:7px 5px;border-radius:10px;text-align:center;}" +
+        ".sa-mob-m-col{padding:3px 2px;border-radius:6px;cursor:pointer;}" +
+        ".sa-mob-m-val{font-size:14px;font-weight:900;line-height:1.2;font-variant-numeric:tabular-nums;}" +
+        ".sa-mob-m-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.02em;margin-top:2px;}" +
+        ".sa-mob-m-col.m-pres{color:#15803d;}" +
+        ".sa-mob-m-col.m-late{color:#b45309;}" +
+        ".sa-mob-m-col.m-half{color:#6b21a8;}" +
+        ".sa-mob-m-col.m-abse{color:#b91c1c;}" +
+        ".sa-mob-m-col.m-leav{color:#7a151a;}" +
+        ".sa-emp-cat-tabs{display:flex;gap:5px;overflow-x:auto;padding-bottom:6px;margin-bottom:12px;}" +
+        ".sa-emp-cat-tab{padding:5px 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;font-size:11.5px;font-weight:700;color:#475569;white-space:nowrap;cursor:pointer;}" +
+        ".sa-emp-cat-tab.active{background:#7a151a;color:#fff;border-color:#7a151a;}" +
+      "}" +
+      "@media(min-width:901px){" +
+        ".sa-mob-mode-toggle,#saMobTodaySection{display:none!important;}" +
+        ".sa-mob-month-nav,.sa-cal-toggle,#saMobSearchWrap{display:none!important;}" +
+        ".sa-cal-collapsible{display:block!important;}" +
+      "}";
+    document.head.appendChild(st);
+  }
+  injectStaffAttendanceMobileStyles();
 
   $("view").innerHTML = shell();
   bind();
@@ -26,17 +105,45 @@
         '<p class="view-description" style="margin:0;">Biometric attendance with manual correction and employee-level drill-down.</p></div>' +
         '<button class="btn btn-maroon" id="saManual" style="width:auto;padding:10px 16px;"><i class="material-icons" style="color:#fff;">edit_calendar</i> Manual Entry</button>' +
       '</div>' +
-      '<div class="mod-toolbar">' +
-        '<div class="smart-selector"><div class="ss-icon"><i class="material-icons">calendar_month</i></div>' +
-          '<div class="ss-body"><div class="ss-label">Month</div><input type="month" id="saMonth"></div></div>' +
-        '<button class="refresh-btn" id="saRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh Biometric</button>' +
+      '<div class="sa-mob-mode-toggle" id="saMobModeToggle">' +
+        '<button type="button" class="sa-mob-mode-btn ' + (saMobileMode === "today" ? "active" : "") + '" id="saMobBtnToday" data-mode="today"><i class="material-icons">today</i> Today\'s Status</button>' +
+        '<button type="button" class="sa-mob-mode-btn ' + (saMobileMode === "month" ? "active" : "") + '" id="saMobBtnMonth" data-mode="month"><i class="material-icons">date_range</i> Monthly View</button>' +
       '</div>' +
-      '<div class="timing-line" id="saTiming"></div>' +
-      '<div class="legend"><span class="lg"><span class="dot d-green"></span>Present</span><span class="lg"><span class="dot d-orange"></span>Late</span><span class="lg"><span class="dot d-purple"></span>Half day</span><span class="lg"><span class="dot d-red"></span>Absent</span><span class="lg"><span class="dot d-blue"></span>Manual leave</span><span class="lg" style="color:var(--text-muted);">Click a summary number to see the exact dates and attendance.</span></div>' +
-      '<div class="cal-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>' +
-      '<div class="cal-grid" id="saGrid"></div>' +
-      '<div class="group-head" style="margin-top:26px;"><i class="material-icons" style="font-size:18px;">summarize</i> Monthly Summary</div>' +
-      '<div id="saSummary"></div>' +
+      '<div id="saMobTodaySection" style="' + (saMobileMode === "today" ? "display:block;" : "display:none;") + '"></div>' +
+      '<div id="saMobMonthSection" style="' + (saMobileMode === "month" ? "display:block;" : "display:none;") + '">' +
+        '<div class="sa-mob-month-nav">' +
+          '<button type="button" class="sa-mob-step-btn" id="saPrevMonth" aria-label="Previous Month">‹</button>' +
+          '<div class="sa-mob-month-center">' +
+            '<i class="material-icons" style="color:var(--maroon);font-size:18px;">calendar_month</i>' +
+            '<input type="month" id="saMobMonth" class="mob-interactive">' +
+          '</div>' +
+          '<button type="button" class="sa-mob-step-btn" id="saNextMonth" aria-label="Next Month">›</button>' +
+          '<button type="button" class="sa-mob-step-btn" id="saMobRefresh" title="Refresh biometric" style="margin-left:2px;"><i class="material-icons" style="font-size:18px;">refresh</i></button>' +
+        '</div>' +
+        '<div class="mod-toolbar">' +
+          '<div class="smart-selector"><div class="ss-icon"><i class="material-icons">calendar_month</i></div>' +
+            '<div class="ss-body"><div class="ss-label">Month</div><input type="month" id="saMonth"></div></div>' +
+          '<button class="refresh-btn" id="saRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh Biometric</button>' +
+        '</div>' +
+        '<div class="timing-line" id="saTiming"></div>' +
+        '<button type="button" class="sa-cal-toggle" id="saCalToggle">' +
+          '<span><i class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:6px;">calendar_today</i> View Calendar / Select Date</span>' +
+          '<i class="material-icons" id="saCalArrow" style="font-size:18px;">expand_more</i>' +
+        '</button>' +
+        '<div id="saCalWrap" class="sa-cal-collapsible">' +
+          '<div class="legend"><span class="lg"><span class="dot d-green"></span>Present</span><span class="lg"><span class="dot d-orange"></span>Late</span><span class="lg"><span class="dot d-purple"></span>Half day</span><span class="lg"><span class="dot d-red"></span>Absent</span><span class="lg"><span class="dot d-blue"></span>Manual leave</span><span class="lg" style="color:var(--text-muted);">Click a date to inspect.</span></div>' +
+          '<div class="cal-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>' +
+          '<div class="cal-grid" id="saGrid"></div>' +
+        '</div>' +
+        '<div class="group-head" style="margin-top:20px;"><i class="material-icons" style="font-size:18px;">summarize</i> Monthly Attendance Summary</div>' +
+        '<div id="saMobSearchWrap" style="margin:10px 0;">' +
+          '<div style="position:relative;">' +
+            '<i class="material-icons" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:18px;pointer-events:none;">search</i>' +
+            '<input type="search" id="saStaffSearch" class="sa-mob-search-input mob-search" placeholder="Search staff member…">' +
+          '</div>' +
+        '</div>' +
+        '<div id="saSummary"></div>' +
+      '</div>' +
     '</div>' + dayModal() + employeeModal() + editModal();
   }
 
@@ -85,10 +192,73 @@
   }
 
   function bind() {
-    var m = $("saMonth"); m.value = P.thisMonth();
-    m.addEventListener("change", function () { loadMonth(m.value, false); });
-    $("saRefresh").addEventListener("click", function () { loadMonth($("saMonth").value, true); });
-    $("saManual").addEventListener("click", function () { openEditor(); });
+    var m = $("saMonth"), mobM = $("saMobMonth");
+    if (m) m.value = P.thisMonth();
+    if (mobM) mobM.value = P.thisMonth();
+    if (m) m.addEventListener("change", function () {
+      if (mobM) mobM.value = m.value;
+      loadMonth(m.value, false);
+    });
+    if (mobM) mobM.addEventListener("change", function () {
+      if (m) m.value = mobM.value;
+      loadMonth(mobM.value, false);
+    });
+
+    function shiftMonth(delta) {
+      var cur = (m && m.value) || (mobM && mobM.value) || P.thisMonth();
+      var parts = cur.split("-");
+      var y = parseInt(parts[0], 10), mo = parseInt(parts[1], 10);
+      mo += delta;
+      if (mo > 12) { mo = 1; y++; }
+      else if (mo < 1) { mo = 12; y--; }
+      var next = y + "-" + String(mo).padStart(2, "0");
+      if (m) m.value = next;
+      if (mobM) mobM.value = next;
+      loadMonth(next, false);
+    }
+
+    var btnToday = $("saMobBtnToday"), btnMonth = $("saMobBtnMonth");
+    if (btnToday && btnMonth) {
+      btnToday.onclick = function() {
+        saMobileMode = "today";
+        btnToday.classList.add("active");
+        btnMonth.classList.remove("active");
+        if ($("saMobTodaySection")) $("saMobTodaySection").style.display = "block";
+        if ($("saMobMonthSection")) $("saMobMonthSection").style.display = "none";
+        renderTodayView();
+      };
+      btnMonth.onclick = function() {
+        saMobileMode = "month";
+        btnMonth.classList.add("active");
+        btnToday.classList.remove("active");
+        if ($("saMobTodaySection")) $("saMobTodaySection").style.display = "none";
+        if ($("saMobMonthSection")) $("saMobMonthSection").style.display = "block";
+      };
+    }
+
+    if ($("saPrevMonth")) $("saPrevMonth").addEventListener("click", function () { shiftMonth(-1); });
+    if ($("saNextMonth")) $("saNextMonth").addEventListener("click", function () { shiftMonth(1); });
+    if ($("saMobRefresh")) $("saMobRefresh").addEventListener("click", function () { loadMonth($("saMonth").value, true); });
+    if ($("saRefresh")) $("saRefresh").addEventListener("click", function () { loadMonth($("saMonth").value, true); });
+
+    if ($("saCalToggle")) $("saCalToggle").addEventListener("click", function () {
+      var wrap = $("saCalWrap");
+      if (wrap) {
+        wrap.classList.toggle("open");
+        var arr = $("saCalArrow");
+        if (arr) arr.textContent = wrap.classList.contains("open") ? "expand_less" : "expand_more";
+      }
+    });
+
+    if ($("saStaffSearch")) $("saStaffSearch").addEventListener("input", function () {
+      saSearchQuery = this.value.trim().toLowerCase();
+      renderSummaryList();
+    });
+
+    $("saManual").addEventListener("click", function () {
+      if (P.isMobileAdmin(session)) return;
+      openEditor();
+    });
     $("saEditType").addEventListener("change", toggleEditFields);
     $("saEditUser").addEventListener("change", function () { updateEditorForUser(Number($("saEditUser").value)); });
     $("saEditSave").addEventListener("click", saveEdit);
@@ -99,6 +269,9 @@
 
   function loadMonth(month, force, afterLoad) {
     var key = "staffmon_" + month, t0 = performance.now();
+    var m = $("saMonth"), mobM = $("saMobMonth");
+    if (m && m.value !== month) m.value = month;
+    if (mobM && mobM.value !== month) mobM.value = month;
     if (!force) {
       var mem = monthCache[month] || P.Cache.get(key);
       if (mem) { var ms = Math.round(performance.now() - t0); P.perf.record("Load Staff Month", ms, "warm"); showTiming(ms, "warm"); current = mem; render(mem, month); monthCache[month] = mem; if (afterLoad) afterLoad(); return; }
@@ -129,13 +302,258 @@
       Array.prototype.forEach.call(grid.querySelectorAll(".cal-day[data-day]"), function (c) { c.addEventListener("click", function () { openDay(c.getAttribute("data-day")); }); });
     }
     renderSummary(res.summaryReport || []);
+    if (isMobile()) {
+      renderTodayView();
+    }
+  }
+
+  function renderTodayView() {
+    var host = $("saMobTodaySection");
+    if (!host) return;
+
+    var dayKey = saMobileDate || P.todayIso();
+    var dayData = (current && current.calendarMap && current.calendarMap[dayKey]) || {};
+    var pres = dayData.Present || [];
+    var late = dayData.Late || [];
+    var half = dayData.HalfDay || [];
+    var abse = dayData.Absent || [];
+    var leav = dayData.Leave || [];
+
+    var allStaff = [];
+    pres.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Present", _label: "Present" })); });
+    late.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Late", _label: "Late" + (r.lateBy ? (" (" + r.lateBy + ")") : "") })); });
+    half.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "HalfDay", _label: "Half Day" })); });
+    leav.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Leave", _label: "On Leave" + (r.reason ? (" - " + r.reason) : "") })); });
+    abse.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Absent", _label: "Absent" })); });
+
+    allStaff.sort(function(a, b) { return String(a.name).localeCompare(String(b.name)); });
+
+    host.innerHTML =
+      '<div class="sa-today-header">' +
+        '<div>' +
+          '<div class="sa-today-day">Biometric Punch Status</div>' +
+          '<div class="sa-today-sub">Live daily records</div>' +
+        '</div>' +
+        '<input type="date" id="saTodayPicker" value="' + esc(dayKey) + '" class="mob-interactive sa-today-picker">' +
+      '</div>' +
+      '<div class="sa-today-kpi-grid">' +
+        '<div class="sa-today-kpi k-pres ' + (saTodayFilter === "Present" ? "active" : "") + '" data-cat="Present"><div class="sa-today-kpi-val">' + pres.length + '</div><div class="sa-today-kpi-lbl">Present</div></div>' +
+        '<div class="sa-today-kpi k-late ' + (saTodayFilter === "Late" ? "active" : "") + '" data-cat="Late"><div class="sa-today-kpi-val">' + late.length + '</div><div class="sa-today-kpi-lbl">Late</div></div>' +
+        '<div class="sa-today-kpi k-half ' + (saTodayFilter === "HalfDay" ? "active" : "") + '" data-cat="HalfDay"><div class="sa-today-kpi-val">' + half.length + '</div><div class="sa-today-kpi-lbl">Half</div></div>' +
+        '<div class="sa-today-kpi k-abse ' + (saTodayFilter === "Absent" ? "active" : "") + '" data-cat="Absent"><div class="sa-today-kpi-val">' + abse.length + '</div><div class="sa-today-kpi-lbl">Absent</div></div>' +
+        '<div class="sa-today-kpi k-leav ' + (saTodayFilter === "Leave" ? "active" : "") + '" data-cat="Leave"><div class="sa-today-kpi-val">' + leav.length + '</div><div class="sa-today-kpi-lbl">Leave</div></div>' +
+      '</div>' +
+      (saTodayFilter !== "all" ?
+        ('<div style="display:flex;align-items:center;justify-content:space-between;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:6px 12px;margin-bottom:10px;font-size:12px;font-weight:700;">' +
+          '<span>Filtering: <b style="color:var(--maroon);">' + (saTodayFilter === "HalfDay" ? "Half Day" : saTodayFilter) + '</b></span>' +
+          '<button type="button" id="saClearTodayFilter" style="border:none;background:none;color:#64748b;font-weight:700;font-size:11.5px;cursor:pointer;text-decoration:underline;">Show all (' + allStaff.length + ')</button>' +
+        '</div>') : '') +
+      '<div style="position:relative;margin-bottom:10px;">' +
+        '<i class="material-icons" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:18px;pointer-events:none;">search</i>' +
+        '<input type="search" id="saTodaySearchInput" class="sa-mob-search-input mob-search" placeholder="Search staff member today…" value="' + esc(saTodaySearch) + '">' +
+      '</div>' +
+      '<div id="saTodayCardsList"></div>';
+
+    var picker = $("saTodayPicker");
+    if (picker) {
+      picker.onchange = function() {
+        saMobileDate = this.value;
+        var selMonth = this.value ? this.value.substring(0, 7) : "";
+        var curMonth = $("saMonth") ? $("saMonth").value : P.thisMonth();
+        if (selMonth && selMonth !== curMonth) {
+          loadMonth(selMonth, false, function() {
+            renderTodayView();
+          });
+        } else {
+          renderTodayView();
+        }
+      };
+    }
+    var sInp = $("saTodaySearchInput");
+    if (sInp) {
+      sInp.oninput = function() {
+        saTodaySearch = this.value.trim().toLowerCase();
+        renderTodayCardsOnly();
+      };
+    }
+    Array.prototype.forEach.call(host.querySelectorAll(".sa-today-kpi[data-cat]"), function(kpi) {
+      kpi.onclick = function() {
+        var cat = kpi.getAttribute("data-cat");
+        saTodayFilter = (saTodayFilter === cat) ? "all" : cat;
+        renderTodayView();
+      };
+    });
+    var clearBtn = $("saClearTodayFilter");
+    if (clearBtn) {
+      clearBtn.onclick = function() {
+        saTodayFilter = "all";
+        renderTodayView();
+      };
+    }
+
+    renderTodayCardsOnly();
+  }
+
+  function renderTodayCardsOnly() {
+    var listHost = $("saTodayCardsList");
+    if (!listHost) return;
+    var dayKey = saMobileDate || P.todayIso();
+    var dayData = (current && current.calendarMap && current.calendarMap[dayKey]) || {};
+    var pres = dayData.Present || [];
+    var late = dayData.Late || [];
+    var half = dayData.HalfDay || [];
+    var abse = dayData.Absent || [];
+    var leav = dayData.Leave || [];
+
+    var allStaff = [];
+    pres.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Present", _label: "Present" })); });
+    late.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Late", _label: "Late" + (r.lateBy ? (" (" + r.lateBy + ")") : "") })); });
+    half.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "HalfDay", _label: "Half Day" })); });
+    leav.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Leave", _label: "On Leave" + (r.reason ? (" - " + r.reason) : "") })); });
+    abse.forEach(function(r) { allStaff.push(Object.assign({}, r, { _cat: "Absent", _label: "Absent" })); });
+
+    allStaff.sort(function(a, b) { return String(a.name).localeCompare(String(b.name)); });
+
+    var filtered = allStaff;
+    if (saTodayFilter !== "all") {
+      filtered = filtered.filter(function(r) { return r._cat === saTodayFilter; });
+    }
+    if (saTodaySearch) {
+      filtered = filtered.filter(function(r) {
+        return (r.name && r.name.toLowerCase().indexOf(saTodaySearch) >= 0) ||
+               (r.designation && r.designation.toLowerCase().indexOf(saTodaySearch) >= 0);
+      });
+    }
+
+    if (!filtered.length) {
+      listHost.innerHTML = '<div class="slip-empty" style="padding:24px;text-align:center;"><i class="material-icons" style="font-size:28px;color:#94a3b8;display:block;margin-bottom:6px;">search_off</i>No staff members match this filter for today.</div>';
+      return;
+    }
+
+    listHost.innerHTML = filtered.map(function(r) {
+      var statusColor = { "Present": "#047857", "Late": "#b45309", "HalfDay": "#6b21a8", "Absent": "#b91c1c", "Leave": "#0284c7" }[r._cat] || "#475569";
+      var statusBg = { "Present": "#ecfdf5", "Late": "#fffbeb", "HalfDay": "#f5f3ff", "Absent": "#fef2f2", "Leave": "#f0f9ff" }[r._cat] || "#f1f5f9";
+      var dual = String(r.shiftType || "").toUpperCase() === "DUAL";
+      var timesStr = "";
+      if (r._cat === "Absent") {
+        timesStr = '<span style="color:#94a3b8;font-style:italic;">No punch recorded</span>';
+      } else if (dual) {
+        timesStr = '<span>In1: <b>' + esc(r.in1 || "—") + '</b> · Out1: <b>' + esc(r.out1 || "—") + '</b>' + (r.in2 ? (' · In2: <b>' + esc(r.in2) + '</b>') : '') + '</span>';
+      } else {
+        timesStr = '<span>In: <b>' + esc(r.in1 || "—") + '</b> · Out: <b>' + esc(r.out1 || "—") + '</b></span>';
+      }
+
+      return '<div class="sa-today-card" data-user="' + esc(r.userId) + '" data-name="' + esc(r.name) + '">' +
+        '<div class="sa-today-card-head">' +
+          '<div>' +
+            '<div class="sa-today-name">' + esc(r.name) + '</div>' +
+            '<div class="sa-today-role">' + esc(r.designation || "Staff Member") + '</div>' +
+          '</div>' +
+          '<span style="display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:800;color:' + statusColor + ';background:' + statusBg + ';">' + esc(r._label) + '</span>' +
+        '</div>' +
+        '<div class="sa-today-times">' +
+          '<i class="material-icons">schedule</i>' + timesStr +
+        '</div>' +
+      '</div>';
+    }).join("");
+
+    wireTodayCardClicks();
+  }
+
+  function wireTodayCardClicks() {
+    Array.prototype.forEach.call(document.querySelectorAll(".sa-today-card[data-user]"), function(card) {
+      card.onclick = function() {
+        var uid = Number(card.getAttribute("data-user"));
+        var name = card.getAttribute("data-name");
+        openEmployee(uid, "All", name);
+      };
+    });
   }
 
   function renderSummary(rep) {
+    cachedSummaryReport = rep ? rep.slice() : [];
+    renderSummaryList();
+  }
+
+  function renderSummaryList() {
     var host = $("saSummary");
-    if (!rep.length) { host.innerHTML = '<div class="slip-empty">No staff records for this month.</div>'; return; }
-    rep = rep.slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
-    var rows = rep.map(function (r) {
+    if (!host) return;
+    var list = cachedSummaryReport.slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+    if (saSearchQuery) {
+      list = list.filter(function (r) {
+        return (r.name && r.name.toLowerCase().indexOf(saSearchQuery) >= 0) ||
+               (r.designation && r.designation.toLowerCase().indexOf(saSearchQuery) >= 0);
+      });
+    }
+
+    if (!list.length) {
+      host.innerHTML = '<div class="slip-empty">No staff records match your criteria.</div>';
+      return;
+    }
+
+    if (isMobile()) {
+      var cardsHtml = '<div class="sa-mob-list">';
+      list.forEach(function (r) {
+        var safeName = esc(r.name);
+        var safeRole = esc(r.designation || "Staff Member");
+        var uid = r.userId || "";
+        var totalLeaves = Number(r.totalLeaves) || 0;
+
+        cardsHtml +=
+          '<div class="sa-mob-card" data-user="' + uid + '" data-name="' + safeName + '">' +
+            '<div class="sa-mob-card-head">' +
+              '<div>' +
+                '<div class="sa-mob-card-name">' + safeName + '</div>' +
+                '<div class="sa-mob-card-role">' + safeRole + '</div>' +
+              '</div>' +
+              '<i class="material-icons" style="color:#94a3b8;font-size:20px;">chevron_right</i>' +
+            '</div>' +
+            '<div class="sa-mob-metrics">' +
+              '<div class="sa-mob-m-col m-pres" data-cat="Present" data-user="' + uid + '" data-name="' + safeName + '">' +
+                '<div class="sa-mob-m-val">' + (r.present || 0) + '</div>' +
+                '<div class="sa-mob-m-lbl">Present</div>' +
+              '</div>' +
+              '<div class="sa-mob-m-col m-late" data-cat="Late" data-user="' + uid + '" data-name="' + safeName + '">' +
+                '<div class="sa-mob-m-val">' + (r.late || 0) + '</div>' +
+                '<div class="sa-mob-m-lbl">Late</div>' +
+              '</div>' +
+              '<div class="sa-mob-m-col m-half" data-cat="HalfDay" data-user="' + uid + '" data-name="' + safeName + '">' +
+                '<div class="sa-mob-m-val">' + (r.halfDay || 0) + '</div>' +
+                '<div class="sa-mob-m-lbl">Half</div>' +
+              '</div>' +
+              '<div class="sa-mob-m-col m-abse" data-cat="Absent" data-user="' + uid + '" data-name="' + safeName + '">' +
+                '<div class="sa-mob-m-val">' + (r.absent || 0) + '</div>' +
+                '<div class="sa-mob-m-lbl">Absent</div>' +
+              '</div>' +
+              '<div class="sa-mob-m-col m-leav" data-cat="Leave" data-user="' + uid + '" data-name="' + safeName + '">' +
+                '<div class="sa-mob-m-val">' + totalLeaves + '</div>' +
+                '<div class="sa-mob-m-lbl">Leaves</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      });
+      cardsHtml += '</div>';
+      host.innerHTML = cardsHtml;
+
+      Array.prototype.forEach.call(host.querySelectorAll(".sa-mob-card"), function (card) {
+        card.addEventListener("click", function (e) {
+          var col = e.target.closest(".sa-mob-m-col");
+          var uid = Number(card.getAttribute("data-user"));
+          var name = card.getAttribute("data-name");
+          if (col) {
+            e.stopPropagation();
+            var cat = col.getAttribute("data-cat");
+            openEmployee(uid, cat, name);
+          } else {
+            openEmployee(uid, "All", name);
+          }
+        });
+      });
+      return;
+    }
+
+    /* Desktop View */
+    var rows = list.map(function (r) {
       return '<tr><td style="font-weight:700;">' + esc(r.name) + '</td><td style="color:var(--text-muted);">' + esc(r.designation || "") + '</td>' +
         '<td class="num">' + countBtn(r, "Present", r.present || 0, "green") + '</td>' +
         '<td class="num">' + countBtn(r, "Late", r.late || 0, "orange") + '</td>' +
@@ -166,27 +584,58 @@
   function openEmployee(userId, category, name) {
     userId = resolveUserId(userId, name);
     if (!userId) {
-      // Old cached payloads may not contain userId. Force one fresh fetch once.
       loadMonth($("saMonth").value, true, function () { openEmployee(userId, category, name); });
       return;
     }
     var rep = (current.summaryReport || []).find(function (r) { return Number(r.userId) === Number(userId); });
     if (!rep) return;
-    var bucket = category === "HalfDay" ? "HalfDay" : category, rows = [];
+    category = category || "All";
+
+    var buckets = ["Present", "Late", "HalfDay", "Absent", "Leave"];
+    var allRows = [];
     Object.keys(current.calendarMap || {}).sort().forEach(function (date) {
-      var arr = ((current.calendarMap[date] || {})[bucket] || []);
-      arr.forEach(function (r) { if (Number(r.userId) === Number(userId)) rows.push({ date: date, r: r }); });
+      buckets.forEach(function (bkt) {
+        var arr = ((current.calendarMap[date] || {})[bkt] || []);
+        arr.forEach(function (r) {
+          if (Number(r.userId) === Number(userId)) {
+            allRows.push({ date: date, r: r, bucket: bkt });
+          }
+        });
+      });
     });
-    var labels = {Present:"Present days",Late:"Late days",HalfDay:"Half days",Absent:"Absent days",Leave:"Leave days"};
-    $("saEmployeeTitle").textContent = rep.name + " — " + (labels[category] || category);
+
+    var rows = category === "All" ? allRows : allRows.filter(function (x) { return x.bucket === (category === "HalfDay" ? "HalfDay" : category); });
+
+    var labels = { All: "All records", Present: "Present days", Late: "Late days", HalfDay: "Half days", Absent: "Absent days", Leave: "Leave days" };
+    $("saEmployeeTitle").textContent = rep.name + " (" + (labels[category] || category) + ")";
+
+    var tabsHtml = '<div class="sa-emp-cat-tabs">' +
+      '<button type="button" class="sa-emp-cat-tab ' + (category === "All" ? "active" : "") + '" data-cat="All">All (' + allRows.length + ')</button>' +
+      '<button type="button" class="sa-emp-cat-tab ' + (category === "Present" ? "active" : "") + '" data-cat="Present">Present (' + (rep.present || 0) + ')</button>' +
+      '<button type="button" class="sa-emp-cat-tab ' + (category === "Late" ? "active" : "") + '" data-cat="Late">Late (' + (rep.late || 0) + ')</button>' +
+      '<button type="button" class="sa-emp-cat-tab ' + (category === "HalfDay" ? "active" : "") + '" data-cat="HalfDay">Half (' + (rep.halfDay || 0) + ')</button>' +
+      '<button type="button" class="sa-emp-cat-tab ' + (category === "Absent" ? "active" : "") + '" data-cat="Absent">Absent (' + (rep.absent || 0) + ')</button>' +
+      '<button type="button" class="sa-emp-cat-tab ' + (category === "Leave" ? "active" : "") + '" data-cat="Leave">Leaves (' + (Number(rep.totalLeaves) || 0) + ')</button>' +
+    '</div>';
+
     if (!rows.length) {
-      $("saEmployeeBody").innerHTML = '<div class="slip-empty">No matching dates in this category.</div>';
-      P.openModal("saEmployeeModal"); return;
+      $("saEmployeeBody").innerHTML = tabsHtml + '<div class="slip-empty">No matching dates in this category for this month.</div>';
+    } else {
+      $("saEmployeeBody").innerHTML = tabsHtml + '<div style="max-height:62vh;overflow-y:auto;padding-right:4px;">' + rows.map(function (x) { return employeeAttendanceCard(x.date, x.r, userId, x.bucket); }).join("") + '</div>';
     }
-    $("saEmployeeBody").innerHTML = '<div style="max-height:62vh;overflow:auto;padding-right:4px;">' + rows.map(function (x) { return employeeAttendanceCard(x.date, x.r, userId, category); }).join("") + '</div>';
-    Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll("[data-edit-date]"), function (b) {
-      b.addEventListener("click", function () { P.closeModal("saEmployeeModal"); openEditor(Number(b.getAttribute("data-edit-user")), b.getAttribute("data-edit-date")); });
+
+    Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll(".sa-emp-cat-tab"), function (tabBtn) {
+      tabBtn.addEventListener("click", function () {
+        openEmployee(userId, tabBtn.getAttribute("data-cat"), name);
+      });
     });
+
+    if (!P.isMobileAdmin(session)) {
+      Array.prototype.forEach.call($("saEmployeeBody").querySelectorAll("[data-edit-date]"), function (b) {
+        b.addEventListener("click", function () { P.closeModal("saEmployeeModal"); openEditor(Number(b.getAttribute("data-edit-user")), b.getAttribute("data-edit-date")); });
+      });
+    }
+
     P.openModal("saEmployeeModal");
   }
 
@@ -207,10 +656,11 @@
     var sessionHtml = dual ? sessionBlock('Morning session', r.in1, r.out1) + sessionBlock('Afternoon session', r.in2, r.out2) : sessionBlock('Attendance', r.in1, r.out1);
     var lateHtml = Number(r.lateByMinutes || 0) > 0 ? '<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e7;color:#7a5200;font-size:13px;"><b>Late arrival:</b> ' + esc(r.lateBy || "Late") + (r.lateSession ? ' · ' + esc(r.lateSession) + ' session' : '') + '</div>' : '';
     var reasonText = r.manualReason ? '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Reason:</b> ' + esc(r.manualReason) + '</div>' : (r.gaps && r.gaps !== "-" ? '<div style="margin-top:10px;font-size:13px;color:var(--text-muted);"><b>Attendance note:</b> ' + esc(r.gaps) + '</div>' : '');
+    var editBtnHtml = P.isMobileAdmin(session) ? '' : '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-secondary" data-edit-date="' + date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 14px;">Edit attendance</button></div>';
     return '<div style="border:1px solid #e1e4e8;border-radius:14px;margin:0 0 12px;padding:14px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;"><div><div style="font-size:15px;font-weight:800;color:var(--text);">' + esc(prettyDate(date)) + '</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px;">' + (dual ? 'Dual session' : 'Single session') + '</div></div>' +
       '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;"><span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;' + statusStyle + '">' + esc(status === "HalfDay" ? "Half Day" : status) + '</span><span style="display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;' + sourceStyle + '">Source: ' + source + '</span></div></div>' +
-      sessionHtml + lateHtml + reasonText + '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-secondary" data-edit-date="' + date + '" data-edit-user="' + userId + '" style="width:auto;padding:7px 14px;">Edit attendance</button></div></div>';
+      sessionHtml + lateHtml + reasonText + editBtnHtml + '</div>';
   }
 
   function openDay(k) {
@@ -408,7 +858,29 @@
       '<div class="cal-grid" id="alGrid"></div>' +
       slipCard() +
     '</div>' +
-    dayModal() + leaveModal();
+    dayModal() + leaveModal() + salaryBreakdownModal();
+  }
+  function salaryBreakdownModal() {
+    return '<div class="modal-overlay" id="alSalaryBreakdownModal">' +
+      '<div class="modal-content" style="max-width:680px;max-height:92vh;overflow-y:auto;padding:16px 14px;">' +
+        '<div class="modal-header-container" style="margin-bottom:12px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<div style="width:36px;height:36px;border-radius:10px;background:#fef2f2;display:grid;place-items:center;color:var(--maroon);">' +
+              '<i class="material-icons" style="font-size:20px;">account_balance_wallet</i>' +
+            '</div>' +
+            '<div>' +
+              '<h3 id="alSalaryBreakdownTitle" style="margin:0;font-size:16px;font-weight:900;color:#0f172a;">Salary Breakdown</h3>' +
+              '<div id="alSalaryBreakdownSub" style="font-size:12px;color:#64748b;font-weight:600;"></div>' +
+            '</div>' +
+          '</div>' +
+          '<button class="modal-close-icon" data-close="alSalaryBreakdownModal">&times;</button>' +
+        '</div>' +
+        '<div id="alSalaryBreakdownBody"></div>' +
+        '<div style="margin-top:16px;display:flex;justify-content:flex-end;">' +
+          '<button class="btn btn-secondary" data-close="alSalaryBreakdownModal" style="width:auto;min-width:100px;">Close</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
   }
   function slipCard() {
     return '<div class="slip-card"><div class="slip-head"><div class="st"><i class="material-icons">receipt_long</i><h3>Salary Slips</h3></div>' +
@@ -587,7 +1059,7 @@
         var label = monthLabel(month);
         return '<div class="slip-row"><span class="m"><i class="material-icons">event</i>' + esc(label) + '</span>' +
           '<span class="acts">' +
-          '<button class="slip-btn" type="button" data-slip-action="view" data-slip-index="' + i + '"><i class="material-icons" style="font-size:16px;color:#fff;">visibility</i> View</button>' +
+          '<button class="slip-btn blue" type="button" data-slip-action="breakdown" data-slip-index="' + i + '"><i class="material-icons" style="font-size:16px;color:#fff;">assessment</i> Breakdown</button>' +
           '<button class="slip-btn maroon" type="button" data-slip-action="download" data-slip-index="' + i + '"><i class="material-icons" style="font-size:16px;color:#fff;">download</i> Download</button>' +
           '</span></div>';
       }).join("");
@@ -596,8 +1068,8 @@
         btn.addEventListener("click", function () {
           var idx = Number(btn.getAttribute("data-slip-index"));
           var action = btn.getAttribute("data-slip-action");
-          if (action === "view") viewSlip(slips[idx]);
-          else downloadSlip(slips[idx]);
+          if (action === "download") downloadSlip(slips[idx]);
+          else if (action === "breakdown") viewSalaryBreakdown(slips[idx]);
         });
       });
     }).catch(function (e) {
@@ -606,6 +1078,209 @@
       $("alSlipStatus").textContent = "Load failed";
       $("alSlipList").innerHTML = '<div class="slip-empty">' + esc(e.message || "Could not load salary slips.") + '</div>';
     });
+  }
+
+  function money(v) {
+    var val = Number(v);
+    if (!Number.isFinite(val)) val = 0;
+    return "₹ " + val.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function numVal(v) {
+    var val = Number(v);
+    return Number.isFinite(val) ? val : 0;
+  }
+
+  function statusBadge(st) {
+    st = String(st || "Pending");
+    if (st.toLowerCase() === "paid") {
+      return '<span class="pill green" style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;">Paid</span>';
+    }
+    return '<span class="pill orange" style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;">Pending</span>';
+  }
+
+  function viewSalaryBreakdown(row) {
+    if (!row) return;
+    var month = String(row.payroll_month || row.month || "").slice(0, 7) || P.thisMonth();
+    var label = monthLabel(month);
+    var titleEl = $("alSalaryBreakdownTitle");
+    var subEl = $("alSalaryBreakdownSub");
+    var bodyEl = $("alSalaryBreakdownBody");
+    if (titleEl) titleEl.textContent = "Salary Breakdown · " + label;
+    if (subEl) subEl.textContent = (row.staff_name || (row.staff && row.staff.name) || row.name || me) + " · Attendance, leaves & salary computation";
+    if (bodyEl) bodyEl.innerHTML = '<div class="inline-loader" style="padding:32px 10px;text-align:center;"><i class="material-icons">sync</i>Loading attendance & salary breakdown…</div>';
+    P.openModal("alSalaryBreakdownModal");
+
+    var timesheetPromise;
+    if (calCache[month]) {
+      timesheetPromise = Promise.resolve(calCache[month]);
+    } else {
+      timesheetPromise = P.api("getTimesheetData", [me, month], { overlay: false }).then(function (data) {
+        if (data) calCache[month] = data;
+        return data;
+      }).catch(function () {
+        return { stats: {} };
+      });
+    }
+
+    timesheetPromise.then(function (tsData) {
+      renderBreakdownModalContent(row, tsData, month);
+    }).catch(function (e) {
+      if (bodyEl) bodyEl.innerHTML = '<div class="att-empty" style="padding:24px 10px;text-align:center;"><i class="material-icons">error_outline</i>' + esc(e.message || "Could not load breakdown details.") + '</div>';
+    });
+  }
+
+  function renderBreakdownModalContent(row, tsData, month) {
+    var att = (tsData && tsData.stats) || {};
+    var salary = Number(row.salary != null ? row.salary : (row.monthly_salary || 0));
+    var dailyRate = Number(row.daily_rate || row.dailyRate || (salary > 0 ? (salary / 30) : 0));
+
+    var annualEntitlement = Number(row.annual_leave_entitlement != null ? row.annual_leave_entitlement : (row.annualLeaveEntitlement != null ? row.annualLeaveEntitlement : (row.annualPaidLeave || 10)));
+    var paidCredit = Number(row.paid_leave_credit != null ? row.paid_leave_credit : (row.paidLeaveCredit || 0));
+    var paidUsed = Number(row.paid_leave_used != null ? row.paid_leave_used : (row.paidLeaveUsed != null ? row.paidLeaveUsed : 0));
+    var paidBalance = Number(row.paid_leave_balance != null ? row.paid_leave_balance : (row.paidLeaveBalance != null ? row.paidLeaveBalance : 0));
+    var paidOpening = row.paid_leave_opening != null ? Number(row.paid_leave_opening) : (row.paidLeaveOpening != null ? Number(row.paidLeaveOpening) : (paidBalance + paidUsed));
+    var usedPriorMonths = Math.max(0, annualEntitlement - paidOpening);
+
+    var fullDayAbsences = Number(row.full_day_absences != null ? row.full_day_absences : (row.fullDayAbsences != null ? row.fullDayAbsences : (att.absent || 0)));
+    var halfDayAbsences = Number(row.half_day_absences != null ? row.half_day_absences : (row.halfDayAbsences != null ? row.halfDayAbsences : (att.halfDays != null ? att.halfDays : (att.halfDay || 0))));
+    var absenceLeaveUnits = (fullDayAbsences * 1.0) + (halfDayAbsences * 0.5);
+    var lateArrivals = Number(row.late_arrivals != null ? row.late_arrivals : (row.lateArrivals != null ? row.lateArrivals : (att.late || 0)));
+
+    var latePenaltyLeave = row.late_penalty_leave != null
+      ? Number(row.late_penalty_leave)
+      : (row.latePenaltyLeave != null ? Number(row.latePenaltyLeave) : (Math.floor(lateArrivals / 3) * 0.5));
+
+    var totalAttendanceLeave = row.attendance_leave != null
+      ? Number(row.attendance_leave)
+      : (row.attendanceLeave != null ? Number(row.attendanceLeave) : (absenceLeaveUnits + latePenaltyLeave));
+
+    var isAttendanceOverridden = (row.manual_attendance_leave != null || row.manualAttendanceLeave != null);
+    var autoAttendanceLeave = Number(row.automatic_attendance_leave != null ? row.automatic_attendance_leave : (row.automaticAttendanceLeave != null ? row.automaticAttendanceLeave : totalAttendanceLeave));
+
+    var unpaidLeave = Number(row.unpaid_leave != null ? row.unpaid_leave : (row.unpaidLeave != null ? row.unpaidLeave : 0));
+    var totalDeduction = Number(row.total_deduction != null ? row.total_deduction : (row.totalDeduction != null ? row.totalDeduction : 0));
+    var netSalary = Number(row.net_salary != null ? row.net_salary : (row.netSalary != null ? row.netSalary : (salary - totalDeduction)));
+
+    var joiningDays = Number(row.joining_days_unpaid != null ? row.joining_days_unpaid : (row.joiningDaysUnpaid || 0));
+    var joiningDeduction = Math.round(joiningDays * dailyRate * 100) / 100;
+
+    var lateUnpaid = Math.min(latePenaltyLeave, unpaidLeave);
+    var absenceUnpaid = Math.max(0, unpaidLeave - lateUnpaid);
+
+    var lateDeduction = Math.round(lateUnpaid * dailyRate * 100) / 100;
+    var absenceDeduction = Math.round(absenceUnpaid * dailyRate * 100) / 100;
+    var otherDeduction = Math.round(Math.max(0, totalDeduction - (lateDeduction + absenceDeduction + joiningDeduction)) * 100) / 100;
+
+    var sumDeductions = lateDeduction + absenceDeduction + joiningDeduction + otherDeduction;
+    if (Math.abs(sumDeductions - totalDeduction) > 0.01 && totalDeduction > 0) {
+      absenceDeduction = Math.round((totalDeduction - lateDeduction - joiningDeduction - otherDeduction) * 100) / 100;
+    }
+
+    var rowStatus = String(row.status != null ? row.status : (row.payment_status != null ? row.payment_status : "Paid"));
+    var payDate = row.payDate || row.pay_date || row.paymentDate || "";
+    var payMode = row.paymentMode || row.payment_mode || "Bank Transfer";
+    var payRef = row.paymentReference || row.payment_reference || "";
+    var empName = row.staff_name || (row.staff && row.staff.name) || row.name || me;
+    var empRole = row.designation || (row.staff && row.staff.role) || row.role || "Teacher";
+
+    var paymentTransferredRow = rowStatus.toLowerCase() === 'paid'
+      ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Amount Transferred:</span><span class="pmob-kv-val bold green">' + money(netSalary) + '</span></div>'
+      : '<div class="pmob-kv-row"><span class="pmob-kv-label">Amount to be Transferred:</span><span class="pmob-kv-val bold" style="color:#b45309;">' + money(netSalary) + '</span></div>';
+
+    var slipBtn = rowStatus.toLowerCase() === 'paid'
+      ? '<button class="btn btn-maroon" id="alBreakdownDownloadBtn" style="width:100%;min-height:44px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px;"><i class="material-icons" style="color:#fff;">download</i> Download Official Salary Slip (PDF)</button>'
+      : '';
+
+    var html = '' +
+      // 1. Salary Summary
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">payments</i> 1. Salary Summary</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Employee Name:</span><span class="pmob-kv-val bold">' + esc(empName) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Designation:</span><span class="pmob-kv-val">' + esc(empRole) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payroll Month:</span><span class="pmob-kv-val">' + esc(monthLabel(month)) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Monthly Gross Salary:</span><span class="pmob-kv-val bold">' + money(salary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Calculation Basis:</span><span class="pmob-kv-val" style="font-size:11.5px;color:#64748b;">30 days/month (' + money(dailyRate) + '/day)</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Deductions:</span><span class="pmob-kv-val red">' + (totalDeduction > 0 ? ('-' + money(totalDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Final Net Salary:</span><span class="pmob-kv-val bold green">' + money(netSalary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Status:</span><span class="pmob-kv-val">' + statusBadge(rowStatus) + '</span></div>' +
+        '</div>' +
+      '</div>' +
+
+      // 2. Monthly Leave Entitlement and Balance
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">event_available</i> 2. Monthly Leave Entitlement & Balance</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Annual Leave Entitlement:</span><span class="pmob-kv-val">' + numVal(annualEntitlement) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Leaves Used Up to Previous Month:</span><span class="pmob-kv-val">' + numVal(usedPriorMonths) + ' days</span></div>' +
+          '<div class="pmob-kv-row" style="background:#f8fafc;padding:6px 8px;border-radius:8px;"><span class="pmob-kv-label" style="font-weight:700;color:#0f172a;">Available Balance at Month Start:</span><span class="pmob-kv-val bold" style="color:#7a151a;">' + numVal(paidOpening) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Entitlement for Month:</span><span class="pmob-kv-val">' + numVal(paidCredit) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Leaves Used During Month:</span><span class="pmob-kv-val" style="color:#b42318;font-weight:700;">' + numVal(paidUsed) + ' days</span></div>' +
+          '<div class="pmob-kv-row" style="background:#f0fdf4;padding:6px 8px;border-radius:8px;"><span class="pmob-kv-label" style="font-weight:700;color:#166534;">Remaining Leave Balance:</span><span class="pmob-kv-val bold green">' + numVal(paidBalance) + ' days</span></div>' +
+        '</div>' +
+        '<div class="pmob-callout"><i class="material-icons">info</i> Employee started ' + esc(monthLabel(month)) + ' with ' + numVal(paidOpening) + ' days available balance.</div>' +
+      '</div>' +
+
+      // 3. Actual Leave and Absence Details
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">rule</i> 3. Actual Leave & Absence Details</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Full-Day Absences:</span><span class="pmob-kv-val">' + fullDayAbsences + (fullDayAbsences === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Half-Day Absences:</span><span class="pmob-kv-val">' + halfDayAbsences + (halfDayAbsences === 1 ? ' day' : ' days') + (halfDayAbsences > 0 ? (' (' + numVal(halfDayAbsences * 0.5) + ' day equivalent)') : '') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Equivalent Absence Leave:</span><span class="pmob-kv-val bold">' + numVal(absenceLeaveUnits) + (absenceLeaveUnits === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row" style="border-top:1px dashed #e2e8f0;padding-top:6px;margin-top:2px;"><span class="pmob-kv-label">Number of Late Arrivals:</span><span class="pmob-kv-val">' + lateArrivals + (lateArrivals === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Late Penalty Leave:</span><span class="pmob-kv-val bold" style="color:#b45309;">' + numVal(latePenaltyLeave) + (latePenaltyLeave === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row" style="background:#fef2f2;padding:6px 8px;border-radius:8px;margin-top:4px;"><span class="pmob-kv-label" style="font-weight:700;color:#991b1b;">Total Leaves Consumed:</span><span class="pmob-kv-val bold red">' + numVal(totalAttendanceLeave) + (totalAttendanceLeave === 1 ? ' day' : ' days') + '</span></div>' +
+        '</div>' +
+        (isAttendanceOverridden ? '<div class="pmob-callout" style="color:#b45309;"><i class="material-icons">warning</i> Biometric auto was ' + numVal(autoAttendanceLeave) + ' days; manual adjustment applied.</div>' : '<div class="pmob-callout"><i class="material-icons">info</i> 3 late arrivals = 0.5 leave. Absences and late penalties are tracked separately.</div>') +
+      '</div>' +
+
+      // 4. Salary Deduction Breakdown
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">receipt_long</i> 4. Salary Deduction Breakdown</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Deduction due to Unpaid Absences:</span><span class="pmob-kv-val red">' + (absenceDeduction > 0 ? ('-' + money(absenceDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Deduction due to Late Arrivals:</span><span class="pmob-kv-val red">' + (lateDeduction > 0 ? ('-' + money(lateDeduction)) : '₹ 0.00') + '</span></div>' +
+          (joiningDays > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Mid-Month Joining (' + joiningDays + ' unjoined days):</span><span class="pmob-kv-val red">-' + money(joiningDeduction) + '</span></div>' : '') +
+          (otherDeduction > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Other Deductions / Adjustments:</span><span class="pmob-kv-val red">-' + money(otherDeduction) + '</span></div>' : '') +
+          '<div class="pmob-kv-row" style="background:#fff1f2;padding:7px 8px;border-radius:8px;margin-top:4px;"><span class="pmob-kv-label" style="font-weight:800;color:#9f1239;">Total Deductions:</span><span class="pmob-kv-val bold red" style="font-size:15px;">-' + money(totalDeduction) + '</span></div>' +
+        '</div>' +
+        '<div class="pmob-callout"><i class="material-icons">calculate</i> Total unpaid leave days: ' + numVal(unpaidLeave) + ' days × ' + money(dailyRate) + '/day.</div>' +
+      '</div>' +
+
+      // 5. Final Payment Summary
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">account_balance</i> 5. Final Payment Summary</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Monthly Gross Salary:</span><span class="pmob-kv-val">' + money(salary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Absence Deduction:</span><span class="pmob-kv-val red">' + (absenceDeduction > 0 ? ('-' + money(absenceDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Late Deduction:</span><span class="pmob-kv-val red">' + (lateDeduction > 0 ? ('-' + money(lateDeduction)) : '₹ 0.00') + '</span></div>' +
+          (joiningDeduction + otherDeduction > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Other Deductions:</span><span class="pmob-kv-val red">-' + money(joiningDeduction + otherDeduction) + '</span></div>' : '') +
+          '<div class="pmob-kv-row" style="font-weight:700;"><span class="pmob-kv-label">Total Deductions:</span><span class="pmob-kv-val red">-' + money(totalDeduction) + '</span></div>' +
+        '</div>' +
+        '<div class="pmob-final-total">' +
+          '<span class="pmob-final-lbl">Final Net Salary Transferred</span>' +
+          '<span class="pmob-final-amt">' + money(netSalary) + '</span>' +
+        '</div>' +
+        '<div class="pmob-kv-grid" style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:12px;">' +
+          paymentTransferredRow +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Status:</span><span class="pmob-kv-val">' + statusBadge(rowStatus) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Date:</span><span class="pmob-kv-val">' + (payDate ? esc(payDate) : '—') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Mode:</span><span class="pmob-kv-val">' + esc(payMode) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Transaction Reference:</span><span class="pmob-kv-val">' + esc(payRef || '—') + '</span></div>' +
+        '</div>' +
+        slipBtn +
+      '</div>';
+
+    $("alSalaryBreakdownBody").innerHTML = html;
+
+    var dlBtn = $("alBreakdownDownloadBtn");
+    if (dlBtn) {
+      dlBtn.onclick = function() {
+        downloadSlip(row);
+      };
+    }
   }
 
   function ensurePdfLibraries() {

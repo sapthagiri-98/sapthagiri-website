@@ -52,7 +52,29 @@
       '<div class="cal-grid" id="alGrid"></div>' +
       slipCard() +
     '</div>' +
-    dayModal() + leaveModal();
+    dayModal() + leaveModal() + salaryBreakdownModal();
+  }
+  function salaryBreakdownModal() {
+    return '<div class="modal-overlay" id="alSalaryBreakdownModal">' +
+      '<div class="modal-content" style="max-width:680px;max-height:92vh;overflow-y:auto;padding:16px 14px;">' +
+        '<div class="modal-header-container" style="margin-bottom:12px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<div style="width:36px;height:36px;border-radius:10px;background:#fef2f2;display:grid;place-items:center;color:var(--maroon);">' +
+              '<i class="material-icons" style="font-size:20px;">account_balance_wallet</i>' +
+            '</div>' +
+            '<div>' +
+              '<h3 id="alSalaryBreakdownTitle" style="margin:0;font-size:16px;font-weight:900;color:#0f172a;">Salary Breakdown</h3>' +
+              '<div id="alSalaryBreakdownSub" style="font-size:12px;color:#64748b;font-weight:600;"></div>' +
+            '</div>' +
+          '</div>' +
+          '<button class="modal-close-icon" data-close="alSalaryBreakdownModal">&times;</button>' +
+        '</div>' +
+        '<div id="alSalaryBreakdownBody"></div>' +
+        '<div style="margin-top:16px;display:flex;justify-content:flex-end;">' +
+          '<button class="btn btn-secondary" data-close="alSalaryBreakdownModal" style="width:auto;min-width:100px;">Close</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
   }
   function slipCard() {
     return '<div class="slip-card"><div class="slip-head"><div class="st"><i class="material-icons">receipt_long</i><h3>Salary Slips</h3></div>' +
@@ -190,6 +212,49 @@
   }
 
   /* ---------------- salary slips ---------------- */
+  var payrollBase = (window.PORTAL_CONFIG || {}).SUPABASE_PAYROLL_BASE || "";
+  function payrollApi(fn, args) {
+    if (!payrollBase) return Promise.reject(new Error("Payroll endpoint not configured."));
+    var s = P.Session.get() || {};
+    var C = window.PORTAL_CONFIG || {};
+    return fetch(payrollBase, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + (C.SUPABASE_ANON || ""),
+        "apikey": C.SUPABASE_ANON || "",
+        "x-session-token": s.token || ""
+      },
+      body: JSON.stringify({ fn: fn, args: args || [] })
+    })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        var j;
+        try { j = JSON.parse(t); } catch (e) { throw new Error("Invalid payroll server response"); }
+        if (!j.ok) throw new Error(j.error || "Payroll request failed");
+        return j.data;
+      });
+  }
+
+  function money(v) {
+    var val = Number(v);
+    if (!Number.isFinite(val)) val = 0;
+    return "₹ " + val.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function numVal(v) {
+    var val = Number(v);
+    return Number.isFinite(val) ? val : 0;
+  }
+
+  function statusBadge(st) {
+    st = String(st || "Pending");
+    if (st.toLowerCase() === "paid") {
+      return '<span class="pill green" style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;">Paid</span>';
+    }
+    return '<span class="pill orange" style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;">Pending</span>';
+  }
+
   function loadSlips() {
     if (slipsLoaded) return;
     P.api("getTeacherAvailableSalarySlips", [me], { overlay: false }).then(function (res) {
@@ -201,12 +266,198 @@
         return;
       }
       pill.className = "pill green"; pill.textContent = slips.length + " available";
-      list.innerHTML = slips.map(function (s) {
+      list.innerHTML = slips.map(function (s, i) {
         return '<div class="slip-row"><span class="m"><i class="material-icons">event</i>' + esc(s.monthLabel) + '</span>' +
-          '<span class="acts"><a class="slip-btn" href="' + esc(s.viewUrl) + '" target="_blank" rel="noopener"><i class="material-icons" style="font-size:16px;color:#fff;">visibility</i> View</a>' +
+          '<span class="acts">' +
+          '<button class="slip-btn blue" type="button" data-slip-action="breakdown" data-slip-index="' + i + '"><i class="material-icons" style="font-size:16px;color:#fff;">assessment</i> Breakdown</button>' +
           '<a class="slip-btn maroon" href="' + esc(s.downloadUrl) + '" target="_blank" rel="noopener"><i class="material-icons" style="font-size:16px;color:#fff;">download</i> Download</a></span></div>';
       }).join("");
+
+      Array.prototype.forEach.call(list.querySelectorAll("[data-slip-action='breakdown']"), function (btn) {
+        btn.addEventListener("click", function () {
+          var idx = Number(btn.getAttribute("data-slip-index"));
+          viewSalaryBreakdown(slips[idx]);
+        });
+      });
     }).catch(function () { $("alSlipStatus").textContent = "Load failed"; });
+  }
+
+  function viewSalaryBreakdown(slip) {
+    if (!slip) return;
+    var month = String(slip.month || slip.payroll_month || "").slice(0, 7);
+    if (!month && slip.monthLabel) {
+      // derive month from monthLabel if needed
+      month = P.thisMonth();
+    }
+    var titleEl = $("alSalaryBreakdownTitle");
+    var subEl = $("alSalaryBreakdownSub");
+    var bodyEl = $("alSalaryBreakdownBody");
+    if (titleEl) titleEl.textContent = "Salary Breakdown · " + (slip.monthLabel || monthLabel(month));
+    if (subEl) subEl.textContent = me + " · Detailed computation & attendance report";
+    if (bodyEl) bodyEl.innerHTML = '<div class="inline-loader" style="padding:32px 10px;text-align:center;"><i class="material-icons">sync</i>Loading attendance & salary breakdown…</div>';
+    P.openModal("alSalaryBreakdownModal");
+
+    var fetchTs = calCache[month] ? Promise.resolve(calCache[month]) : P.api("getTimesheetData", [me, month], { overlay: false }).then(function(d) {
+      if (d) calCache[month] = d;
+      return d;
+    }).catch(function() { return { stats: {} }; });
+
+    var fetchPayroll = payrollApi("payrollMySalary", [month]).catch(function() { return slip; });
+
+    Promise.all([fetchTs, fetchPayroll]).then(function(resArr) {
+      var tsData = resArr[0] || {};
+      var row = resArr[1] || slip || {};
+      renderBreakdownModalContent(row, tsData, month, slip);
+    }).catch(function(e) {
+      if (bodyEl) bodyEl.innerHTML = '<div class="att-empty" style="padding:24px 10px;text-align:center;"><i class="material-icons">error_outline</i>' + esc(e.message || "Could not load breakdown details.") + '</div>';
+    });
+  }
+
+  function renderBreakdownModalContent(row, tsData, month, slip) {
+    var att = (tsData && tsData.stats) || {};
+    var salary = Number(row.salary != null ? row.salary : (row.monthly_salary || 0));
+    var dailyRate = Number(row.daily_rate || row.dailyRate || (salary > 0 ? (salary / 30) : 0));
+
+    var annualEntitlement = Number(row.annual_leave_entitlement != null ? row.annual_leave_entitlement : (row.annualLeaveEntitlement != null ? row.annualLeaveEntitlement : (row.annualPaidLeave || 10)));
+    var paidCredit = Number(row.paid_leave_credit != null ? row.paid_leave_credit : (row.paidLeaveCredit || 0));
+    var paidUsed = Number(row.paid_leave_used != null ? row.paid_leave_used : (row.paidLeaveUsed != null ? row.paidLeaveUsed : 0));
+    var paidBalance = Number(row.paid_leave_balance != null ? row.paid_leave_balance : (row.paidLeaveBalance != null ? row.paidLeaveBalance : 0));
+    var paidOpening = row.paid_leave_opening != null ? Number(row.paid_leave_opening) : (row.paidLeaveOpening != null ? Number(row.paidLeaveOpening) : (paidBalance + paidUsed));
+    var usedPriorMonths = Math.max(0, annualEntitlement - paidOpening);
+
+    var fullDayAbsences = Number(row.full_day_absences != null ? row.full_day_absences : (row.fullDayAbsences != null ? row.fullDayAbsences : (att.absent || 0)));
+    var halfDayAbsences = Number(row.half_day_absences != null ? row.half_day_absences : (row.halfDayAbsences != null ? row.halfDayAbsences : (att.halfDays != null ? att.halfDays : (att.halfDay || 0))));
+    var absenceLeaveUnits = (fullDayAbsences * 1.0) + (halfDayAbsences * 0.5);
+    var lateArrivals = Number(row.late_arrivals != null ? row.late_arrivals : (row.lateArrivals != null ? row.lateArrivals : (att.late || 0)));
+
+    var latePenaltyLeave = row.late_penalty_leave != null
+      ? Number(row.late_penalty_leave)
+      : (row.latePenaltyLeave != null ? Number(row.latePenaltyLeave) : (Math.floor(lateArrivals / 3) * 0.5));
+
+    var totalAttendanceLeave = row.attendance_leave != null
+      ? Number(row.attendance_leave)
+      : (row.attendanceLeave != null ? Number(row.attendanceLeave) : (absenceLeaveUnits + latePenaltyLeave));
+
+    var isAttendanceOverridden = (row.manual_attendance_leave != null || row.manualAttendanceLeave != null);
+    var autoAttendanceLeave = Number(row.automatic_attendance_leave != null ? row.automatic_attendance_leave : (row.automaticAttendanceLeave != null ? row.automaticAttendanceLeave : totalAttendanceLeave));
+
+    var unpaidLeave = Number(row.unpaid_leave != null ? row.unpaid_leave : (row.unpaidLeave != null ? row.unpaidLeave : 0));
+    var totalDeduction = Number(row.total_deduction != null ? row.total_deduction : (row.totalDeduction != null ? row.totalDeduction : 0));
+    var netSalary = Number(row.net_salary != null ? row.net_salary : (row.netSalary != null ? row.netSalary : (salary - totalDeduction)));
+
+    var joiningDays = Number(row.joining_days_unpaid != null ? row.joining_days_unpaid : (row.joiningDaysUnpaid || 0));
+    var joiningDeduction = Math.round(joiningDays * dailyRate * 100) / 100;
+
+    var lateUnpaid = Math.min(latePenaltyLeave, unpaidLeave);
+    var absenceUnpaid = Math.max(0, unpaidLeave - lateUnpaid);
+
+    var lateDeduction = Math.round(lateUnpaid * dailyRate * 100) / 100;
+    var absenceDeduction = Math.round(absenceUnpaid * dailyRate * 100) / 100;
+    var otherDeduction = Math.round(Math.max(0, totalDeduction - (lateDeduction + absenceDeduction + joiningDeduction)) * 100) / 100;
+
+    var sumDeductions = lateDeduction + absenceDeduction + joiningDeduction + otherDeduction;
+    if (Math.abs(sumDeductions - totalDeduction) > 0.01 && totalDeduction > 0) {
+      absenceDeduction = Math.round((totalDeduction - lateDeduction - joiningDeduction - otherDeduction) * 100) / 100;
+    }
+
+    var rowStatus = String(row.status != null ? row.status : (row.payment_status != null ? row.payment_status : "Paid"));
+    var payDate = row.payDate || row.pay_date || row.paymentDate || "";
+    var payMode = row.paymentMode || row.payment_mode || "Bank Transfer";
+    var payRef = row.paymentReference || row.payment_reference || "";
+    var empName = row.staff_name || (row.staff && row.staff.name) || row.name || me;
+    var empRole = row.designation || (row.staff && row.staff.role) || row.role || "Teacher";
+
+    var paymentTransferredRow = rowStatus.toLowerCase() === 'paid'
+      ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Amount Transferred:</span><span class="pmob-kv-val bold green">' + money(netSalary) + '</span></div>'
+      : '<div class="pmob-kv-row"><span class="pmob-kv-label">Amount to be Transferred:</span><span class="pmob-kv-val bold" style="color:#b45309;">' + money(netSalary) + '</span></div>';
+
+    var dlHref = (slip && slip.downloadUrl) || (row && row.downloadUrl) || "#";
+    var slipBtn = rowStatus.toLowerCase() === 'paid'
+      ? '<a class="btn btn-maroon" href="' + esc(dlHref) + '" target="_blank" rel="noopener" style="width:100%;min-height:44px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;"><i class="material-icons" style="color:#fff;">download</i> Download Official Salary Slip (PDF)</a>'
+      : '';
+
+    var html = '' +
+      // 1. Salary Summary
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">payments</i> 1. Salary Summary</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Employee Name:</span><span class="pmob-kv-val bold">' + esc(empName) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Designation:</span><span class="pmob-kv-val">' + esc(empRole) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payroll Month:</span><span class="pmob-kv-val">' + esc(monthLabel(month)) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Monthly Gross Salary:</span><span class="pmob-kv-val bold">' + money(salary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Calculation Basis:</span><span class="pmob-kv-val" style="font-size:11.5px;color:#64748b;">30 days/month (' + money(dailyRate) + '/day)</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Deductions:</span><span class="pmob-kv-val red">' + (totalDeduction > 0 ? ('-' + money(totalDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Final Net Salary:</span><span class="pmob-kv-val bold green">' + money(netSalary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Status:</span><span class="pmob-kv-val">' + statusBadge(rowStatus) + '</span></div>' +
+        '</div>' +
+      '</div>' +
+
+      // 2. Monthly Leave Entitlement and Balance
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">event_available</i> 2. Monthly Leave Entitlement & Balance</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Annual Leave Entitlement:</span><span class="pmob-kv-val">' + numVal(annualEntitlement) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Leaves Used Up to Previous Month:</span><span class="pmob-kv-val">' + numVal(usedPriorMonths) + ' days</span></div>' +
+          '<div class="pmob-kv-row" style="background:#f8fafc;padding:6px 8px;border-radius:8px;"><span class="pmob-kv-label" style="font-weight:700;color:#0f172a;">Available Balance at Month Start:</span><span class="pmob-kv-val bold" style="color:#7a151a;">' + numVal(paidOpening) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Entitlement for Month:</span><span class="pmob-kv-val">' + numVal(paidCredit) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Leaves Used During Month:</span><span class="pmob-kv-val" style="color:#b42318;font-weight:700;">' + numVal(paidUsed) + ' days</span></div>' +
+          '<div class="pmob-kv-row" style="background:#f0fdf4;padding:6px 8px;border-radius:8px;"><span class="pmob-kv-label" style="font-weight:700;color:#166534;">Remaining Leave Balance:</span><span class="pmob-kv-val bold green">' + numVal(paidBalance) + ' days</span></div>' +
+        '</div>' +
+        '<div class="pmob-callout"><i class="material-icons">info</i> Employee started ' + esc(monthLabel(month)) + ' with ' + numVal(paidOpening) + ' days available balance.</div>' +
+      '</div>' +
+
+      // 3. Actual Leave and Absence Details
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">rule</i> 3. Actual Leave & Absence Details</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Full-Day Absences:</span><span class="pmob-kv-val">' + fullDayAbsences + (fullDayAbsences === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Half-Day Absences:</span><span class="pmob-kv-val">' + halfDayAbsences + (halfDayAbsences === 1 ? ' day' : ' days') + (halfDayAbsences > 0 ? (' (' + numVal(halfDayAbsences * 0.5) + ' day equivalent)') : '') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Equivalent Absence Leave:</span><span class="pmob-kv-val bold">' + numVal(absenceLeaveUnits) + (absenceLeaveUnits === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row" style="border-top:1px dashed #e2e8f0;padding-top:6px;margin-top:2px;"><span class="pmob-kv-label">Number of Late Arrivals:</span><span class="pmob-kv-val">' + lateArrivals + (lateArrivals === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Late Penalty Leave:</span><span class="pmob-kv-val bold" style="color:#b45309;">' + numVal(latePenaltyLeave) + (latePenaltyLeave === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row" style="background:#fef2f2;padding:6px 8px;border-radius:8px;margin-top:4px;"><span class="pmob-kv-label" style="font-weight:700;color:#991b1b;">Total Leaves Consumed:</span><span class="pmob-kv-val bold red">' + numVal(totalAttendanceLeave) + (totalAttendanceLeave === 1 ? ' day' : ' days') + '</span></div>' +
+        '</div>' +
+        (isAttendanceOverridden ? '<div class="pmob-callout" style="color:#b45309;"><i class="material-icons">warning</i> Biometric auto was ' + numVal(autoAttendanceLeave) + ' days; manual adjustment applied.</div>' : '<div class="pmob-callout"><i class="material-icons">info</i> 3 late arrivals = 0.5 leave. Absences and late penalties are tracked separately.</div>') +
+      '</div>' +
+
+      // 4. Salary Deduction Breakdown
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">receipt_long</i> 4. Salary Deduction Breakdown</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Deduction due to Unpaid Absences:</span><span class="pmob-kv-val red">' + (absenceDeduction > 0 ? ('-' + money(absenceDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Deduction due to Late Arrivals:</span><span class="pmob-kv-val red">' + (lateDeduction > 0 ? ('-' + money(lateDeduction)) : '₹ 0.00') + '</span></div>' +
+          (joiningDays > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Mid-Month Joining (' + joiningDays + ' unjoined days):</span><span class="pmob-kv-val red">-' + money(joiningDeduction) + '</span></div>' : '') +
+          (otherDeduction > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Other Deductions / Adjustments:</span><span class="pmob-kv-val red">-' + money(otherDeduction) + '</span></div>' : '') +
+          '<div class="pmob-kv-row" style="background:#fff1f2;padding:7px 8px;border-radius:8px;margin-top:4px;"><span class="pmob-kv-label" style="font-weight:800;color:#9f1239;">Total Deductions:</span><span class="pmob-kv-val bold red" style="font-size:15px;">-' + money(totalDeduction) + '</span></div>' +
+        '</div>' +
+        '<div class="pmob-callout"><i class="material-icons">calculate</i> Total unpaid leave days: ' + numVal(unpaidLeave) + ' days × ' + money(dailyRate) + '/day.</div>' +
+      '</div>' +
+
+      // 5. Final Payment Summary
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">account_balance</i> 5. Final Payment Summary</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Monthly Gross Salary:</span><span class="pmob-kv-val">' + money(salary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Absence Deduction:</span><span class="pmob-kv-val red">' + (absenceDeduction > 0 ? ('-' + money(absenceDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Late Deduction:</span><span class="pmob-kv-val red">' + (lateDeduction > 0 ? ('-' + money(lateDeduction)) : '₹ 0.00') + '</span></div>' +
+          (joiningDeduction + otherDeduction > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Other Deductions:</span><span class="pmob-kv-val red">-' + money(joiningDeduction + otherDeduction) + '</span></div>' : '') +
+          '<div class="pmob-kv-row" style="font-weight:700;"><span class="pmob-kv-label">Total Deductions:</span><span class="pmob-kv-val red">-' + money(totalDeduction) + '</span></div>' +
+        '</div>' +
+        '<div class="pmob-final-total">' +
+          '<span class="pmob-final-lbl">Final Net Salary Transferred</span>' +
+          '<span class="pmob-final-amt">' + money(netSalary) + '</span>' +
+        '</div>' +
+        '<div class="pmob-kv-grid" style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:12px;">' +
+          paymentTransferredRow +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Status:</span><span class="pmob-kv-val">' + statusBadge(rowStatus) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Date:</span><span class="pmob-kv-val">' + (payDate ? esc(payDate) : '—') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Mode:</span><span class="pmob-kv-val">' + esc(payMode) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Transaction Reference:</span><span class="pmob-kv-val">' + esc(payRef || '—') + '</span></div>' +
+        '</div>' +
+        slipBtn +
+      '</div>';
+
+    $("alSalaryBreakdownBody").innerHTML = html;
   }
 
   /* ---------------- apply for leave (client-side WhatsApp) ---------------- */

@@ -110,13 +110,13 @@
     $("smDirectory").innerHTML =
       '<div class="sm-searchbar">' +
         '<div class="sm-search"><i class="material-icons">search</i>' +
-          '<input id="smSearch" type="text" placeholder="Search name, ID, admission no, father, phone…" autocomplete="off">' +
+          '<input id="smSearch" type="search" class="mob-search sm-mob-search-input" placeholder="Search name, ID, admission no, father, phone…" autocomplete="off">' +
           '<button id="smClear" class="sm-clear" title="Clear">&times;</button>' +
         '</div>' +
         '<div class="sm-filters">' +
-          selector("event", "Year", '<select id="smYear" class="sm-input">' + years + '</select>') +
-          selector("groups", "Class", '<select id="smClass" class="sm-input">' + classes + '</select>') +
-          selector("filter_list", "Status", '<select id="smStatus" class="sm-input">' + statuses + '</select>') +
+          selector("groups", "Class", '<select id="smClass" class="sm-input mob-select">' + classes + '</select>') +
+          selector("filter_list", "Status", '<select id="smStatus" class="sm-input mob-select">' + statuses + '</select>') +
+          selector("event", "Year", '<select id="smYear" class="sm-input mob-select">' + years + '</select>') +
         '</div>' +
       '</div>' +
       '<div id="smBulkBar" class="sm-bulkbar" style="display:none"></div>' +
@@ -149,6 +149,42 @@
       (STATE.cls !== "All" ? ' · Class ' + esc(STATE.cls) : '') +
       (STATE.year && STATE.year !== "ALL" ? ' · ' + esc(STATE.year) : ' · all years') +
       (res.truncated ? ' · showing first 1000' : '') + '</div>';
+
+    var isMob = (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+    if (isMob) {
+      var cardsHtml = '<div class="sm-mob-list">' + res.rows.map(function (s) {
+        var phoneLink = s.phone
+          ? ('<a href="tel:' + esc(s.phone) + '" class="sm-mob-phone" onclick="event.stopPropagation();"><i class="material-icons">phone</i> ' + esc(s.phone) + '</a>')
+          : '<span class="sm-mob-nophone">No phone</span>';
+        var admText = s.admissionNo ? (' · Adm ' + esc(s.admissionNo)) : '';
+
+        return '<div class="sm-mob-card" data-open="' + esc(s.id) + '">' +
+          '<div class="sm-mob-card-head">' +
+            '<div>' +
+              '<div class="sm-mob-name">' + esc(s.name) + '</div>' +
+              '<div class="sm-mob-sub">ID: ' + esc(s.id) + admText + '</div>' +
+            '</div>' +
+            '<span class="sm-pill ' + s.statusClass + '">' + esc(s.status) + '</span>' +
+          '</div>' +
+          '<div class="sm-mob-details">' +
+            '<div class="sm-mob-col"><span class="sm-mob-lbl">Class</span><span class="sm-mob-val bold">' + esc(s.className || "—") + '</span></div>' +
+            '<div class="sm-mob-col"><span class="sm-mob-lbl">Father</span><span class="sm-mob-val">' + esc(s.father || "—") + '</span></div>' +
+          '</div>' +
+          '<div class="sm-mob-foot">' +
+            phoneLink +
+            '<div class="sm-mob-viewlink">Profile <i class="material-icons" style="font-size:16px;">chevron_right</i></div>' +
+          '</div>' +
+        '</div>';
+      }).join("") + '</div>';
+
+      $("smList").innerHTML = head + cardsHtml;
+      Array.prototype.forEach.call($("smList").querySelectorAll(".sm-mob-card[data-open]"), function (card) {
+        card.addEventListener("click", function () {
+          openProfile(card.getAttribute("data-open"));
+        });
+      });
+      return;
+    }
 
     var rows = res.rows.map(rowHtml).join("");
     $("smList").innerHTML = head +
@@ -892,7 +928,43 @@
     ".btn{border:none;border-radius:10px;padding:10px 16px;font-weight:700;font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.btn-maroon{background:var(--maroon);color:#fff}.btn-outline{background:#fff;border:1px solid var(--border);color:var(--text-main)}.btn-danger{background:#dc2626;color:#fff}.btn i{font-size:18px}.btn:disabled{opacity:.6;cursor:default}" +
     ".sm-modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px}.sm-modal.show{display:flex}.sm-modal-box{background:#fff;border-radius:16px;max-width:640px;width:100%;max-height:90vh;display:flex;flex-direction:column}.sm-modal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700}.sm-modal-head button{border:none;background:none;font-size:24px;cursor:pointer;line-height:1}.sm-modal-body{padding:18px;overflow:auto}.sm-modal-err{display:none;color:var(--danger,#dc2626);font-weight:600;font-size:13px;padding:0 18px}.sm-modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--border)}" +
     "#smToast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);z-index:99999;background:#14171f;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;opacity:0;pointer-events:none;transition:all .25s;max-width:88vw}#smToast.show{opacity:1;transform:translateX(-50%) translateY(0)}#smToast.ok{background:#065f46}#smToast.err{background:#991b1b}#smToast i{font-size:18px}" +
-    "@media(max-width:640px){.sm-table thead{display:none}.sm-table,.sm-table tbody,.sm-table tr,.sm-table td{display:block;width:100%}.sm-table tr{border:1px solid var(--border);border-radius:12px;margin:10px;padding:6px 12px}.sm-table td{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-top:1px solid #f1f2f6;text-align:right}.sm-table td::before{content:attr(data-label);font-weight:700;color:var(--text-muted);text-align:left}.sm-table tr td:first-child{border-top:none}.sm-chk,.sm-actcol{width:auto}.sm-acts{justify-content:flex-end}}";
+    "@media(max-width:900px){" +
+      ".sm-tabs{display:none!important;}" +
+      ".sm-profbtns{display:none!important;}" +
+      ".sm-bulk-bar{display:none!important;}" +
+      ".sm-table td button[data-edenr]{display:none!important;}" +
+      ".sm-head{margin-bottom:8px;}" +
+      ".sm-title{font-size:19px;margin:2px 0;}" +
+      ".sm-sub{font-size:12px;line-height:1.4;display:none!important;}" +
+      ".sm-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0;}" +
+      ".sm-kpi{padding:9px 6px;border-radius:12px;text-align:center;box-shadow:0 1px 3px rgba(15,23,42,0.03);}" +
+      ".sm-kpi-v{font-size:18px;font-weight:900;line-height:1.2;}" +
+      ".sm-kpi-l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.02em;margin-top:2px;}" +
+      ".sm-searchbar{padding:12px 14px;border-radius:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,23,42,0.03);background:#fff;}" +
+      "#smSearch{pointer-events:auto!important;background:#fff!important;user-select:text!important;-webkit-user-select:text!important;cursor:text!important;}" +
+      ".sm-search{position:relative;z-index:2;background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:10px;padding:2px 10px;display:flex;align-items:center;}" +
+      ".sm-search input{height:38px;font-size:13.5px;font-weight:600;color:#0f172a;pointer-events:auto!important;}" +
+      ".sm-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}" +
+      ".sm-filters .smart-selector:last-child{grid-column:span 2;}" +
+      ".smart-selector{flex:none;width:100%;}" +
+      ".sm-filters select{min-height:38px;height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;pointer-events:auto!important;cursor:pointer!important;}" +
+      ".sm-mob-list{display:flex;flex-direction:column;gap:8px;margin-top:8px;}" +
+      ".sm-mob-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 3px rgba(15,23,42,0.03);cursor:pointer;}" +
+      ".sm-mob-card:active{background:#f8fafc;}" +
+      ".sm-mob-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;}" +
+      ".sm-mob-name{font-size:15px;font-weight:800;color:var(--maroon);}" +
+      ".sm-mob-sub{font-size:11px;font-weight:600;color:#64748b;margin-top:2px;}" +
+      ".sm-mob-details{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#f8fafc;padding:8px 10px;border-radius:10px;margin-bottom:8px;}" +
+      ".sm-mob-col{display:flex;flex-direction:column;gap:1px;}" +
+      ".sm-mob-lbl{font-size:9.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.3px;}" +
+      ".sm-mob-val{font-size:13px;font-weight:600;color:#1e293b;}" +
+      ".sm-mob-val.bold{font-weight:800;color:var(--maroon);}" +
+      ".sm-mob-foot{display:flex;justify-content:space-between;align-items:center;font-size:12px;}" +
+      ".sm-mob-phone{display:inline-flex;align-items:center;gap:4px;color:#047857;font-weight:700;text-decoration:none;}" +
+      ".sm-mob-phone i{font-size:15px;}" +
+      ".sm-mob-nophone{color:#94a3b8;}" +
+      ".sm-mob-viewlink{display:inline-flex;align-items:center;gap:2px;color:var(--maroon);font-weight:700;font-size:12px;}" +
+    "}";
     var st = document.createElement("style"); st.id = "sm-css"; st.textContent = css; document.head.appendChild(st);
   }
 })();

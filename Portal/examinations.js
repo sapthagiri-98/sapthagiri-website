@@ -59,8 +59,9 @@
 
   // single-subject entry list (teacher academic view)
   function renderSingle(g, hostId, isMgmt, entryUser, refresh) {
-    var host = $(hostId), locked = g.locked, html = "";
-    if (locked) html += '<div class="ex-lock"><i class="material-icons">lock</i>Locked' + (isMgmt ? " — unlock to edit." : " by management. Contact management to change.") + "</div>";
+    var isMobileReadOnly = P.isMobileAdmin(session);
+    var host = $(hostId), locked = g.locked || isMobileReadOnly, html = "";
+    if (locked) html += '<div class="ex-lock"><i class="material-icons">lock</i>' + (isMobileReadOnly ? "View Only — Mobile Admin Read Only Mode" : (isMgmt ? "Locked — unlock to edit." : "Locked by management. Contact management to change.")) + "</div>";
     html += '<div class="ex-note" style="margin-bottom:10px;"><b>' + esc(g.className) + " · " + esc(g.subject) + "</b> — " + esc(g.bucket) + " · " + esc(g.componentLabel) + ' &middot; <span style="color:var(--text-muted);">max ' + esc(g.max) + "</span></div>";
     html += '<div class="ex-entrylist">';
     g.rows.forEach(function (r) {
@@ -71,8 +72,8 @@
         '<label class="ex-abs"><input type="checkbox" ' + (r.absent ? "checked" : "") + " " + (locked ? "disabled" : "") + "> Absent</label></div></div>";
     });
     html += "</div><div class='ex-actbar'>";
-    if (!locked || isMgmt) html += '<button class="btn btn-success mk-save" style="width:auto;padding:11px 18px;"><i class="material-icons" style="color:#fff;">save</i> Save Marks</button>';
-    html += '<span class="ex-note">Blank = not entered. Toggle Absent for absentees. Marks can\'t exceed max.</span></div>';
+    if (!locked && (!isMobileReadOnly)) html += '<button class="btn btn-success mk-save" style="width:auto;padding:11px 18px;"><i class="material-icons" style="color:#fff;">save</i> Save Marks</button>';
+    html += '<span class="ex-note">' + (isMobileReadOnly ? "Viewing student marks in read-only mode." : "Blank = not entered. Toggle Absent for absentees. Marks can\'t exceed max.") + '</span></div>';
     host.innerHTML = html;
     Array.prototype.forEach.call(host.querySelectorAll(".mk-mark"), function (inp) { inp.addEventListener("input", function () { overFlag(inp, g.max); }); });
     Array.prototype.forEach.call(host.querySelectorAll(".ex-abs input"), function (cb) {
@@ -410,7 +411,21 @@
         '<div class="mod-head"><div><span class="eyebrow">Management</span><h2 style="margin-bottom:4px;">Examinations Management</h2>' +
         '<p class="view-description" style="margin:0;">Schedule exams, add syllabus, enter marks, control locks and generate tabulation reports.</p></div>' +
         '<button class="btn btn-warning-action" id="exNewBtn" style="width:auto;padding:10px 16px;"><i class="material-icons" style="color:#fff;">add</i> New Exam</button></div>' +
+        '<div class="ex-mob-mode-seg" id="exMobModeSeg">' +
+          '<button type="button" class="ex-mob-mode-btn active" id="exMobUpcomingBtn" data-m="upcoming"><i class="material-icons">event_upcoming</i> Upcoming Exams</button>' +
+          '<button type="button" class="ex-mob-mode-btn" id="exMobProgressBtn" data-m="progress"><i class="material-icons">school</i> Student Progress Report</button>' +
+        '</div>' +
         '<div class="ex-kpis" id="exKpis"></div>' +
+        '<div class="ex-mob-tab-wrap">' +
+          '<select id="exMobTabSelect" class="ex-mob-tab-select">' +
+            '<option value="overview">📅 Overview & Upcoming</option>' +
+            '<option value="schedule">📋 Exam Schedule</option>' +
+            '<option value="marks">✍️ Marks Entry</option>' +
+            '<option value="locks">🔒 Locks</option>' +
+            '<option value="reports">📊 Reports</option>' +
+            '<option value="holistic">🌟 Holistic</option>' +
+          '</select>' +
+        '</div>' +
         '<div class="ex-tabs" id="exTabs">' +
           '<button class="active" data-t="overview"><i class="material-icons">calendar_month</i> Overview</button>' +
           '<button data-t="schedule"><i class="material-icons">edit_calendar</i> Schedule</button>' +
@@ -425,16 +440,72 @@
         '<div id="exPaneReports" style="display:none;"></div><div id="exPaneHolistic" style="display:none;"></div>' +
         '</div>' + formModal() + dayModal() + pickModal();
     }
+    var rawUpcomingItems = [];
+    var mobProgClasses = [], mobProgBuckets = [], mobProgClassData = null, mobProgSelectedStudent = null;
+
     function overviewPane() {
-      return '<div class="ex-caltoolbar"><h3 id="exCalLabel">—</h3>' +
-        '<div class="smart-selector" style="max-width:220px;"><div class="ss-icon"><i class="material-icons">calendar_month</i></div><div class="ss-body"><div class="ss-label">Month</div><input type="month" id="exCalMonth"></div></div></div>' +
+      return '<div id="exMobUpcomingWrap">' +
+        '<div style="font-size:13.5px;font-weight:800;color:var(--maroon);margin:6px 0 10px;display:flex;align-items:center;gap:6px;">' +
+          '<i class="material-icons" style="font-size:18px;">event_upcoming</i> Upcoming & Scheduled Examinations' +
+        '</div>' +
+        '<div class="ex-mob-filter-strip">' +
+          '<div class="ex-mob-filter-box"><label>Exam Type</label><select id="exMobFilterExam" class="mob-select"><option value="">All Exams</option></select></div>' +
+          '<div class="ex-mob-filter-box"><label>Class</label><select id="exMobFilterClass" class="mob-select"><option value="">All Classes</option></select></div>' +
+        '</div>' +
+        '<div id="exMobUpcomingList"><div class="ex-loading"><i class="material-icons">sync</i>Loading upcoming exams…</div></div>' +
+      '</div>' +
+      '<div id="exMobProgressWrap" style="display:none;">' +
+        '<div class="ex-mob-prog-controls">' +
+          '<div class="ex-mob-filter-strip">' +
+            '<div class="ex-mob-filter-box"><label>Class</label><select id="exMobProgClass" class="mob-select"><option value="">Select class…</option></select></div>' +
+            '<div class="ex-mob-filter-box"><label>Assessment</label><select id="exMobProgBucket" class="mob-select"><option value="">Select exam…</option></select></div>' +
+          '</div>' +
+          '<div style="position:relative;margin-bottom:10px;">' +
+            '<i class="material-icons" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:18px;pointer-events:none;">search</i>' +
+            '<input type="search" id="exMobProgStudentSearch" class="mob-search" style="width:100%!important;height:38px!important;padding:6px 10px 6px 34px!important;border:1px solid #cbd5e1!important;border-radius:10px!important;font-size:13px!important;background:#fff!important;box-sizing:border-box!important;" placeholder="Search student name or roll…">' +
+          '</div>' +
+        '</div>' +
+        '<div id="exMobProgBody"><div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">fact_check</i>Select a Class and Assessment above to view student marks &amp; progress reports.</div></div>' +
+      '</div>' +
+      '<button type="button" class="ex-cal-toggle" id="exMobCalToggle">' +
+        '<span><i class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:6px;">calendar_month</i> View Monthly Calendar Grid</span>' +
+        '<i class="material-icons" id="exMobCalArrow" style="font-size:18px;">expand_more</i>' +
+      '</button>' +
+      '<div id="exCalGridWrap" class="ex-cal-grid-wrap">' +
+        '<div class="ex-caltoolbar"><h3 id="exCalLabel">—</h3>' +
+          '<div class="smart-selector" style="max-width:220px;"><div class="ss-icon"><i class="material-icons">calendar_month</i></div><div class="ss-body"><div class="ss-label">Month</div><input type="month" id="exCalMonth"></div></div></div>' +
         '<div class="cal-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>' +
-        '<div class="cal-grid" id="exCalGrid" style="gap:6px;"></div>';
+        '<div class="cal-grid" id="exCalGrid" style="gap:6px;"></div>' +
+      '</div>';
     }
 
     /* ---------------- tabs ---------------- */
     function bindTabs() {
       Array.prototype.forEach.call($("exTabs").querySelectorAll("button"), function (b) { b.addEventListener("click", function () { switchTab(b.getAttribute("data-t")); }); });
+      var mobSelect = $("exMobTabSelect");
+      if (mobSelect) {
+        mobSelect.addEventListener("change", function () {
+          switchTab(this.value);
+        });
+      }
+
+      var upBtn = $("exMobUpcomingBtn"), prBtn = $("exMobProgressBtn");
+      if (upBtn && prBtn) {
+        upBtn.addEventListener("click", function () {
+          upBtn.classList.add("active");
+          prBtn.classList.remove("active");
+          $("exMobUpcomingWrap").style.display = "block";
+          $("exMobProgressWrap").style.display = "none";
+        });
+        prBtn.addEventListener("click", function () {
+          prBtn.classList.add("active");
+          upBtn.classList.remove("active");
+          $("exMobUpcomingWrap").style.display = "none";
+          $("exMobProgressWrap").style.display = "block";
+          initMobileProgressReport();
+        });
+      }
+
       $("exNewBtn").addEventListener("click", openCreate);
       Array.prototype.forEach.call(document.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { P.closeModal(b.getAttribute("data-close")); }); });
       Array.prototype.forEach.call(document.querySelectorAll(".modal-overlay"), function (m) { m.addEventListener("click", function (e) { if (e.target === m) P.closeModal(m.id); }); });
@@ -443,13 +514,12 @@
       st.tab = t;
       ["overview", "schedule", "marks", "locks", "reports", "holistic"].forEach(function (x) { $("exPane" + cap(x)).style.display = (x === t) ? "block" : "none"; });
       Array.prototype.forEach.call($("exTabs").querySelectorAll("button"), function (b) { b.classList.toggle("active", b.getAttribute("data-t") === t); });
+      var mobSelect = $("exMobTabSelect");
+      if (mobSelect && mobSelect.value !== t) mobSelect.value = t;
       if (t === "schedule") initSchedule();
       else if (t === "marks" && !st.marksMounted) { st.marksMounted = true; $("exPaneMarks").innerHTML = ""; mountAdminMarks("exPaneMarks", me); }
       else if (t === "locks") initLocks();
       else if (t === "reports") {
-        /* Always rebuild Reports when the tab is opened. Marks can be entered
-           from another tab/session, so keeping the old report DOM/data here
-           can make the tabulation look stale until the user manually reloads. */
         $("exPaneReports").innerHTML = "";
         initReports();
       }
@@ -469,7 +539,22 @@
     function kpi(cls, label, v) { return '<div class="ex-kpi ' + cls + '"><div class="l">' + label + '</div><div class="v">' + (v || 0) + "</div></div>"; }
 
     /* ---------------- overview calendar ---------------- */
-    function initCalendar() { $("exCalMonth").value = P.thisMonth(); $("exCalMonth").addEventListener("change", loadCalendar); loadCalendar(); }
+    function initCalendar() {
+      $("exCalMonth").value = P.thisMonth();
+      $("exCalMonth").addEventListener("change", loadCalendar);
+      var toggleBtn = $("exMobCalToggle");
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", function () {
+          var wrap = $("exCalGridWrap");
+          if (wrap) {
+            wrap.classList.toggle("open");
+            var arrow = $("exMobCalArrow");
+            if (arrow) arrow.textContent = wrap.classList.contains("open") ? "expand_less" : "expand_more";
+          }
+        });
+      }
+      loadCalendar();
+    }
     function loadCalendar() {
       var m = $("exCalMonth").value; if (!m) return;
       var p = m.split("-"), yy = +p[0], mm = +p[1];
@@ -480,6 +565,7 @@
     function renderCal(events, yy, mm) {
       var pad = new Date(yy, mm - 1, 1).getDay(), dim = new Date(yy, mm, 0).getDate(), today = P.todayIso(), html = "";
       for (var i = 0; i < pad; i++) html += '<div class="ex-calcell empty"></div>';
+      var upcomingItems = [];
       for (var d = 1; d <= dim; d++) {
         var ds = yy + "-" + String(mm).padStart(2, "0") + "-" + String(d).padStart(2, "0");
         var list = events[ds] || [], isToday = ds === today, mini = "";
@@ -487,11 +573,343 @@
           mini = '<span class="ex-calbadge">' + list.length + " exam" + (list.length > 1 ? "s" : "") + "</span>" +
             list.slice(0, 2).map(function (e) { return '<div class="ex-calmini">' + esc(e.gradeLabel || e.grade) + " · " + esc(e.subject) + "</div>"; }).join("") +
             (list.length > 2 ? '<div class="ex-calmini">+' + (list.length - 2) + " more…</div>" : "");
+          if (ds >= today) {
+            list.forEach(function (e) { upcomingItems.push({ date: ds, e: e }); });
+          }
         }
         html += '<div class="ex-calcell ' + (isToday ? "today" : "") + '" data-day="' + ds + '"><div class="ex-calnum">' + d + "</div>" + mini + "</div>";
       }
       $("exCalGrid").innerHTML = html;
       Array.prototype.forEach.call($("exCalGrid").querySelectorAll(".ex-calcell[data-day]"), function (c) { c.addEventListener("click", function () { openDay(c.getAttribute("data-day")); }); });
+
+      rawUpcomingItems = upcomingItems;
+      var examSel = $("exMobFilterExam"), classSel = $("exMobFilterClass");
+      if (examSel && classSel) {
+        var examsMap = {}, classesMap = {};
+        upcomingItems.forEach(function (it) {
+          if (it.e.examName) examsMap[it.e.examName] = true;
+          var cls = it.e.gradeLabel || it.e.grade;
+          if (cls) classesMap[cls] = true;
+        });
+        var curExam = examSel.value, curClass = classSel.value;
+        examSel.innerHTML = '<option value="">All Exams</option>' + Object.keys(examsMap).sort().map(function (n) {
+          return '<option value="' + esc(n) + '"' + (n === curExam ? ' selected' : '') + '>' + esc(n) + '</option>';
+        }).join("");
+        classSel.innerHTML = '<option value="">All Classes</option>' + Object.keys(classesMap).sort().map(function (c) {
+          return '<option value="' + esc(c) + '"' + (c === curClass ? ' selected' : '') + '>' + esc(c) + '</option>';
+        }).join("");
+
+        examSel.onchange = renderFilteredUpcoming;
+        classSel.onchange = renderFilteredUpcoming;
+      }
+      renderFilteredUpcoming();
+    }
+
+    function renderFilteredUpcoming() {
+      var upHost = $("exMobUpcomingList");
+      if (!upHost) return;
+      var selExam = ($("exMobFilterExam") ? $("exMobFilterExam").value : "").trim().toLowerCase();
+      var selClass = ($("exMobFilterClass") ? $("exMobFilterClass").value : "").trim().toLowerCase();
+
+      var list = rawUpcomingItems.filter(function (item) {
+        var e = item.e;
+        if (selExam && String(e.examName || "").trim().toLowerCase() !== selExam) return false;
+        if (selClass) {
+          var cls = String(e.gradeLabel || e.grade || "").trim().toLowerCase();
+          if (cls !== selClass && cls.indexOf(selClass) < 0) return false;
+        }
+        return true;
+      });
+
+      if (!list.length) {
+        upHost.innerHTML = '<div class="ex-empty" style="padding:16px;"><i class="material-icons">event_available</i>No examinations found for this selection.</div>';
+        return;
+      }
+
+      upHost.innerHTML = list.map(function (item) {
+        var e = item.e, ds = item.date;
+        return '<div class="ex-mob-sch-card">' +
+          '<div class="ex-mob-sch-top">' +
+            '<div>' +
+              '<div class="ex-mob-sch-title">' + esc(e.gradeLabel || e.grade) + ' · ' + esc(e.subject) + '</div>' +
+              '<div class="ex-mob-sch-meta">' +
+                '<span><i class="material-icons" style="font-size:14px;vertical-align:middle;">event</i> ' + P.prettyDate(ds) + '</span>' +
+                '<span><b>' + esc(e.examName) + '</b></span>' +
+                (e.marks ? ('<span>Max ' + esc(e.marks) + '</span>') : '') +
+              '</div>' +
+            '</div>' +
+            '<span class="ex-status sched">Scheduled</span>' +
+          '</div>' +
+          (e.syllabus ? ('<div class="ex-mob-sch-syl"><b>Portions:</b> ' + esc(e.syllabus) + '</div>') : '') +
+        '</div>';
+      }).join("");
+    }
+
+    /* ---------------- MOBILE STUDENT PROGRESS REPORT ---------------- */
+    var SUBJECTS_6_7 = ["Telugu", "Hindi", "English", "Maths", "Science", "Social"];
+    var SUBJECTS_8_10 = ["Telugu", "Hindi", "English", "Maths", "Physics", "Biology", "Social"];
+    function gradeNumFromClass(clsStr) {
+      var m = String(clsStr || "").match(/(\d+)/);
+      return m ? parseInt(m[1], 10) : null;
+    }
+    function allowedSubjectsFor(clsStr) {
+      var n = gradeNumFromClass(clsStr);
+      if (n === 6 || n === 7) return SUBJECTS_6_7;
+      if (n >= 8 && n <= 10) return SUBJECTS_8_10;
+      return null;
+    }
+    function filterSubjects(d) {
+      var allow = allowedSubjectsFor(d.class);
+      if (!allow) return d.subjects || [];
+      var have = d.subjects || [];
+      return allow.filter(function (s) { return have.indexOf(s) >= 0; });
+    }
+    function bucketTitleWords(bucket) {
+      var p = String(bucket || "").split("-"), kind = p[0], n = p[1] || "";
+      var word = kind === "SA" ? "SUMMATIVE ASSESSMENT" : "FORMATIVE ASSESSMENT";
+      return word + " - " + n;
+    }
+    function gradeToGPA(grade) {
+      var map = { A1: 10, A2: 9, B1: 8, B2: 7, C1: 6, C2: 5, D: 4, E: 0 };
+      return (grade in map) ? map[grade] : 0;
+    }
+    function studentIdText(s) {
+      return s.studentId || s.studentID || s.idNumber || s.admissionNo || s.admissionNumber || s.admNo || s.id || "—";
+    }
+    function isAbsentCell(cell) {
+      if (!cell) return false;
+      if (cell.absent === true || cell.isAbsent === true || cell.status === "A" || cell.status === "ABSENT") return true;
+      var raw = String(cell.value == null ? (cell.scored == null ? "" : cell.scored) : cell.value).trim().toLowerCase();
+      return raw === "ab" || raw === "abs" || raw === "absent" || raw === "a";
+    }
+    function intelligentImpression(s, subjects, maxPerSubject) {
+      var scored = subjects.map(function (subject) {
+        var c = (s.subjects || {})[subject] || {}, t = c.Tot;
+        var val = (t && t.has && t.value !== "" && t.value != null && !isNaN(Number(t.value))) ? Number(t.value) : null;
+        return { subject: subject, value: val };
+      }).filter(function (x) { return x.value != null; });
+      var pct = s.hasAny ? Number(s.percent || 0) : 0;
+      if (!scored.length) return "Assessment marks are incomplete or pending.";
+      scored.sort(function (a, b) { return b.value - a.value; });
+      var strongest = scored[0], focus = scored[scored.length - 1];
+      var opening = pct >= 80 ? "A very good effort overall." : pct >= 60 ? "A good effort overall." : pct >= 40 ? "A satisfactory effort with scope for improvement." : "More consistent effort and regular support are required.";
+      var strength = "The work in " + strongest.subject + " is encouraging.";
+      var next = focus.subject === strongest.subject ? "Continue the same regular practice." : "Please give extra attention to " + focus.subject + " through daily revision.";
+      return [opening, strength, next].join(" ");
+    }
+
+    function initMobileProgressReport() {
+      var clsSel = $("exMobProgClass"), bkSel = $("exMobProgBucket");
+      if (!clsSel || !bkSel) return;
+
+      if (!mobProgClasses.length) {
+        P.api("progressGetClasses", [], { overlay: false }).then(function (cs) {
+          mobProgClasses = cs || [];
+          clsSel.innerHTML = '<option value="">Select class…</option>' + mobProgClasses.map(function (c) {
+            return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+          }).join("");
+        });
+      }
+      if (!mobProgBuckets.length) {
+        P.api("progressGetBucketList", [], { overlay: false }).then(function (bs) {
+          var labels = {};
+          (bs || []).forEach(function (b) {
+            if (typeof b === "string") labels[b] = b;
+            else if (b && b.bucket) labels[b.bucket] = b.label || b.bucket;
+          });
+          mobProgBuckets = BUCKET_SEQ.map(function (bucket) {
+            return { value: bucket, label: labels[bucket] || bucket };
+          });
+          bkSel.innerHTML = '<option value="">Select assessment…</option>' + mobProgBuckets.map(function (b) {
+            return '<option value="' + esc(b.value) + '">' + esc(b.label) + '</option>';
+          }).join("");
+        });
+      }
+
+      clsSel.onchange = function () {
+        mobProgSelectedStudent = null;
+        loadMobProgressClassData();
+      };
+      bkSel.onchange = function () {
+        mobProgSelectedStudent = null;
+        loadMobProgressClassData();
+      };
+
+      var sInput = $("exMobProgStudentSearch");
+      if (sInput) {
+        sInput.oninput = function () {
+          renderMobProgressView();
+        };
+      }
+    }
+
+    function loadMobProgressClassData() {
+      var cls = $("exMobProgClass") ? $("exMobProgClass").value : "";
+      var bk = $("exMobProgBucket") ? $("exMobProgBucket").value : "";
+      var host = $("exMobProgBody");
+      if (!host) return;
+
+      if (!cls || !bk) {
+        host.innerHTML = '<div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">fact_check</i>Pick both a Class and an Assessment above to view progress reports.</div>';
+        return;
+      }
+
+      host.innerHTML = '<div class="inline-loader"><i class="material-icons">sync</i>Loading class marks…</div>';
+      P.api("progressGetClassData", [cls, bk], { overlay: false }).then(function (data) {
+        mobProgClassData = data || { students: [] };
+        renderMobProgressView();
+      }).catch(function (e) {
+        host.innerHTML = '<div class="ex-empty" style="padding:16px;"><i class="material-icons">error_outline</i>Error: ' + esc(e.message || e) + '</div>';
+      });
+    }
+
+    function renderMobProgressView() {
+      var host = $("exMobProgBody");
+      if (!host || !mobProgClassData) return;
+      var d = mobProgClassData;
+      var students = d.students || [];
+
+      if (!students.length) {
+        host.innerHTML = '<div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">person_off</i>No students found in ' + esc(d.class || "") + '.</div>';
+        return;
+      }
+
+      if (mobProgSelectedStudent) {
+        renderMobSingleStudentReport(host, d, mobProgSelectedStudent);
+        return;
+      }
+
+      var q = ($("exMobProgStudentSearch") ? $("exMobProgStudentSearch").value : "").trim().toLowerCase();
+      var visStudents = students;
+      if (q) {
+        visStudents = students.filter(function (s) {
+          var name = String(s.name || "").toLowerCase();
+          var roll = String(s.roll || "").toLowerCase();
+          var id = String(studentIdText(s) || "").toLowerCase();
+          return name.indexOf(q) >= 0 || roll.indexOf(q) >= 0 || id.indexOf(q) >= 0;
+        });
+      }
+
+      if (!visStudents.length) {
+        host.innerHTML = '<div class="ex-empty" style="padding:16px;"><i class="material-icons">search_off</i>No students matching “' + esc(q) + '”.</div>';
+        return;
+      }
+
+      var subjects = filterSubjects(d);
+      var isSABucket = !!d.isSA;
+      var overallMax = subjects.length * (isSABucket ? 100 : 50);
+
+      var html = '<div class="ex-mob-student-list">';
+      html += '<div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:8px;">Showing ' + visStudents.length + ' students in Class ' + esc(d.class) + ' · ' + esc(d.bucket) + '</div>';
+
+      visStudents.forEach(function (s, idx) {
+        var hasMarks = !!s.hasAny;
+        var scorePill = "";
+        if (hasMarks) {
+          var pct = Number(s.percent || 0);
+          var pcol = pct >= 80 ? "#15803d" : (pct >= 50 ? "#0284c7" : "#b45309");
+          scorePill = '<span class="pill" style="background:#f0fdf4;color:' + pcol + ';font-weight:800;font-size:11px;">' + s.totalScored + '/' + overallMax + ' (' + pct + '%) · ' + esc(s.grade || '') + '</span>';
+        } else {
+          scorePill = '<span class="pill" style="background:#f1f5f9;color:#64748b;font-weight:700;font-size:11px;">Marks Pending</span>';
+        }
+
+        html += '<div class="ex-mob-student-card" data-idx="' + idx + '">' +
+          '<div class="ex-mob-sc-head">' +
+            '<div>' +
+              '<span class="ex-mob-sc-roll">#' + esc(s.roll || idx + 1) + '</span> ' +
+              '<span class="ex-mob-sc-name">' + esc(s.name) + '</span>' +
+            '</div>' +
+            scorePill +
+          '</div>' +
+          '<div class="ex-mob-sc-sub">' +
+            '<span>ID: ' + esc(studentIdText(s)) + '</span>' +
+            '<span class="ex-mob-sc-action">View Report <i class="material-icons" style="font-size:14px;vertical-align:middle;">arrow_forward</i></span>' +
+          '</div>' +
+        '</div>';
+      });
+
+      html += '</div>';
+      host.innerHTML = html;
+
+      Array.prototype.forEach.call(host.querySelectorAll(".ex-mob-student-card[data-idx]"), function (card) {
+        card.addEventListener("click", function () {
+          var idx = +card.getAttribute("data-idx");
+          mobProgSelectedStudent = visStudents[idx];
+          renderMobProgressView();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      });
+    }
+
+    function renderMobSingleStudentReport(host, d, s) {
+      var subjects = filterSubjects(d);
+      var isSABucket = !!d.isSA;
+      var maxPerSubject = isSABucket ? 100 : 50;
+      var overallMax = subjects.length * maxPerSubject;
+      var hasMarks = !!s.hasAny;
+      var pct = hasMarks ? Number(s.percent || 0) : 0;
+      var gpa = hasMarks ? gradeToGPA(s.grade) : "—";
+      var impression = intelligentImpression(s, subjects, maxPerSubject);
+
+      var subRowsHtml = subjects.map(function (subj) {
+        var subData = (s.subjects || {})[subj] || {};
+        var tot = subData.Tot;
+        var scoredText = '<span style="color:#64748b;font-style:italic;">— (Pending)</span>';
+        var isAbsent = isAbsentCell(tot);
+
+        if (isAbsent) {
+          scoredText = '<span style="color:#b91c1c;font-weight:800;">Ab (Absent)</span>';
+        } else if (tot && tot.has && tot.value !== "" && tot.value != null && !isNaN(Number(tot.value))) {
+          var val = Number(tot.value);
+          var subPct = (val / maxPerSubject) * 100;
+          var subCol = subPct >= 80 ? "#15803d" : (subPct >= 50 ? "#0284c7" : "#b45309");
+          scoredText = '<b style="color:' + subCol + ';">' + val + '</b>';
+        }
+
+        return '<div class="ex-mob-subj-row">' +
+          '<div class="ex-mob-sr-name">' + esc(subj) + '</div>' +
+          '<div class="ex-mob-sr-score">' + scoredText + ' <span style="font-size:11px;color:#94a3b8;">/ ' + maxPerSubject + '</span></div>' +
+        '</div>';
+      }).join("");
+
+      host.innerHTML =
+        '<div class="ex-mob-report-view">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+            '<button type="button" class="btn btn-secondary" id="exMobRepBackBtn" style="padding:6px 12px;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px;">' +
+              '<i class="material-icons" style="font-size:16px;">arrow_back</i> Back to List' +
+            '</button>' +
+            '<span style="font-size:12px;font-weight:800;color:var(--brand-primary,#800000);">Class ' + esc(d.class) + '</span>' +
+          '</div>' +
+          '<div class="ex-mob-rep-card">' +
+            '<div class="ex-mob-rep-header">' +
+              '<div class="ex-mob-rep-title">' + esc(s.name) + '</div>' +
+              '<div class="ex-mob-rep-sub">Roll #' + esc(s.roll || "—") + ' · ID: ' + esc(studentIdText(s)) + ' · ' + esc(bucketTitleWords(d.bucket)) + '</div>' +
+            '</div>' +
+            '<div class="ex-mob-rep-kpis">' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val">' + (hasMarks ? (s.totalScored + '/' + overallMax) : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Total Marks</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#0284c7;">' + (hasMarks ? (pct + '%') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Percentage</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#15803d;">' + (hasMarks ? (s.grade || '—') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Grade</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#7a151a;">' + (hasMarks ? gpa : '—') + '</div><div class="ex-mob-rep-kpi-lbl">GPA</div></div>' +
+            '</div>' +
+            '<div class="ex-mob-rep-subjs-box">' +
+              '<div class="ex-mob-rep-sec-title"><i class="material-icons">menu_book</i> Subject Breakdown</div>' +
+              subRowsHtml +
+            '</div>' +
+            '<div class="ex-mob-rep-remark-box">' +
+              '<div class="ex-mob-rep-sec-title"><i class="material-icons">rate_review</i> Teacher Remarks</div>' +
+              '<div class="ex-mob-rep-remark-text">“' + esc(impression) + '”</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      var backBtn = $("exMobRepBackBtn");
+      if (backBtn) {
+        backBtn.addEventListener("click", function () {
+          mobProgSelectedStudent = null;
+          renderMobProgressView();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      }
     }
     function openDay(ds) {
       $("exDayTitle").textContent = "Exams on " + P.prettyDate(ds);
@@ -535,6 +953,52 @@
     function renderSchedule(rows, examName, className) {
       var body = $("exSchBody");
       if (!rows.length) { body.innerHTML = '<div class="ex-empty"><i class="material-icons">event_busy</i>No exams match this filter. Create exams with “New Exam”, then schedule them here.</div>'; return; }
+
+      var isMob = (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+      if (isMob) {
+        var byDate = {};
+        rows.forEach(function (r) {
+          var d = r.date || "Unscheduled";
+          byDate[d] = byDate[d] || [];
+          byDate[d].push(r);
+        });
+        var dates = Object.keys(byDate).sort();
+        var htmlMob = '<div class="ex-mob-sch-container">';
+        dates.forEach(function (d) {
+          var dRows = byDate[d];
+          var dateHeading = d === "Unscheduled" ? "⚠️ Needs Date / Unscheduled" : ("📅 " + P.prettyDate(d) + " (" + (dRows[0].day || dayName(d)) + ")");
+          htmlMob += '<div class="ex-mob-sch-group">';
+          htmlMob += '<div class="ex-mob-sch-datehead">' + dateHeading + ' (' + dRows.length + ')</div>';
+          dRows.forEach(function (r) {
+            htmlMob +=
+              '<div class="ex-mob-sch-card">' +
+                '<div class="ex-mob-sch-top">' +
+                  '<div>' +
+                    '<div class="ex-mob-sch-title">' + esc(r.gradeLabel || r.grade) + ' · ' + esc(r.subject || "-") + '</div>' +
+                    '<div class="ex-mob-sch-meta">' +
+                      '<span><b>' + esc(r.examName) + '</b></span>' +
+                      (r.marks ? ('<span>Max: ' + esc(r.marks) + '</span>') : '') +
+                    '</div>' +
+                  '</div>' +
+                  statusPill(r.status) +
+                '</div>' +
+                (r.lessonsRaw ? ('<div class="ex-mob-sch-syl"><b>Portions:</b> ' + esc(r.lessonsRaw) + '</div>') : '') +
+                (!P.isMobileAdmin(session) ? ('<div style="display:flex;justify-content:flex-end;margin-top:8px;"><button type="button" class="ex-abtn" data-edit-sch="' + r.rowId + '"><i class="material-icons">edit</i> Edit</button></div>') : '') +
+              '</div>';
+          });
+          htmlMob += '</div>';
+        });
+        htmlMob += '</div>';
+        body.innerHTML = htmlMob;
+        Array.prototype.forEach.call(body.querySelectorAll("[data-edit-sch]"), function (b) {
+          b.addEventListener("click", function () {
+            openEdit(+b.getAttribute("data-edit-sch"));
+          });
+        });
+        return;
+      }
+
+      /* Desktop View */
       var showClass = !className;
       var html = '<div class="ex-toolbar" style="align-items:flex-end;">' +
         '<div class="ex-field"><label>Set ALL dates to</label><input type="date" id="exBulkDate"></div>' +

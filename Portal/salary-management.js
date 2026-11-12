@@ -4,6 +4,16 @@
 (function () {
   "use strict";
   var session = null, payrollPassword = "", currentMonth = "", rows = [], staff = [], employees = [], aliasData = { linked: [], unlinked: [] }, editing = null, paying = null;
+  var attendanceSummaryMap = {};
+  var mobileState = {
+    selectedUserId: null,
+    searchQuery: "",
+    filterStatus: "all"
+  };
+
+  function isMobileView() {
+    return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
+  }
   var C = window.PORTAL_CONFIG || {};
   var BASE = C.SUPABASE_PAYROLL_BASE || "";
   var ANON = C.SUPABASE_ANON || "";
@@ -96,10 +106,443 @@
         ".staff-row .staff-top{align-items:flex-start!important;flex-direction:column!important;}"+
         ".staff-row .row-status{width:100%!important;justify-content:flex-start!important;}"+
         ".staff-row .row-actions .btn{flex:1 1 auto!important;}"+
+      "}"+
+      "@media(max-width:900px){"+
+        ".pmob-shell{width:100%;max-width:100%;margin:0 auto;padding:0 0 32px;}"+
+        ".pmob-header{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.03);}"+
+        ".pmob-month-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;}"+
+        ".pmob-nav-btn{width:40px;height:40px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;color:#1e293b;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;}"+
+        ".pmob-nav-btn:active{background:#e2e8f0;}"+
+        ".pmob-month-label{position:relative;display:flex;align-items:center;gap:6px;font-size:15px;font-weight:800;color:#7a151a;cursor:pointer;}"+
+        ".pmob-month-label input[type='month']{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}"+
+        ".pmob-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}"+
+        ".pmob-stat-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;box-shadow:0 2px 6px rgba(15,23,42,0.02);}"+
+        ".pmob-stat-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#64748b;}"+
+        ".pmob-stat-val{font-size:17px;font-weight:800;color:#0f172a;margin-top:2px;font-variant-numeric:tabular-nums;}"+
+        ".pmob-stat-val.net{color:#15803d;}"+
+        ".pmob-stat-val.deduct{color:#b42318;}"+
+        ".pmob-search-box{position:relative;margin-bottom:10px;}"+
+        ".pmob-search-box i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:18px;pointer-events:none;}"+
+        ".pmob-search-input{width:100%;height:44px;padding:8px 12px 8px 38px;border:1px solid #cbd5e1;border-radius:10px;font-size:13px;background:#fff;box-sizing:border-box;}"+
+        ".pmob-filter-pills{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;}"+
+        ".pmob-pill{padding:7px 13px;border-radius:999px;border:1px solid #e2e8f0;background:#fff;font-size:12px;font-weight:700;color:#64748b;cursor:pointer;white-space:nowrap;}"+
+        ".pmob-pill.active{background:#7a151a;color:#fff;border-color:#7a151a;}"+
+        ".pmob-staff-list{display:flex;flex-direction:column;gap:10px;}"+
+        ".pmob-emp-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 15px;box-shadow:0 3px 10px rgba(15,23,42,0.03);cursor:pointer;touch-action:manipulation;}"+
+        ".pmob-emp-card:active{background:#fafafa;}"+
+        ".pmob-emp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}"+
+        ".pmob-emp-name{font-size:15px;font-weight:800;color:#0f172a;line-height:1.2;}"+
+        ".pmob-emp-role{font-size:11px;color:#64748b;margin-top:2px;}"+
+        ".pmob-emp-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid #f1f5f9;}"+
+        ".pmob-metric-label{font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;}"+
+        ".pmob-metric-val{font-size:14px;font-weight:800;color:#0f172a;margin-top:2px;font-variant-numeric:tabular-nums;}"+
+        ".pmob-emp-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:11px;color:#64748b;}"+
+        ".pmob-tap-hint{display:flex;align-items:center;color:#7a151a;font-weight:700;font-size:11.5px;}"+
+        ".pmob-detail-shell{width:100%;padding:0 0 32px;}"+
+        ".pmob-detail-bar{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.04);}"+
+        ".pmob-top-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}"+
+        ".pmob-back-btn{display:inline-flex;align-items:center;gap:4px;border:1px solid #cbd5e1;background:#fff;color:#7a151a;padding:8px 12px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;}"+
+        ".pmob-switcher-wrap{margin-bottom:10px;}"+
+        ".pmob-switcher-wrap label{display:block;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px;}"+
+        ".pmob-switcher-select{width:100%;height:42px;padding:0 10px;border:1px solid #cbd5e1;border-radius:10px;font-size:13px;font-weight:700;color:#0f172a;background:#fff;}"+
+        ".pmob-detail-month{display:flex;align-items:center;justify-content:space-between;background:#f8fafc;padding:8px 10px;border-radius:10px;border:1px solid #e2e8f0;}"+
+        ".pmob-sec-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 15px;margin-bottom:12px;box-shadow:0 3px 10px rgba(15,23,42,0.03);}"+
+        ".pmob-sec-title{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800;color:#7a151a;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f1f5f9;}"+
+        ".pmob-sec-title i{font-size:17px;color:#7a151a;}"+
+        ".pmob-kv-grid{display:flex;flex-direction:column;gap:8px;}"+
+        ".pmob-kv-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;}"+
+        ".pmob-kv-label{color:#64748b;font-size:12px;}"+
+        ".pmob-kv-val{font-weight:700;color:#0f172a;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;}"+
+        ".pmob-kv-val.bold{font-weight:800;font-size:14px;}"+
+        ".pmob-kv-val.green{color:#15803d;}"+
+        ".pmob-kv-val.red{color:#b42318;}"+
+        ".pmob-highlight-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-top:10px;}"+
+        ".pmob-callout{font-size:11px;color:#64748b;line-height:1.4;margin-top:6px;display:flex;align-items:center;gap:4px;}"+
+        ".pmob-callout i{font-size:14px;color:#94a3b8;flex:0 0 auto;}"+
+        ".pmob-final-total{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;}"+
+        ".pmob-final-lbl{font-size:12px;font-weight:800;color:#166534;text-transform:uppercase;}"+
+        ".pmob-final-amt{font-size:20px;font-weight:900;color:#14532d;font-variant-numeric:tabular-nums;}"+
       "}";
     document.head.appendChild(s);
   }
+  function shiftMonth(delta) {
+    var p = (currentMonth || new Date().toISOString().slice(0, 7)).split("-"), y = +p[0], m = +p[1];
+    var d = new Date(y, m - 1 + delta, 1);
+    var targetM = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    loadMonth(targetM);
+  }
+
+  function getEmployeePayrollBreakdown(r) {
+    if (!r) return null;
+    var att = attendanceSummaryMap[String(r.userId)] ||
+              attendanceSummaryMap[String(r.name || "").trim().toLowerCase()] || {};
+
+    var salary = Number(r.salary != null ? r.salary : (r.monthly_salary || 0));
+    var dailyRate = Number(r.dailyRate || (salary > 0 ? (salary / 30) : 0));
+
+    var annualEntitlement = Number(r.annualLeaveEntitlement != null ? r.annualLeaveEntitlement : (r.annualPaidLeave || 10));
+    var paidCredit = Number(r.paidLeaveCredit || 0);
+    var paidUsed = Number(r.paidLeaveUsed != null ? r.paidLeaveUsed : (r.paid_leave_used || 0));
+    var paidBalance = Number(r.paidLeaveBalance != null ? r.paidLeaveBalance : (r.paid_leave_balance || 0));
+    var paidOpening = r.paidLeaveOpening != null ? Number(r.paidLeaveOpening) : (r.paid_leave_opening != null ? Number(r.paid_leave_opening) : (paidBalance + paidUsed));
+    var usedPriorMonths = Math.max(0, annualEntitlement - paidOpening);
+
+    var fullDayAbsences = Number(att.absent || 0);
+    var halfDayAbsences = Number(att.halfDay || 0);
+    var absenceLeaveUnits = (fullDayAbsences * 1.0) + (halfDayAbsences * 0.5);
+    var lateArrivals = Number(att.late || 0);
+
+    var latePenaltyLeave = r.latePenaltyLeave != null
+      ? Number(r.latePenaltyLeave)
+      : (Math.floor(lateArrivals / 3) * 0.5);
+
+    var totalAttendanceLeave = r.attendanceLeave != null
+      ? Number(r.attendanceLeave)
+      : (absenceLeaveUnits + latePenaltyLeave);
+
+    var isAttendanceOverridden = r.manualAttendanceLeave != null;
+    var autoAttendanceLeave = Number(r.automaticAttendanceLeave != null ? r.automaticAttendanceLeave : totalAttendanceLeave);
+
+    var unpaidLeave = Number(r.unpaidLeave != null ? r.unpaidLeave : (r.unpaid_leave || 0));
+    var totalDeduction = Number(r.totalDeduction != null ? r.totalDeduction : (r.total_deduction || 0));
+    var netSalary = Number(r.netSalary != null ? r.netSalary : (r.net_salary || (salary - totalDeduction)));
+
+    var joiningDays = Number(r.joiningDaysUnpaid || 0);
+    var joiningDeduction = Math.round(joiningDays * dailyRate * 100) / 100;
+
+    var lateUnpaid = Math.min(latePenaltyLeave, unpaidLeave);
+    var absenceUnpaid = Math.max(0, unpaidLeave - lateUnpaid);
+
+    var lateDeduction = Math.round(lateUnpaid * dailyRate * 100) / 100;
+    var absenceDeduction = Math.round(absenceUnpaid * dailyRate * 100) / 100;
+    var otherDeduction = Math.round(Math.max(0, totalDeduction - (lateDeduction + absenceDeduction + joiningDeduction)) * 100) / 100;
+
+    var sumDeductions = lateDeduction + absenceDeduction + joiningDeduction + otherDeduction;
+    if (Math.abs(sumDeductions - totalDeduction) > 0.01 && totalDeduction > 0) {
+      absenceDeduction = Math.round((totalDeduction - lateDeduction - joiningDeduction - otherDeduction) * 100) / 100;
+    }
+
+    return {
+      employeeName: r.name || "",
+      role: r.role || "",
+      userId: r.userId,
+      status: r.status || "Pending",
+      payDate: r.payDate || r.pay_date || "",
+      paymentMode: r.paymentMode || r.payment_mode || "Bank Transfer",
+      paymentReference: r.paymentReference || r.payment_reference || "",
+      paymentComment: r.paymentComment || r.payment_comment || "",
+      salary: salary,
+      dailyRate: dailyRate,
+      totalDeduction: totalDeduction,
+      netSalary: netSalary,
+      annualEntitlement: annualEntitlement,
+      usedPriorMonths: usedPriorMonths,
+      paidOpening: paidOpening,
+      paidCredit: paidCredit,
+      paidUsed: paidUsed,
+      paidBalance: paidBalance,
+      paidAdjustment: Number(r.paidLeaveAdjustment || 0),
+      fullDayAbsences: fullDayAbsences,
+      halfDayAbsences: halfDayAbsences,
+      absenceLeaveUnits: absenceLeaveUnits,
+      lateArrivals: lateArrivals,
+      latePenaltyLeave: latePenaltyLeave,
+      totalAttendanceLeave: totalAttendanceLeave,
+      isAttendanceOverridden: isAttendanceOverridden,
+      autoAttendanceLeave: autoAttendanceLeave,
+      unpaidLeave: unpaidLeave,
+      absenceDeduction: absenceDeduction,
+      lateDeduction: lateDeduction,
+      joiningDays: joiningDays,
+      joiningDeduction: joiningDeduction,
+      otherDeduction: otherDeduction,
+      transferredAmount: r.status === "Paid" ? netSalary : 0,
+      dueAmount: r.status === "Paid" ? 0 : netSalary,
+      rawRow: r
+    };
+  }
+
+  function renderMobilePayroll() {
+    if (mobileState.selectedUserId != null) {
+      renderMobileDetailView();
+    } else {
+      renderMobileListView();
+    }
+  }
+
+  function renderMobileListView() {
+    var paid = rows.filter(function(r){ return r.status === 'Paid'; }).length;
+    var pending = rows.filter(function(r){ return r.status === 'Pending'; }).length;
+    var totalDeduction = rows.reduce(function(a,r){ return a + Number(r.totalDeduction||0); }, 0);
+    var totalNet = rows.reduce(function(a,r){ return a + Number(r.netSalary||0); }, 0);
+
+    var html = '<div class="pmob-shell">' +
+      '<div class="pmob-header">' +
+        '<div class="pmob-month-nav">' +
+          '<button class="pmob-nav-btn" id="pmobPrev"><i class="material-icons">chevron_left</i></button>' +
+          '<label class="pmob-month-label" title="Tap to pick month">' +
+            '<i class="material-icons">calendar_month</i>' +
+            '<span>' + esc(monthLabel(currentMonth)) + '</span>' +
+            '<input type="month" id="salaryMonth" value="' + esc(currentMonth) + '">' +
+          '</label>' +
+          '<button class="pmob-nav-btn" id="pmobNext"><i class="material-icons">chevron_right</i></button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pmob-stats-grid">' +
+        '<div class="pmob-stat-card"><div class="pmob-stat-title">Total Net Salary</div><div class="pmob-stat-val net">' + money(totalNet) + '</div></div>' +
+        '<div class="pmob-stat-card"><div class="pmob-stat-title">Total Deductions</div><div class="pmob-stat-val deduct">' + money(totalDeduction) + '</div></div>' +
+        '<div class="pmob-stat-card"><div class="pmob-stat-title">Paid Staff</div><div class="pmob-stat-val">' + paid + ' / ' + rows.length + '</div></div>' +
+        '<div class="pmob-stat-card"><div class="pmob-stat-title">Pending</div><div class="pmob-stat-val">' + pending + '</div></div>' +
+      '</div>' +
+      '<div class="pmob-search-box">' +
+        '<i class="material-icons">search</i>' +
+        '<input type="search" class="pmob-search-input mob-search" id="pmobSearch" placeholder="Search teacher or staff member…" value="' + esc(mobileState.searchQuery) + '">' +
+      '</div>' +
+      '<div class="pmob-filter-pills">' +
+        '<button class="pmob-pill ' + (mobileState.filterStatus === "all" ? "active" : "") + '" data-st="all">All (' + rows.length + ')</button>' +
+        '<button class="pmob-pill ' + (mobileState.filterStatus === "Paid" ? "active" : "") + '" data-st="Paid">Paid (' + paid + ')</button>' +
+        '<button class="pmob-pill ' + (mobileState.filterStatus === "Pending" ? "active" : "") + '" data-st="Pending">Pending (' + pending + ')</button>' +
+      '</div>' +
+      '<div id="pmobCardsWrap"></div>' +
+    '</div>';
+
+    setView(html);
+
+    var prevBtn = document.getElementById("pmobPrev");
+    if (prevBtn) prevBtn.onclick = function() { shiftMonth(-1); };
+    var nextBtn = document.getElementById("pmobNext");
+    if (nextBtn) nextBtn.onclick = function() { shiftMonth(1); };
+    var mInp = document.getElementById("salaryMonth");
+    if (mInp) mInp.onchange = function() { loadMonth(this.value); };
+
+    function renderMobileCards() {
+      var q = (mobileState.searchQuery || "").trim().toLowerCase();
+      var filtered = rows.filter(function(r) {
+        if (mobileState.filterStatus !== "all" && r.status !== mobileState.filterStatus) return false;
+        if (q) {
+          var matchName = String(r.name || "").toLowerCase().indexOf(q) >= 0;
+          var matchRole = String(r.role || "").toLowerCase().indexOf(q) >= 0;
+          if (!matchName && !matchRole) return false;
+        }
+        return true;
+      });
+
+      var wrap = document.getElementById("pmobCardsWrap");
+      if (!wrap) return;
+
+      if (!filtered.length) {
+        wrap.innerHTML = '<div class="pmob-sec-card" style="text-align:center;padding:34px 16px;color:#64748b;">' +
+          '<i class="material-icons" style="font-size:32px;color:#94a3b8;display:block;margin-bottom:6px;">search_off</i>' +
+          '<div>No employees match your criteria.</div></div>';
+        return;
+      }
+
+      wrap.innerHTML = '<div class="pmob-staff-list">' + filtered.map(function(r) {
+        var b = getEmployeePayrollBreakdown(r);
+        var dedText = b.totalDeduction > 0
+          ? '<span style="color:#b42318;font-weight:700;">-' + money(b.totalDeduction) + '</span>'
+          : '<span style="color:#64748b;">₹ 0.00</span>';
+        return '<article class="pmob-emp-card" data-user="' + esc(b.userId) + '">' +
+          '<div class="pmob-emp-head">' +
+            '<div><div class="pmob-emp-name">' + esc(b.employeeName) + '</div>' +
+            '<div class="pmob-emp-role">' + esc(b.role || 'Staff') + '</div></div>' +
+            '<div>' + status(b.status) + '</div>' +
+          '</div>' +
+          '<div class="pmob-emp-metrics">' +
+            '<div><div class="pmob-metric-label">Monthly Salary</div><div class="pmob-metric-val">' + money(b.salary) + '</div></div>' +
+            '<div><div class="pmob-metric-label">Net Payable</div><div class="pmob-metric-val net" style="color:#15803d;">' + money(b.netSalary) + '</div></div>' +
+          '</div>' +
+          '<div class="pmob-emp-foot">' +
+            '<div>Deductions: ' + dedText + ' · Bal: <strong>' + n(b.paidBalance) + 'd</strong></div>' +
+            '<div class="pmob-tap-hint">Breakdown <i class="material-icons" style="font-size:16px;">chevron_right</i></div>' +
+          '</div>' +
+        '</article>';
+      }).join("") + '</div>';
+
+      Array.prototype.forEach.call(wrap.querySelectorAll(".pmob-emp-card[data-user]"), function(card) {
+        card.onclick = function() {
+          var uid = Number(card.getAttribute("data-user"));
+          mobileState.selectedUserId = uid;
+          renderMobileDetailView();
+        };
+      });
+    }
+
+    renderMobileCards();
+
+    var sInp = document.getElementById("pmobSearch");
+    if (sInp) {
+      sInp.oninput = function() {
+        mobileState.searchQuery = this.value;
+        renderMobileCards();
+      };
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll(".pmob-pill[data-st]"), function(btn) {
+      btn.onclick = function() {
+        mobileState.filterStatus = btn.getAttribute("data-st");
+        Array.prototype.forEach.call(document.querySelectorAll(".pmob-pill[data-st]"), function(b) {
+          b.classList.toggle("active", b === btn);
+        });
+        renderMobileCards();
+      };
+    });
+  }
+
+  function renderMobileDetailView() {
+    var r = rows.find(function(x) { return Number(x.userId) === Number(mobileState.selectedUserId); });
+    if (!r) {
+      mobileState.selectedUserId = null;
+      renderMobileListView();
+      return;
+    }
+
+    var rowIndex = rows.indexOf(r);
+    var b = getEmployeePayrollBreakdown(r);
+
+    var employeeOptions = rows.map(function(item) {
+      var sel = Number(item.userId) === Number(b.userId) ? " selected" : "";
+      return '<option value="' + esc(item.userId) + '"' + sel + '>' + esc(item.name) + ' (' + esc(item.role || 'Staff') + ')</option>';
+    }).join("");
+
+    var paymentTransferredRow = b.status === 'Paid'
+      ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Amount Already Transferred:</span><span class="pmob-kv-val bold green">' + money(b.transferredAmount) + '</span></div>'
+      : '<div class="pmob-kv-row"><span class="pmob-kv-label">Amount to be Transferred:</span><span class="pmob-kv-val bold" style="color:#b45309;">' + money(b.dueAmount) + '</span></div>';
+
+    var slipBtn = b.status === 'Paid'
+      ? '<button class="btn btn-primary" id="pmobDownloadSlip" style="width:100%;min-height:46px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px;"><i class="material-icons">download</i> Download Salary Slip (PDF)</button>'
+      : '';
+
+    var html = '<div class="pmob-detail-shell">' +
+      '<div class="pmob-detail-bar">' +
+        '<div class="pmob-top-actions">' +
+          '<button class="pmob-back-btn" id="pmobBack"><i class="material-icons">arrow_back</i> Staff List</button>' +
+          '<div>' + status(b.status) + '</div>' +
+        '</div>' +
+        '<div class="pmob-switcher-wrap">' +
+          '<label>Selected Employee</label>' +
+          '<select class="pmob-switcher-select mob-select" id="pmobSwitcher">' + employeeOptions + '</select>' +
+        '</div>' +
+        '<div class="pmob-detail-month">' +
+          '<button class="pmob-nav-btn" id="pmobDetailPrev"><i class="material-icons">chevron_left</i></button>' +
+          '<label class="pmob-month-label" title="Tap to pick month">' +
+            '<i class="material-icons">calendar_month</i>' +
+            '<span>' + esc(monthLabel(currentMonth)) + '</span>' +
+            '<input type="month" id="salaryMonth" value="' + esc(currentMonth) + '">' +
+          '</label>' +
+          '<button class="pmob-nav-btn" id="pmobDetailNext"><i class="material-icons">chevron_right</i></button>' +
+        '</div>' +
+      '</div>' +
+
+      // 1. Salary Summary
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">payments</i> 1. Salary Summary</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Employee Name:</span><span class="pmob-kv-val bold">' + esc(b.employeeName) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Designation:</span><span class="pmob-kv-val">' + esc(b.role || 'Staff') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payroll Month:</span><span class="pmob-kv-val">' + esc(monthLabel(currentMonth)) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Monthly Salary:</span><span class="pmob-kv-val bold">' + money(b.salary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Calculation Basis:</span><span class="pmob-kv-val" style="font-size:11.5px;color:#64748b;">30 days/month (' + money(b.dailyRate) + '/day)</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Deductions:</span><span class="pmob-kv-val red">' + (b.totalDeduction > 0 ? ('-' + money(b.totalDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Final Net Salary Payable:</span><span class="pmob-kv-val bold green">' + money(b.netSalary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Status:</span><span class="pmob-kv-val">' + status(b.status) + '</span></div>' +
+        '</div>' +
+      '</div>' +
+
+      // 2. Monthly Leave Entitlement and Balance
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">event_available</i> 2. Monthly Leave Entitlement & Balance</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Annual Leave Entitlement:</span><span class="pmob-kv-val">' + n(b.annualEntitlement) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Leaves Used Up to Previous Month:</span><span class="pmob-kv-val">' + n(b.usedPriorMonths) + ' days</span></div>' +
+          '<div class="pmob-kv-row" style="background:#f8fafc;padding:6px 8px;border-radius:8px;"><span class="pmob-kv-label" style="font-weight:700;color:#0f172a;">Available Balance at Month Start:</span><span class="pmob-kv-val bold" style="color:#7a151a;">' + n(b.paidOpening) + ' days</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Entitlement for Month:</span><span class="pmob-kv-val">' + n(b.paidCredit) + ' days' + (b.paidAdjustment ? (' <small style="color:#b45309;">(' + (b.paidAdjustment>0?'+':'') + n(b.paidAdjustment) + ' adjusted)</small>') : '') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Leaves Used During Month:</span><span class="pmob-kv-val" style="color:#b42318;font-weight:700;">' + n(b.paidUsed) + ' days</span></div>' +
+          '<div class="pmob-kv-row" style="background:#f0fdf4;padding:6px 8px;border-radius:8px;"><span class="pmob-kv-label" style="font-weight:700;color:#166534;">Remaining Leave Balance:</span><span class="pmob-kv-val bold green">' + n(b.paidBalance) + ' days</span></div>' +
+        '</div>' +
+        '<div class="pmob-callout"><i class="material-icons">info</i> Employee started ' + esc(monthLabel(currentMonth)) + ' with ' + n(b.paidOpening) + ' days available balance.</div>' +
+      '</div>' +
+
+      // 3. Actual Leave and Absence Details
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">rule</i> 3. Actual Leave & Absence Details</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Full-Day Absences:</span><span class="pmob-kv-val">' + b.fullDayAbsences + (b.fullDayAbsences === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Half-Day Absences:</span><span class="pmob-kv-val">' + b.halfDayAbsences + (b.halfDayAbsences === 1 ? ' day' : ' days') + (b.halfDayAbsences > 0 ? (' (' + n(b.halfDayAbsences * 0.5) + ' day equivalent)') : '') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Equivalent Absence Leave:</span><span class="pmob-kv-val bold">' + n(b.absenceLeaveUnits) + (b.absenceLeaveUnits === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row" style="border-top:1px dashed #e2e8f0;padding-top:6px;margin-top:2px;"><span class="pmob-kv-label">Number of Late Arrivals:</span><span class="pmob-kv-val">' + b.lateArrivals + (b.lateArrivals === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Late Penalty Leave:</span><span class="pmob-kv-val bold" style="color:#b45309;">' + n(b.latePenaltyLeave) + (b.latePenaltyLeave === 1 ? ' day' : ' days') + '</span></div>' +
+          '<div class="pmob-kv-row" style="background:#fef2f2;padding:6px 8px;border-radius:8px;margin-top:4px;"><span class="pmob-kv-label" style="font-weight:700;color:#991b1b;">Total Leaves Consumed:</span><span class="pmob-kv-val bold red">' + n(b.totalAttendanceLeave) + (b.totalAttendanceLeave === 1 ? ' day' : ' days') + '</span></div>' +
+        '</div>' +
+        (b.isAttendanceOverridden ? '<div class="pmob-callout" style="color:#b45309;"><i class="material-icons">warning</i> Biometric auto was ' + n(b.autoAttendanceLeave) + ' days; manual adjustment applied.</div>' : '<div class="pmob-callout"><i class="material-icons">info</i> 3 late arrivals = 0.5 leave. Absences and late penalties are tracked separately.</div>') +
+      '</div>' +
+
+      // 4. Salary Deduction Breakdown
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">receipt_long</i> 4. Salary Deduction Breakdown</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Deduction due to Unpaid Absences:</span><span class="pmob-kv-val red">' + (b.absenceDeduction > 0 ? ('-' + money(b.absenceDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Deduction due to Late Arrivals:</span><span class="pmob-kv-val red">' + (b.lateDeduction > 0 ? ('-' + money(b.lateDeduction)) : '₹ 0.00') + '</span></div>' +
+          (b.joiningDays > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Mid-Month Joining (' + b.joiningDays + ' unjoined days):</span><span class="pmob-kv-val red">-' + money(b.joiningDeduction) + '</span></div>' : '') +
+          (b.otherDeduction > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Other Deductions / Adjustments:</span><span class="pmob-kv-val red">-' + money(b.otherDeduction) + '</span></div>' : '') +
+          '<div class="pmob-kv-row" style="background:#fff1f2;padding:7px 8px;border-radius:8px;margin-top:4px;"><span class="pmob-kv-label" style="font-weight:800;color:#9f1239;">Total Deductions:</span><span class="pmob-kv-val bold red" style="font-size:15px;">-' + money(b.totalDeduction) + '</span></div>' +
+        '</div>' +
+        '<div class="pmob-callout"><i class="material-icons">calculate</i> Total unpaid leave days: ' + n(b.unpaidLeave) + ' days × ' + money(b.dailyRate) + '/day.</div>' +
+      '</div>' +
+
+      // 5. Final Payment Summary
+      '<div class="pmob-sec-card">' +
+        '<div class="pmob-sec-title"><i class="material-icons">account_balance</i> 5. Final Payment Summary</div>' +
+        '<div class="pmob-kv-grid">' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Monthly Gross Salary:</span><span class="pmob-kv-val">' + money(b.salary) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Absence-Related Deduction:</span><span class="pmob-kv-val red">' + (b.absenceDeduction > 0 ? ('-' + money(b.absenceDeduction)) : '₹ 0.00') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Total Late-Related Deduction:</span><span class="pmob-kv-val red">' + (b.lateDeduction > 0 ? ('-' + money(b.lateDeduction)) : '₹ 0.00') + '</span></div>' +
+          (b.joiningDeduction + b.otherDeduction > 0 ? '<div class="pmob-kv-row"><span class="pmob-kv-label">Other Applicable Deductions:</span><span class="pmob-kv-val red">-' + money(b.joiningDeduction + b.otherDeduction) + '</span></div>' : '') +
+          '<div class="pmob-kv-row" style="font-weight:700;"><span class="pmob-kv-label">Total Deduction:</span><span class="pmob-kv-val red">-' + money(b.totalDeduction) + '</span></div>' +
+        '</div>' +
+        '<div class="pmob-final-total">' +
+          '<span class="pmob-final-lbl">Final Net Salary Payable</span>' +
+          '<span class="pmob-final-amt">' + money(b.netSalary) + '</span>' +
+        '</div>' +
+        '<div class="pmob-kv-grid" style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:12px;">' +
+          paymentTransferredRow +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Status:</span><span class="pmob-kv-val">' + status(b.status) + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Date:</span><span class="pmob-kv-val">' + (b.payDate ? esc(b.payDate) : 'Not paid yet') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Payment Mode:</span><span class="pmob-kv-val">' + esc(b.paymentMode || 'Bank Transfer') + '</span></div>' +
+          '<div class="pmob-kv-row"><span class="pmob-kv-label">Transaction Reference:</span><span class="pmob-kv-val">' + esc(b.paymentReference || 'Not available') + '</span></div>' +
+        '</div>' +
+        slipBtn +
+      '</div>' +
+    '</div>';
+
+    setView(html);
+
+    document.getElementById("pmobBack").onclick = function() {
+      mobileState.selectedUserId = null;
+      renderMobileListView();
+    };
+
+    document.getElementById("pmobSwitcher").onchange = function() {
+      mobileState.selectedUserId = Number(this.value);
+      renderMobileDetailView();
+    };
+
+    var prevBtn = document.getElementById("pmobDetailPrev");
+    if (prevBtn) prevBtn.onclick = function() { shiftMonth(-1); };
+    var nextBtn = document.getElementById("pmobDetailNext");
+    if (nextBtn) nextBtn.onclick = function() { shiftMonth(1); };
+    var mInp = document.getElementById("salaryMonth");
+    if (mInp) mInp.onchange = function() { loadMonth(this.value); };
+
+    var dlBtn = document.getElementById("pmobDownloadSlip");
+    if (dlBtn) dlBtn.onclick = function() { download(rowIndex); };
+  }
+
   function render(){
+    if (isMobileView()) {
+      renderMobilePayroll();
+      return;
+    }
     var paid=rows.filter(function(r){return r.status==='Paid'}).length;
     var pending=rows.filter(function(r){return r.status==='Pending'}).length;
     var unassigned=rows.filter(function(r){return r.status==='Unassigned'}).length;
@@ -217,12 +660,34 @@
       Portal.overlay(false);
     }
   }
-  async function loadMonth(){
-    currentMonth=(document.getElementById("salaryMonth")||{}).value||currentMonth||new Date().toISOString().slice(0,7);
+  async function loadMonth(targetMonth){
+    if (targetMonth) {
+      currentMonth = targetMonth;
+    } else {
+      var mInp = document.getElementById("salaryMonth");
+      if (mInp && mInp.value) currentMonth = mInp.value;
+      else if (!currentMonth) currentMonth = new Date().toISOString().slice(0, 7);
+    }
+    var mInp = document.getElementById("salaryMonth");
+    if (mInp) mInp.value = currentMonth;
     try{
       Portal.overlay(true,"Loading payroll…");
-      var data=await api("payrollBootstrap",[currentMonth,payrollPassword]);
-      rows=data.rows||[];render();
+      var pJobs = [
+        api("payrollBootstrap",[currentMonth,payrollPassword]),
+        Portal.api("getManagementMonthlyBulkPayload",[currentMonth],{overlay:false}).catch(function(){ return null; })
+      ];
+      var res = await Promise.all(pJobs);
+      var data = res[0] || {};
+      var saData = res[1];
+      rows = data.rows || [];
+      attendanceSummaryMap = {};
+      if (saData && Array.isArray(saData.summaryReport)) {
+        saData.summaryReport.forEach(function(item) {
+          if (item.userId) attendanceSummaryMap[String(item.userId)] = item;
+          if (item.name) attendanceSummaryMap[String(item.name).trim().toLowerCase()] = item;
+        });
+      }
+      render();
     }catch(e){toast(e.message||String(e),true)}finally{Portal.overlay(false)}
   }
   function renderAssignments(){
@@ -585,9 +1050,37 @@
     };
   }
 
-  async function boot(){ensurePayrollRowStyles();session=Portal.bootPage('payroll');if(!session)return;if(!BASE){toast('SUPABASE_PAYROLL_BASE is missing in config.js.',true);return}document.getElementById('payrollPasswordModal').classList.add('show');document.getElementById('payrollUnlockBtn').onclick=unlock;document.getElementById('payrollPassword').onkeydown=function(e){if(e.key==='Enter')unlock()};}
+  async function boot(){
+    ensurePayrollRowStyles();
+    session=Portal.bootPage('payroll');
+    if(!session)return;
+    if(!BASE){toast('SUPABASE_PAYROLL_BASE is missing in config.js.',true);return}
+    var modal=document.getElementById('payrollPasswordModal');
+    if(modal)modal.classList.add('show');
+    function cancelPayrollLogin(){
+      if(modal)modal.classList.remove('show');
+      if(window.history.length>1)window.history.back();
+      else location.replace("dashboard.html");
+    }
+    var closeBtn=document.getElementById('payrollCloseBtn');
+    if(closeBtn)closeBtn.onclick=cancelPayrollLogin;
+    var cancelBtn=document.getElementById('payrollCancelBtn');
+    if(cancelBtn)cancelBtn.onclick=cancelPayrollLogin;
+    var pInp=document.getElementById('payrollPassword');
+    if(pInp){
+      setTimeout(function(){ try { pInp.focus(); } catch(e){} }, 200);
+      pInp.onkeydown=function(e){if(e.key==='Enter')unlock()};
+      pInp.onkeyup=function(e){if(e.key==='Enter')unlock()};
+    }
+    var btn=document.getElementById('payrollUnlockBtn');
+    if(btn)btn.onclick=unlock;
+    window.addEventListener("resize", function(){
+      render();
+    });
+  }
   async function unlock(){
-    var p=document.getElementById('payrollPassword').value;
+    var pInput = document.getElementById('payrollPassword');
+    var p = pInput ? pInput.value.trim() : "";
     var err=document.getElementById('payrollPasswordError');
     var btn=document.getElementById('payrollUnlockBtn');
     try{
@@ -622,7 +1115,9 @@
     closeEdit:closeEdit,
     closePay:closePay,
     showAssignments:showAssignments,
-    editEmployee:editEmployee
+    editEmployee:editEmployee,
+    selectEmployee: function(uid) { mobileState.selectedUserId = Number(uid); render(); },
+    backToList: function() { mobileState.selectedUserId = null; render(); }
   };
   document.addEventListener('click',function(e){if(e.target&&e.target.id==='saveEditBtn')saveEdit();if(e.target&&e.target.id==='confirmPayBtn')confirmPay()});
   document.addEventListener('DOMContentLoaded',boot);
