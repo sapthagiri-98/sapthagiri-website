@@ -133,13 +133,129 @@
       loadEntries();
     }).catch(function (e) { c.innerHTML = '<div class="hw-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>'; });
   }
+  // Group duplicate subject + teacher entries in a day into a single requirement with combined periods (e.g. "P3, P4")
+  function groupClassSubjects(subjects) {
+    if (!subjects || !subjects.length) return [];
+    var grouped = [];
+    var map = new Map();
+    function norm(str) { return String(str || "").trim().toLowerCase(); }
+    function getPeriodNums(s) {
+      if (s._periods && s._periods.length) return s._periods.slice();
+      if (s.period_no != null && !isNaN(parseInt(s.period_no, 10))) return [parseInt(s.period_no, 10)];
+      var matches = String(s.periodLabel || "").match(/\d+/g);
+      return matches ? matches.map(function (n) { return parseInt(n, 10); }) : [];
+    }
+
+    subjects.forEach(function (s) {
+      // Group by exact subject and teacher within this class
+      var key = norm(s.subject) + "|" + norm(s.teacher);
+      var pNums = getPeriodNums(s);
+
+      if (map.has(key)) {
+        var existing = map.get(key);
+        pNums.forEach(function (p) {
+          if (existing._periods.indexOf(p) < 0) existing._periods.push(p);
+        });
+        existing._periods.sort(function (a, b) { return a - b; });
+        if ((!existing.homework || !String(existing.homework).trim()) && s.homework && String(s.homework).trim()) {
+          existing.homework = s.homework;
+        }
+        if (!existing.phone && s.phone) existing.phone = s.phone;
+      } else {
+        var item = Object.assign({}, s);
+        item._periods = pNums.slice();
+        map.set(key, item);
+        grouped.push(item);
+      }
+    });
+
+    grouped.forEach(function (item) {
+      if (item._periods && item._periods.length > 1) {
+        item.periodLabel = "P" + item._periods.join(", P");
+      } else if (item._periods && item._periods.length === 1) {
+        item.periodLabel = item.periodLabel || ("Period " + item._periods[0]);
+      }
+    });
+
+    return grouped;
+  }
+
+  function processMgmtData(classes) {
+    if (!classes || !classes.length) return [];
+    return classes.map(function (cls) {
+      return {
+        className: cls.className,
+        subjects: groupClassSubjects(cls.subjects || [])
+      };
+    });
+  }
+
+  function groupTeacherAssignments(assignments) {
+    if (!assignments || !assignments.length) return [];
+    var grouped = [];
+    var map = new Map();
+    function norm(str) { return String(str || "").trim().toLowerCase(); }
+    function getPeriodNums(a) {
+      if (a._periods && a._periods.length) return a._periods.slice();
+      if (a.period_no != null && !isNaN(parseInt(a.period_no, 10))) return [parseInt(a.period_no, 10)];
+      var matches = String(a.periodLabel || "").match(/\d+/g);
+      return matches ? matches.map(function (n) { return parseInt(n, 10); }) : [];
+    }
+
+    assignments.forEach(function (a) {
+      var key = norm(a.className) + "|" + norm(a.subject);
+      var pNums = getPeriodNums(a);
+
+      if (map.has(key)) {
+        var existing = map.get(key);
+        pNums.forEach(function (p) {
+          if (existing._periods.indexOf(p) < 0) existing._periods.push(p);
+        });
+        existing._periods.sort(function (x, y) { return x - y; });
+        if ((!existing.homework || !String(existing.homework).trim()) && a.homework && String(a.homework).trim()) {
+          existing.homework = a.homework;
+        }
+      } else {
+        var item = Object.assign({}, a);
+        item._periods = pNums.slice();
+        map.set(key, item);
+        grouped.push(item);
+      }
+    });
+
+    grouped.forEach(function (item) {
+      if (item._periods && item._periods.length > 1) {
+        item.periodLabel = "P" + item._periods.join(", P");
+      } else if (item._periods && item._periods.length === 1) {
+        item.periodLabel = item.periodLabel || ("Period " + item._periods[0]);
+      }
+    });
+
+    return grouped;
+  }
+
   function loadEntries() {
     var date = $("hwDate").value;
-    if (isMgmt) P.api("getManagementOverview", [date], { perf: "Load Diary", text: "Loading diary…" }).then(function (data) { mgmtOverviewCache = data || []; renderMgmt(data || []); }).catch(function (e) { resultBox(false, "Load failed", e.message || String(e)); });
-    else P.api("getAssignmentsByDate", [date, session.name], { perf: "Load Diary", text: "Loading diary…" }).then(function (list) { renderTeacher(list || []); }).catch(function (e) { resultBox(false, "Load failed", e.message || String(e)); });
+    if (isMgmt) {
+      P.api("getManagementOverview", [date], { perf: "Load Diary", text: "Loading diary…" })
+        .then(function (data) {
+          var processed = processMgmtData(data || []);
+          mgmtOverviewCache = processed;
+          renderMgmt(processed);
+        })
+        .catch(function (e) { resultBox(false, "Load failed", e.message || String(e)); });
+    } else {
+      P.api("getAssignmentsByDate", [date, session.name], { perf: "Load Diary", text: "Loading diary…" })
+        .then(function (list) {
+          var processed = groupTeacherAssignments(list || []);
+          renderTeacher(processed);
+        })
+        .catch(function (e) { resultBox(false, "Load failed", e.message || String(e)); });
+    }
   }
 
   function renderTeacher(assignments) {
+    assignments = groupTeacherAssignments(assignments);
     var c = $("hwContainer");
     if (!assignments.length) { c.innerHTML = '<div class="hw-empty"><i class="material-icons">event_note</i>No schedule assigned to your profile today.</div>'; return; }
     c.innerHTML = assignments.map(function (a) {
@@ -153,6 +269,7 @@
   }
 
   function renderMgmt(classes) {
+    classes = processMgmtData(classes);
     var c = $("hwContainer");
     if (!classes.length) { c.innerHTML = '<div class="hw-empty"><i class="material-icons">event_note</i>No structured entries found for this date.</div>'; return; }
     var date = $("hwDate").value, displayDate = date.split("-").reverse().join("-");

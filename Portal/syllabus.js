@@ -891,6 +891,310 @@
   var syllabusEditorOrderDirty = Object.create(null);
   var syllabusEditorSaving = false;
 
+  var ACADEMIC_MONTH_ORDER = {
+    "june": 1,
+    "july": 2,
+    "august": 3,
+    "september": 4,
+    "october": 5,
+    "november": 6,
+    "december": 7,
+    "january": 8,
+    "february": 9,
+    "march": 10,
+    "april": 11,
+    "may": 12
+  };
+
+  function monthOrderScore(m) {
+    var k = String(m || "").trim().toLowerCase();
+    return ACADEMIC_MONTH_ORDER[k] || 99;
+  }
+
+  function normalizeMonth(m) {
+    if (!m) return "";
+    var s = String(m).trim().toLowerCase();
+    var teluguMap = {
+      "జూన్": "June", "జూలై": "July", "ఆగస్టు": "August", "ఆగష్టు": "August",
+      "సెప్టెంబరు": "September", "సెప్టెంబర్": "September",
+      "అక్టోబరు": "October", "అక్టోబర్": "October",
+      "నవంబరు": "November", "నవంబర్": "November",
+      "డిసెంబరు": "December", "డిసెంబర్": "December",
+      "జనవరి": "January", "ఫిబ్రవరి": "February",
+      "మార్చి": "March", "ఏప్రిల్": "April", "మే": "May"
+    };
+    for (var k in teluguMap) {
+      if (s.indexOf(k) >= 0) return teluguMap[k];
+    }
+    var months = ["June", "July", "August", "September", "October", "November", "December", "January", "February", "March", "April", "May"];
+    for (var i = 0; i < months.length; i++) {
+      if (s.indexOf(months[i].toLowerCase()) >= 0) return months[i];
+    }
+    return m;
+  }
+
+  function getGeminiApiKey() {
+    return (window.PORTAL_CONFIG && window.PORTAL_CONFIG.GEMINI_API_KEY) ||
+           localStorage.getItem("PORTAL_GEMINI_API_KEY") ||
+           localStorage.getItem("GEMINI_API_KEY") ||
+           "";
+  }
+
+  function isUpavachakam(item) {
+    if (!item) return false;
+    if (item.is_upavachakam === true) return true;
+    var no = String(item.lesson_no == null ? "" : item.lesson_no).trim().toLowerCase();
+    if (/^[uUఉ]-?\d+/i.test(no) || /^sr-?\d+/i.test(no)) return true;
+    var name = String(item.name || "").toLowerCase();
+    return (
+      name.indexOf("ఉపవాచక") >= 0 ||
+      name.indexOf("upavachak") >= 0 ||
+      name.indexOf("non-detailed") >= 0 ||
+      name.indexOf("पूरक") >= 0
+    );
+  }
+
+  async function callGeminiVisionApi(apiKey, base64Data, mimeType, grade, subject) {
+    var prompt = "You are an expert school syllabus assistant for Sapthagiri High School.\n" +
+      "Analyze this textbook contents / table of contents page (విషయసూచిక / Table of Contents / Index).\n" +
+      "Class: " + (grade || "Not specified") + ", Subject: " + (subject || "Not specified") + ".\n" +
+      "Extract every chapter, lesson, and supplementary reader unit (పాఠ్యాంశాలు, ఉపవాచకం, పూరక పుస్తకం, Non-detailed).\n\n" +
+      "CRITICAL LESSON NUMBERING RULES:\n" +
+      "1. MAIN LESSONS (పాఠ్యాంశాలు / पाठ): PRESERVE THE EXACT TEXTBOOK LESSON NUMBER as printed (e.g. 1, 2, 3... or 1.A, 1.B, 1.C for English). DO NOT renumber main lessons!\n" +
+      "2. SUPPLEMENTARY / UPAVACHAKAM LESSONS (ఉపవాచకం / పూరక): prefix their lesson number with 'U-' (e.g. U-1, U-2, U-3...). Set \"is_upavachakam\": true, and append '(ఉపవాచకం)' to the name.\n" +
+      "3. target_month: the scheduled school month (June, July, August, September, October, November, December, January, February, March, April).\n\n" +
+      "Telugu months mapping:\n" +
+      "జూన్ -> June, జూలై -> July, ఆగస్టు / ఆగష్టు -> August, సెప్టెంబరు / సెప్టెంబర్ -> September,\n" +
+      "అక్టోబరు / అక్టోబర్ -> October, నవంబరు / నవంబర్ -> November, డిసెంబరు / డిసెంబర్ -> December,\n" +
+      "జనవరి -> January, ఫిబ్రవరి -> February, మార్చి -> March, ఏప్రిల్ -> April.\n\n" +
+      "Return ONLY a valid JSON array of objects with keys: \"lesson_no\", \"name\", \"target_month\", \"is_upavachakam\". No extra text or markdown.";
+
+    var models = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.7-flash"];
+    var lastError = null;
+
+    for (var i = 0; i < models.length; i++) {
+      var model = models[i];
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(apiKey);
+      try {
+        var res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType: mimeType || "image/jpeg", data: base64Data } }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1
+            }
+          })
+        });
+
+        if (!res.ok) {
+          var errBody = await res.text();
+          var errMsg = "Gemini " + model + " error (" + res.status + "): " + errBody.slice(0, 180);
+          lastError = new Error(errMsg);
+          if (res.status === 400 || res.status === 403) throw lastError;
+          continue;
+        }
+
+        var json = await res.json();
+        var txt = json && json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts && json.candidates[0].content.parts[0] && json.candidates[0].content.parts[0].text || "";
+        var cleaned = txt.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "").trim();
+        var parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+        if (parsed && Array.isArray(parsed.lessons) && parsed.lessons.length) return parsed.lessons;
+      } catch (err) {
+        lastError = err;
+        if (err && (err.message || "").indexOf("error (400)") >= 0) throw err;
+        if (err && (err.message || "").indexOf("error (403)") >= 0) throw err;
+      }
+    }
+    throw lastError || new Error("Failed to extract contents with Gemini AI.");
+  }
+
+  function applyAiExtractedLessons(pair, lessons) {
+    var pairKey = editorPairKey(pair);
+    var savedRows = getEditorPairRows(pair).filter(function (l) { return l.item_type !== "AstraGen"; });
+
+    // Temporarily hide existing saved rows and stage them for deletion on Update Syllabus
+    syllabusEditorPendingDeletes[pairKey] = savedRows.map(function (r) { return String(r.id); });
+
+    // Clear any previous drafts
+    syllabusEditorDrafts = syllabusEditorDrafts.filter(function (d) { return d._pairKey !== pairKey; });
+
+    // Clear pending edit cache for this class/subject
+    Object.keys(syllabusEditorPendingValues).forEach(function (key) {
+      if (key.indexOf(pairKey + "::") === 0) delete syllabusEditorPendingValues[key];
+    });
+
+    // Clean and normalize lesson numbers before sorting
+    // Keep exact textbook numbers for main lessons (1, 2, 3... or 1.A, 1.B...)
+    // Assign U-1, U-2, U-3... for Upavachakam
+    var upaCounter = 0;
+    var mainCounter = 0;
+    lessons.forEach(function (item) {
+      var isUpa = isUpavachakam(item);
+      item.is_upavachakam = isUpa;
+      var rawNo = String(item.lesson_no == null ? "" : item.lesson_no).trim();
+      var name = String(item.name || "").trim();
+
+      if (isUpa) {
+        upaCounter++;
+        var match = rawNo.match(/\d+/);
+        var uNum = match ? match[0] : String(upaCounter);
+        item.lesson_no = "U-" + uNum;
+        if (name.indexOf("ఉపవాచకం") < 0 && name.indexOf("Upavachakam") < 0 && name.indexOf("పూరక") < 0) {
+          name = name + " (ఉపవాచకం)";
+        }
+      } else {
+        mainCounter++;
+        // If rawNo is valid (e.g. "1", "2", "1.A", "1.B", "Unit 1"), keep it!
+        if (!rawNo || !/[0-9a-zA-Z]/.test(rawNo)) {
+          item.lesson_no = String(mainCounter);
+        } else {
+          item.lesson_no = rawNo;
+        }
+      }
+      item.name = name;
+      item.target_month = normalizeMonth(item.target_month || "");
+    });
+
+    // Sort lessons strictly in school academic months order (June -> April)
+    // Within the same month, place main lessons first (in numeric order), then Upavachakam lessons
+    lessons.sort(function (a, b) {
+      var ma = monthOrderScore(a.target_month);
+      var mb = monthOrderScore(b.target_month);
+      if (ma !== mb) return ma - mb;
+
+      var aUpa = a.is_upavachakam;
+      var bUpa = b.is_upavachakam;
+      if (aUpa !== bUpa) return aUpa ? 1 : -1; // Main lessons first, upavachakam second
+
+      var na = lessonNumberValue(a.lesson_no);
+      var nb = lessonNumberValue(b.lesson_no);
+      if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
+      return String(a.lesson_no || "").localeCompare(String(b.lesson_no || ""), undefined, { numeric: true });
+    });
+
+    var mapping = editorMappingForPair(pair, savedRows);
+
+    // Create draft rows preserving the exact lesson_no and sequence
+    lessons.forEach(function (item, idx) {
+      var draftKey = "draft-" + (++syllabusEditorDraftSeq);
+      syllabusEditorDrafts.push({
+        _draftKey: draftKey,
+        _pairKey: pairKey,
+        class: mapping.className,
+        subject: mapping.subject,
+        strand_subject: mapping.strand,
+        item_type: "Manual",
+        lesson_no: item.lesson_no,
+        name: item.name,
+        target_month: item.target_month,
+        drive_link: item.drive_link || "",
+        sort_order: (idx + 1) * 10
+      });
+    });
+
+    syllabusEditorMode = "Manual";
+    renderSyllabusEditorRows();
+  }
+
+  function handleSyllabusAiUpload(file) {
+    if (!file) return;
+    var pair = currentEditorPair();
+    if (!pair) return editorStatus("Please select a Class and Subject first.", true);
+
+    var apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      editorStatus("Gemini API key is not configured in Portal/config.js.", true);
+      return;
+    }
+
+    var aiBtn = $("sylEditorAiUpload");
+    if (aiBtn) {
+      aiBtn.disabled = true;
+      aiBtn.innerHTML = '<i class="material-icons syl-spin">sync</i> Reading image…';
+    }
+    editorStatus("Reading contents file (" + esc(file.name) + ")…", "loading");
+
+    var reader = new FileReader();
+    reader.onload = async function (e) {
+      try {
+        var dataUrl = e.target.result;
+        var base64 = dataUrl.split(",")[1];
+        var mimeType = file.type || "image/jpeg";
+
+        if (aiBtn) {
+          aiBtn.innerHTML = '<i class="material-icons syl-spin">sync</i> Analyzing with AI…';
+        }
+
+        // Show prominent loading box inside the syllabus table container
+        $("sylEditorList").innerHTML =
+          '<div class="syl-ai-loading-box">' +
+            '<div class="syl-ai-spinner"></div>' +
+            '<div class="syl-ai-loading-title">Analyzing textbook contents with Gemini AI…</div>' +
+            '<div class="syl-ai-loading-sub">' + esc(pair.grade) + ' · ' + esc(pair.subject) + ' — Reading chapters, lesson numbers, and academic target months</div>' +
+          '</div>';
+
+        editorStatus("Analyzing textbook contents with Gemini AI… (takes 2–5 seconds)", "loading");
+        editorSetSaving(true);
+
+        var lessons = null;
+        try {
+          lessons = await callGeminiVisionApi(apiKey, base64, mimeType, pair.grade, pair.subject);
+        } catch (geminiErr) {
+          console.warn("Direct Gemini Vision API error:", geminiErr);
+          try {
+            var res = await P.api("ttParseSyllabusContents", [base64, mimeType, pair.grade, pair.subject], { overlay: false });
+            if (res && res.lessons && Array.isArray(res.lessons) && res.lessons.length) lessons = res.lessons;
+            else if (Array.isArray(res) && res.length) lessons = res;
+          } catch (_e) {}
+          if (!lessons) throw geminiErr;
+        }
+
+        if (!lessons || !Array.isArray(lessons) || !lessons.length) {
+          throw new Error("No syllabus chapters could be detected from this page. Please ensure the contents page image is clear and well lit.");
+        }
+
+        if (aiBtn) {
+          aiBtn.disabled = false;
+          aiBtn.innerHTML = '<i class="material-icons">document_scanner</i> Upload Contents (AI)';
+        }
+
+        applyAiExtractedLessons(pair, lessons);
+        editorSetSaving(false);
+
+        var mainCount = lessons.filter(function (l) { return !isUpavachakam(l); }).length;
+        var upaCount = lessons.filter(function (l) { return isUpavachakam(l); }).length;
+        var summary = "Extracted " + lessons.length + " chapters" +
+          (upaCount ? " (" + mainCount + " main lessons, " + upaCount + " Upavachakam)" : "") +
+          " in academic calendar order. Click \"Update Syllabus\" to save.";
+        editorStatus(summary, "success");
+      } catch (err) {
+        console.error("AI Syllabus Upload failed:", err);
+        if (aiBtn) {
+          aiBtn.disabled = false;
+          aiBtn.innerHTML = '<i class="material-icons">document_scanner</i> Upload Contents (AI)';
+        }
+        editorSetSaving(false);
+        renderSyllabusEditorRows();
+        editorStatus(err && err.message ? err.message : "Failed to analyze contents page with Gemini AI.", true);
+      }
+    };
+    reader.onerror = function () {
+      if (aiBtn) {
+        aiBtn.disabled = false;
+        aiBtn.innerHTML = '<i class="material-icons">document_scanner</i> Upload Contents (AI)';
+      }
+      editorStatus("Failed to read file from disk.", true);
+    };
+    reader.readAsDataURL(file);
+  }
+
   function openSyllabusEditor() {
     P.openModal("sylEditorModal");
     $("sylEditorList").innerHTML = '<div class="inline-loader"><i class="material-icons">sync</i>Loading syllabus rows…</div>';
@@ -902,23 +1206,25 @@
         return gw(a.grade) - gw(b.grade) || String(a.subject).localeCompare(String(b.subject));
       });
       if (!syllabusEditorPairs.length) {
-        $("sylEditorPair").innerHTML = '<option value="">No class/subject combinations found</option>';
+        if ($("sylEditorClass")) $("sylEditorClass").innerHTML = '<option value="">No classes</option>';
+        if ($("sylEditorSubject")) $("sylEditorSubject").innerHTML = '<option value="">No subjects</option>';
         $("sylEditorList").innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No syllabus lessons or timetable subjects were found.</div>';
         return;
       }
-      $("sylEditorPair").innerHTML = syllabusEditorPairs.map(function (p, i) {
-        return '<option value="' + i + '">' + esc(p.grade) + ' · ' + esc(p.subject) + '</option>';
-      }).join("");
-      $("sylEditorPair").onchange = function () {
-        var pair = currentEditorPair();
-        var rows = pair ? getEditorPairRows(pair) : [];
-        syllabusEditorMode = rows.some(function (l) { return l.item_type === "AstraGen"; }) &&
-          !rows.some(function (l) { return l.item_type !== "AstraGen"; }) ? "AstraGen" : "Manual";
-        $("sylEditorFormHost").innerHTML = "";
-        renderSyllabusEditorRows();
-      };
+      setupEditorCascadingDropdowns();
       $("sylEditorAdd").onclick = addEditorRow;
       $("sylEditorBulkSave").onclick = saveManualEditorClass;
+      var fileInput = $("sylEditorFileInput");
+      var aiBtn = $("sylEditorAiUpload");
+      if (aiBtn && fileInput) {
+        aiBtn.onclick = function () { fileInput.click(); };
+        fileInput.onchange = function (ev) {
+          if (ev.target.files && ev.target.files[0]) {
+            handleSyllabusAiUpload(ev.target.files[0]);
+            fileInput.value = "";
+          }
+        };
+      }
       var initialPair = currentEditorPair();
       var initialRows = initialPair ? getEditorPairRows(initialPair) : [];
       syllabusEditorMode = initialRows.some(function (l) { return l.item_type === "AstraGen"; }) &&
@@ -927,6 +1233,85 @@
     }).catch(function (e) {
       $("sylEditorList").innerHTML = '<div class="syl-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>';
     });
+  }
+
+  function setupEditorCascadingDropdowns(preferredGrade, preferredSubject) {
+    var classSelect = $("sylEditorClass");
+    var subjectSelect = $("sylEditorSubject");
+    if (!classSelect || !subjectSelect) return;
+
+    var classList = [];
+    var seenClasses = Object.create(null);
+    syllabusEditorPairs.forEach(function (p) {
+      var g = String(p.grade || "").trim();
+      if (!g || seenClasses[g.toLowerCase()]) return;
+      seenClasses[g.toLowerCase()] = true;
+      classList.push(g);
+    });
+    classList.sort(function (a, b) { return gw(a) - gw(b); });
+
+    if (!classList.length) {
+      classSelect.innerHTML = '<option value="">No classes</option>';
+      subjectSelect.innerHTML = '<option value="">No subjects</option>';
+      return;
+    }
+
+    classSelect.innerHTML = classList.map(function (c) {
+      return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+    }).join("");
+
+    var chosenGrade = preferredGrade;
+    if (!chosenGrade || !classList.some(function (c) { return editorGradeEqual(c, chosenGrade); })) {
+      chosenGrade = classList[0];
+    }
+    classSelect.value = chosenGrade;
+
+    function populateSubjects(prefSub) {
+      var currentGrade = classSelect.value;
+      var subList = [];
+      var seenSubs = Object.create(null);
+      syllabusEditorPairs.forEach(function (p) {
+        if (editorGradeEqual(p.grade, currentGrade)) {
+          var s = String(p.subject || "").trim();
+          if (s && !seenSubs[editorNormSubject(s)]) {
+            seenSubs[editorNormSubject(s)] = true;
+            subList.push(s);
+          }
+        }
+      });
+      subList.sort(function (a, b) { return a.localeCompare(b); });
+
+      subjectSelect.innerHTML = subList.map(function (s) {
+        return '<option value="' + esc(s) + '">' + esc(s) + '</option>';
+      }).join("");
+
+      var chosenSub = prefSub;
+      if (!chosenSub || !subList.some(function (s) { return editorNormSubject(s) === editorNormSubject(chosenSub); })) {
+        chosenSub = subList[0] || "";
+      }
+      subjectSelect.value = chosenSub;
+    }
+
+    populateSubjects(preferredSubject);
+
+    classSelect.onchange = function () {
+      populateSubjects();
+      onEditorClassSubjectChanged();
+    };
+
+    subjectSelect.onchange = function () {
+      onEditorClassSubjectChanged();
+    };
+  }
+
+  function onEditorClassSubjectChanged() {
+    var pair = currentEditorPair();
+    var rows = pair ? getEditorPairRows(pair) : [];
+    syllabusEditorMode = rows.some(function (l) { return l.item_type === "AstraGen"; }) &&
+      !rows.some(function (l) { return l.item_type !== "AstraGen"; }) ? "AstraGen" : "Manual";
+    $("sylEditorFormHost").innerHTML = "";
+    editorStatus("", false);
+    renderSyllabusEditorRows();
   }
 
   function editorGradeNumber(value) {
@@ -963,7 +1348,11 @@
     return base === selected;
   }
   function lessonNumberValue(value) {
-    var m = String(value == null ? "" : value).trim().match(/\d+(?:\.\d+)?/);
+    var s = String(value == null ? "" : value).trim();
+    if (/^[uUఉ]-?(\d+)/i.test(s)) {
+      return 10000 + parseInt(RegExp.$1, 10);
+    }
+    var m = s.match(/\d+(?:\.\d+)?/);
     return m ? Number(m[0]) : NaN;
   }
   // Preserve the existing AstraGen ordering by lesson number.
@@ -1006,6 +1395,17 @@
     return out;
   }
   function currentEditorPair() {
+    var cls = $("sylEditorClass") ? $("sylEditorClass").value : "";
+    var sub = $("sylEditorSubject") ? $("sylEditorSubject").value : "";
+    if (cls && sub) {
+      for (var j = 0; j < syllabusEditorPairs.length; j++) {
+        var p = syllabusEditorPairs[j];
+        if (editorGradeEqual(p.grade, cls) && editorNormSubject(p.subject) === editorNormSubject(sub)) {
+          return p;
+        }
+      }
+      return { grade: cls, subject: sub };
+    }
     var i = $("sylEditorPair") ? Number($("sylEditorPair").value) : -1;
     return i >= 0 && syllabusEditorPairs[i] ? syllabusEditorPairs[i] : null;
   }
@@ -1064,9 +1464,10 @@
     if (syllabusEditorMode === "Manual") rows = rows.concat(syllabusEditorDrafts.filter(function (d) { return d._pairKey === editorPairKey(pair); }));
     syllabusEditorRows = syllabusEditorMode === "Manual" ? editorManualRowsInDisplayOrder(pair, rows) : rows.slice().sort(editorLessonSort);
     $("sylEditorCount").textContent = rows.length + (rows.length === 1 ? " row" : " rows");
-    $("sylEditorAdd").innerHTML = '<i class="material-icons">add</i> ' + (syllabusEditorMode === "AstraGen" ? "Add AstraGen plan" : "Add lesson row");
+    $("sylEditorAdd").innerHTML = '<i class="material-icons">add</i> ' + (syllabusEditorMode === "AstraGen" ? "Add AstraGen plan" : "Add Row");
     $("sylEditorAdd").style.display = "";
     $("sylEditorBulkSave").style.display = syllabusEditorMode === "Manual" ? "" : "none";
+    if ($("sylEditorAiUpload")) $("sylEditorAiUpload").style.display = syllabusEditorMode === "Manual" ? "" : "none";
     if (syllabusEditorMode === "Manual") renderManualEditorTable(pair, manual);
     else renderAstraGenEditorTable(astragen);
   }
@@ -1086,35 +1487,31 @@
     syllabusEditorSaving = !!disabled;
     var modal = $("sylEditorModal");
     if (!modal) return;
-    Array.prototype.forEach.call(modal.querySelectorAll(".syl-cell-input, #sylEditorPair, #sylEditorAdd, #sylEditorBulkSave, .syl-editor-mode, .syl-row-remove, .syl-ed-drag-handle"), function (el) {
+    Array.prototype.forEach.call(modal.querySelectorAll(".syl-cell-input, #sylEditorClass, #sylEditorSubject, #sylEditorPair, #sylEditorAdd, #sylEditorAiUpload, #sylEditorBulkSave, .syl-editor-mode, .syl-row-remove, .syl-ed-drag-handle"), function (el) {
       el.disabled = !!disabled;
     });
     var save = $("sylEditorBulkSave");
-    if (save) save.innerHTML = disabled ? '<i class="material-icons">sync</i> Updating class…' : '<i class="material-icons">save</i> Update class syllabus';
+    if (save) save.innerHTML = disabled ? '<i class="material-icons syl-spin">sync</i> Updating…' : '<i class="material-icons">save</i> Update Syllabus';
   }
   function renderManualEditorTable(pair, savedRows) {
     var drafts = syllabusEditorDrafts.filter(function (d) { return d._pairKey === editorPairKey(pair); });
     var stagedDeleteIds = editorPairPendingDeletes(pair);
     var visibleSavedRows = savedRows.filter(function (l) { return stagedDeleteIds.indexOf(String(l.id)) < 0; });
     var rows = editorManualRowsInDisplayOrder(pair, visibleSavedRows.concat(drafts));
-    var missing = editorMissingNumbers(visibleSavedRows);
-    var dragHint = '<div class="syl-editor-note">Drag a lesson using the grip at the start of its row to change its order within the target-month section of the syllabus tracker. Change <b>Target Month</b> to move it to another month. Click <b>Update class syllabus</b> to save.</div>';
-    var alertHtml = missing.length
-      ? '<div class="syl-editor-gap"><i class="material-icons">info</i><span>Lesson numbers not present between 1 and ' + Math.max.apply(Math, visibleSavedRows.map(function (l) { return lessonNumberValue(l.lesson_no); }).filter(isFinite)) + ': <b>' + esc(missing.join(", ")) + '</b>. Add a row for any missing chapter you need.</span></div>'
-      : '';
     var pendingDeleteCount = editorPairPendingDeletes(pair).length;
-    var deleteNote = pendingDeleteCount ? '<div class="syl-editor-gap"><i class="material-icons">delete_outline</i><span>' + pendingDeleteCount + ' lesson ' + (pendingDeleteCount === 1 ? 'row is' : 'rows are') + ' marked for removal. The removal will be applied with the class update.</span></div>' : '';
+    var isAiOverwrite = drafts.length > 0 && pendingDeleteCount > 0;
+    var deleteNote = (pendingDeleteCount && !isAiOverwrite) ? '<div class="syl-editor-gap"><i class="material-icons">delete_outline</i><span>' + pendingDeleteCount + ' lesson ' + (pendingDeleteCount === 1 ? 'row marked' : 'rows marked') + ' for removal. Will apply on update.</span></div>' : '';
     if (!rows.length) {
-      $("sylEditorList").innerHTML = alertHtml + deleteNote + '<div class="syl-empty"><i class="material-icons">menu_book</i>No manual lessons are listed for ' + esc(pair.grade) + ' · ' + esc(pair.subject) + '. Use <b>Add lesson row</b> to create the first chapter.</div>';
+      $("sylEditorList").innerHTML = deleteNote + '<div class="syl-empty"><i class="material-icons">menu_book</i>No lessons listed for ' + esc(pair.grade) + ' · ' + esc(pair.subject) + '. Use <b>Add Row</b> or <b>Upload Contents (AI)</b> to create chapters.</div>';
       return;
     }
-    var html = dragHint + alertHtml + deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-drag" title="Drag to reorder">Move</th><th class="syl-col-no">Lesson No.</th><th>Lesson name</th><th class="syl-col-month">Target month</th><th class="syl-col-link">PDF / resource link (optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
+    var html = deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-drag" title="Drag to reorder">Move</th><th class="syl-col-no">No.</th><th>Lesson / Chapter Title</th><th class="syl-col-month">Target Month</th><th class="syl-col-link">PDF / Resource Link (Optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
     rows.forEach(function (l) {
       var isDraft = !!l._draftKey;
       var id = isDraft ? l._draftKey : String(l.id);
       html += '<tr data-editor-row="' + esc(id) + '" data-editor-draft="' + (isDraft ? "1" : "0") + '" data-class="' + esc(l.class || "") + '" data-subject="' + esc(l.subject || "") + '" data-strand="' + esc(l.strand_subject || "") + '">' +
-        '<td class="syl-col-drag"><button type="button" class="syl-ed-drag-handle" draggable="true" aria-label="Drag to reorder lesson" title="Drag to reorder"><i class="material-icons">drag_indicator</i></button></td>' +
-        '<td><input class="syl-cell-input syl-cell-number" data-field="lesson_no" value="' + esc(editorManualValue(pair, l, "lesson_no")) + '" placeholder="1" inputmode="numeric"></td>' +
+        '<td class="syl-col-drag"><button type="button" class="syl-ed-drag-handle" draggable="true" aria-label="Drag to reorder" title="Drag to reorder"><i class="material-icons">drag_indicator</i></button></td>' +
+        '<td><input class="syl-cell-input syl-cell-number" data-field="lesson_no" value="' + esc(editorManualValue(pair, l, "lesson_no")) + '" placeholder="1" inputmode="text"></td>' +
         '<td><input class="syl-cell-input syl-cell-title" data-field="name" value="' + esc(editorManualValue(pair, l, "name")) + '" placeholder="Enter chapter name"></td>' +
         '<td><select class="syl-cell-input" data-field="target_month">' + editorMonthOptions(editorManualValue(pair, l, "target_month")) + '</select></td>' +
         '<td><input class="syl-cell-input" data-field="drive_link" type="url" value="' + esc(editorManualValue(pair, l, "drive_link")) + '" placeholder="https://…"></td>' +
@@ -1243,8 +1640,7 @@
         name !== String(baseline.name == null ? "" : baseline.name).trim() ||
         month !== String(baseline.target_month == null ? "" : baseline.target_month).trim() ||
         url !== String(baseline.drive_link == null ? "" : baseline.drive_link).trim();
-      var parsedLessonNo = lessonNumberValue(lessonNo);
-      var numberKey = isFinite(parsedLessonNo) ? String(parsedLessonNo) : lessonNo.toLocaleLowerCase();
+      var numberKey = String(lessonNo).trim().toLowerCase();
       if (numberKey) {
         if (seenNumbers[numberKey]) {
           if (changed || seenNumbers[numberKey].changed) invalidDuplicate = true;
@@ -1254,12 +1650,14 @@
       if (!lessonNo || !name) { validationError = "Enter both the lesson number and lesson name for every changed or new row."; return; }
       if (url && !/^https?:\/\//i.test(url)) { validationError = "A resource link must start with http:// or https://."; return; }
       var no = lessonNumberValue(lessonNo);
+      var rowIndex = tableRows.indexOf(tr);
+      var sortOrder = rowIndex >= 0 ? (rowIndex + 1) * 10 : (isFinite(no) ? Math.round(no * 10) : 0);
       changes.push({ tr: tr, oldId: id, isDraft: isDraft, payload: {
         id: isDraft ? null : id,
         class: tr.getAttribute("data-class"), subject: tr.getAttribute("data-subject"),
         strand_subject: tr.getAttribute("data-strand") || "", item_type: "Manual",
         lesson_no: lessonNo, name: name, target_month: month, drive_link: url,
-        sort_order: isFinite(no) ? Math.round(no * 10) : 0
+        sort_order: sortOrder
       }});
     });
     if (validationError) return editorStatus(validationError, true);
@@ -1395,11 +1793,22 @@
       });
     };
   }
-  function editorStatus(message, isError) {
+  function editorStatus(message, type) {
     var el = $("sylEditorStatus");
     if (!el) return;
-    el.textContent = message || "";
-    el.className = "syl-editor-status" + (isError ? " error" : " success");
+    if (!message) {
+      el.innerHTML = "";
+      el.className = "syl-editor-status";
+      el.style.display = "none";
+      return;
+    }
+    var isErr = type === true || type === "error";
+    var isLoading = type === "loading";
+    var icon = isErr ? "error_outline" : (isLoading ? "sync" : "check_circle");
+    var iconClass = isLoading ? "material-icons syl-spin" : "material-icons";
+    el.className = "syl-editor-status active " + (isErr ? "error" : (isLoading ? "loading" : "success"));
+    el.innerHTML = '<i class="' + iconClass + '"></i><span>' + esc(message).replace(/\n/g, "<br>") + '</span>';
+    el.style.display = "flex";
   }
   function reloadEditorData(refreshReport, preferredLesson) {
     var oldPair = currentEditorPair(), oldMode = syllabusEditorMode;
@@ -1408,16 +1817,9 @@
       syllabusEditorPairs = (syllabusEditorData.classSubjects || []).slice().sort(function (a, b) {
         return gw(a.grade) - gw(b.grade) || String(a.subject).localeCompare(String(b.subject));
       });
-      var chosen = 0;
       var wantedGrade = preferredLesson ? preferredLesson.class : (oldPair && oldPair.grade);
       var wantedSubject = preferredLesson ? editorPairSubjectForLesson(preferredLesson) : (oldPair && oldPair.subject);
-      if (wantedGrade != null && wantedSubject) {
-        for (var i = 0; i < syllabusEditorPairs.length; i++) {
-          if (editorGradeEqual(syllabusEditorPairs[i].grade, wantedGrade) && editorNormSubject(syllabusEditorPairs[i].subject) === editorNormSubject(wantedSubject)) { chosen = i; break; }
-        }
-      }
-      $("sylEditorPair").innerHTML = syllabusEditorPairs.map(function (p, i) { return '<option value="' + i + '">' + esc(p.grade) + ' · ' + esc(p.subject) + '</option>'; }).join("");
-      if (syllabusEditorPairs.length) $("sylEditorPair").value = String(chosen);
+      setupEditorCascadingDropdowns(wantedGrade, wantedSubject);
       syllabusEditorMode = oldMode;
       renderSyllabusEditorRows();
       if (refreshReport) { mgmtReport = null; loadReport(true); }
@@ -1544,13 +1946,45 @@
   }
   function dateDrillModal() { return ""; }
   function syllabusEditorModal() {
-    return '<div class="modal-overlay" id="sylEditorModal" style="z-index:1150;"><div class="modal-content syl-editor-modal">' +
-      '<div class="modal-header-container"><div><h3 style="margin:0;">Edit Syllabus</h3><p class="syl-editor-intro">Edit manual chapters directly in a table. AstraGen PDF lesson plans remain separate and keep their Gemini session workflow.</p></div><button class="modal-close-icon" data-close="sylEditorModal">&times;</button></div>' +
-      '<div class="syl-editor-toolbar"><label>Class · Subject<select id="sylEditorPair"><option value="">Loading…</option></select></label><div class="syl-editor-addwrap"><span id="sylEditorCount">Loading…</span><button type="button" class="btn btn-primary" id="sylEditorAdd"><i class="material-icons">add</i> Add lesson row</button><button type="button" class="btn btn-primary syl-editor-bulk-save" id="sylEditorBulkSave"><i class="material-icons">save</i> Update class syllabus</button></div></div>' +
-      '<div class="syl-editor-modebar" id="sylEditorModes"></div>' +
-      '<div id="sylEditorStatus" class="syl-editor-status"></div><div id="sylEditorFormHost"></div><div id="sylEditorList" class="syl-editor-list"><div class="inline-loader"><i class="material-icons">sync</i>Loading…</div></div>' +
-      '<div class="syl-editor-footnote"><i class="material-icons">info</i><span>For Manual syllabus, add, edit and remove all rows first, then click <b>Update class syllabus</b> once. Changes are kept in the table until that button is pressed. AstraGen PDF extraction, Gemini analysis, sessions and task records continue through their separate workflow.</span></div>' +
-      '<button class="btn btn-secondary" data-close="sylEditorModal" style="margin-top:14px;width:100%;">Close</button></div></div>';
+    return '<div class="modal-overlay" id="sylEditorModal" style="z-index:1150;">' +
+      '<div class="modal-content syl-editor-modal">' +
+        '<div class="syl-ed-header">' +
+          '<div class="syl-ed-title-group">' +
+            '<h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text-main,#0f172a);">Edit Syllabus</h3>' +
+            '<span class="syl-ed-count-badge" id="sylEditorCount"></span>' +
+          '</div>' +
+          '<button class="modal-close-icon" data-close="sylEditorModal" title="Close">&times;</button>' +
+        '</div>' +
+        '<div class="syl-ed-topbar">' +
+          '<div class="syl-ed-left-controls">' +
+            '<div class="syl-ed-cascading-selects">' +
+              '<div class="syl-ed-select-field">' +
+                '<label class="syl-ed-field-label" for="sylEditorClass">Class</label>' +
+                '<select id="sylEditorClass" class="syl-ed-select syl-ed-select-class" aria-label="Select Class"><option value="">Class…</option></select>' +
+              '</div>' +
+              '<div class="syl-ed-select-field">' +
+                '<label class="syl-ed-field-label" for="sylEditorSubject">Subject</label>' +
+                '<select id="sylEditorSubject" class="syl-ed-select syl-ed-select-subject" aria-label="Select Subject"><option value="">Subject…</option></select>' +
+              '</div>' +
+              '<select id="sylEditorPair" style="display:none;"></select>' +
+            '</div>' +
+            '<div class="syl-editor-modebar" id="sylEditorModes"></div>' +
+          '</div>' +
+          '<div class="syl-ed-right-controls">' +
+            '<input type="file" id="sylEditorFileInput" accept="image/*,application/pdf" style="display:none;">' +
+            '<button type="button" class="syl-btn-secondary" id="sylEditorAiUpload" title="Upload Table of Contents (image/PDF) for AI extraction"><i class="material-icons">document_scanner</i> Upload Contents (AI)</button>' +
+            '<button type="button" class="syl-btn-secondary" id="sylEditorAdd"><i class="material-icons">add</i> Add Row</button>' +
+            '<button type="button" class="syl-btn-primary syl-editor-bulk-save" id="sylEditorBulkSave"><i class="material-icons">save</i> Update Syllabus</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="sylEditorStatus" class="syl-editor-status"></div>' +
+        '<div id="sylEditorFormHost"></div>' +
+        '<div id="sylEditorList" class="syl-editor-list"><div class="inline-loader"><i class="material-icons">sync</i>Loading…</div></div>' +
+        '<div class="syl-ed-footer">' +
+          '<div class="syl-ed-footer-hint"><i class="material-icons">info_outline</i> Reorder with grip handle · Academic calendar order (June–April) · Click Update Syllabus to save</div>' +
+          '<button type="button" class="syl-btn-secondary syl-btn-sm" data-close="sylEditorModal">Close</button>' +
+        '</div>' +
+      '</div></div>';
   }
 
   function skeletons(n) { var h = '<div class="syl-grid">'; for (var i = 0; i < n; i++) h += '<div class="syl-card" style="animation:pulse 1.2s infinite;"><div class="syl-card-head"><span class="syl-no" style="color:transparent;">--</span><div class="syl-card-title-block"><div style="height:14px;width:70%;background:#e2e8f0;border-radius:6px;"></div></div></div><div style="height:6px;background:#eef2f7;border-radius:6px;margin:12px 0;"></div><div style="height:34px;background:#f1f5f9;border-radius:10px;"></div></div>'; return h + "</div>"; }
@@ -1639,46 +2073,67 @@
     ".syl-dstatus.behind{background:var(--danger);color:#fff}" +
     ".syl-dtag.behind{color:#b91c1c;background:#fee2e2}.syl-dtag.behind i{font-size:13px}.syl-readonly{display:inline-flex;align-items:center;gap:4px;color:var(--text-muted);font-size:11px;font-weight:700}.syl-readonly i{font-size:14px}.syl-mgmt-note{margin:7px 0 0 32px;padding:7px 9px;background:#f8fafc;border-left:2px solid #cbd5e1;border-radius:5px;color:#64748b;font-size:11.5px;line-height:1.45}" +
     ".syl-edit-catalog-btn{background:#fff;border:1px solid var(--border);color:var(--maroon)}.syl-edit-catalog-btn:hover{background:var(--primary-light);border-color:var(--maroon)}" +
-    ".syl-editor-modal{max-width:1120px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}.syl-editor-intro{margin:4px 0 0;color:var(--text-muted);font-size:12.5px;font-weight:500;line-height:1.45;max-width:740px}" +
-    ".syl-editor-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) minmax(180px,1fr) auto;align-items:end;gap:10px;margin:12px 0}.syl-editor-toolbar label,.syl-editor-fields label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);min-width:0}.syl-editor-toolbar select,.syl-editor-toolbar input,.syl-editor-fields input,.syl-editor-fields select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text-main);padding:10px 11px;font-size:13px;font-weight:600;min-width:0}.syl-editor-addwrap{display:flex;align-items:center;justify-content:flex-end;gap:10px}.syl-editor-addwrap span{font-size:12px;font-weight:800;color:var(--text-muted);white-space:nowrap}.syl-editor-status{display:none;padding:9px 11px;margin:0 0 10px;border-radius:9px;font-size:12px;font-weight:700}.syl-editor-status:not(:empty){display:block}.syl-editor-status.success{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}.syl-editor-status.error{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}" +
-    ".syl-editor-list{min-height:100px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:#fff}.syl-editor-table-wrap{overflow-x:auto}.syl-editor-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:720px}.syl-editor-table th{position:sticky;top:0;background:#f8fafc;color:#64748b;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap}.syl-editor-table td{padding:11px 12px;border-bottom:1px solid #edf0f4;vertical-align:middle}.syl-editor-table tr:last-child td{border-bottom:0}.syl-editor-table tbody tr:hover{background:#fcfcfd}.syl-ed-order{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:42px}.syl-ed-order b{font-size:12px;color:var(--maroon)}.syl-ed-move{display:grid;place-items:center;width:25px;height:20px;border:1px solid transparent;background:#f8fafc;color:#64748b;border-radius:5px;padding:0;cursor:pointer}.syl-ed-move:hover:not(:disabled){background:#f1f5f9;color:var(--maroon);border-color:var(--border)}.syl-ed-move:disabled{opacity:.25;cursor:default}.syl-ed-move i{font-size:17px}.syl-ed-title{font-size:13px;font-weight:800;color:var(--text-main);line-height:1.35;overflow-wrap:anywhere}.syl-ed-meta,.syl-ed-muted{font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.4;overflow-wrap:anywhere}.syl-ed-link{color:var(--maroon);font-size:11px;font-weight:800;text-decoration:none}.syl-ed-link:hover{text-decoration:underline}.syl-ed-tag{display:inline-flex;padding:4px 7px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap}.syl-ed-tag.mapped{background:#eef2ff;color:#4338ca}.syl-ed-tag.manual{background:#f1f5f9;color:#475569}.syl-ed-actions{display:flex;gap:6px;flex-wrap:wrap}.syl-ed-action{display:inline-flex;align-items:center;gap:3px;padding:7px 8px!important;font-size:11px!important;white-space:nowrap}.syl-ed-action i{font-size:14px}.syl-ed-action.danger{color:#b91c1c;border-color:#fecaca}.syl-editor-form{border:1px solid #dbe3ed;background:#fbfcfe;border-radius:12px;padding:14px;margin-bottom:12px}.syl-editor-formhead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}.syl-editor-formhead b{font-size:15px;color:var(--maroon)}.syl-editor-formhead p{margin:4px 0 0;font-size:11.5px;color:var(--text-muted)}.syl-editor-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.syl-editor-fields label{font-size:10px}.syl-editor-fields small{font-size:10px;font-weight:600;line-height:1.4;text-transform:none;letter-spacing:0;color:var(--text-muted)}.syl-editor-fields .syl-ed-wide{grid-column:span 2}.syl-ed-formnote{font-size:11px;line-height:1.45;color:#64748b;background:#f1f5f9;border-radius:8px;padding:9px 10px;margin-top:10px}.syl-editor-formactions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.syl-editor-footnote{display:flex;align-items:flex-start;gap:7px;font-size:11px;line-height:1.45;color:var(--text-muted);padding:10px 2px 0}.syl-editor-footnote i{font-size:16px;color:var(--maroon);flex-shrink:0}" +
-    "@media(max-width:700px){.syl-editor-modal{max-height:94vh;padding:16px!important}.syl-editor-toolbar{grid-template-columns:1fr}.syl-editor-addwrap{justify-content:space-between}.syl-editor-fields{grid-template-columns:1fr 1fr}.syl-editor-fields .syl-ed-wide{grid-column:span 2}.syl-editor-intro{max-width:none}}" +
+    ".syl-editor-modal{max-width:1180px;width:calc(100% - 24px);height:88vh;max-height:88vh;padding:18px 22px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden}" +
+    ".syl-ed-header{display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;border-bottom:1px solid var(--border);flex-shrink:0}" +
+    ".syl-ed-title-group{display:flex;align-items:center;gap:10px}" +
+    ".syl-ed-count-badge{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:#f1f5f9;color:#475569}" +
+    ".syl-ed-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;flex-shrink:0;flex-wrap:wrap}" +
+    ".syl-ed-left-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}" +
+    ".syl-ed-cascading-selects{display:flex;align-items:center;gap:10px;flex-wrap:wrap}" +
+    ".syl-ed-select-field{display:flex;align-items:center;gap:6px}" +
+    ".syl-ed-field-label{font-size:11px;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.5px}" +
+    ".syl-ed-select-class{min-width:115px;height:36px;padding:0 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;background:#fff;color:var(--text-main);cursor:pointer}" +
+    ".syl-ed-select-subject{min-width:150px;height:36px;padding:0 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;background:#fff;color:var(--text-main);cursor:pointer}" +
+    ".syl-editor-modebar{display:inline-flex;gap:3px;background:#f1f5f9;padding:3px;border-radius:8px;border:1px solid var(--border)}" +
+    ".syl-editor-mode{border:none;background:transparent;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;gap:6px}" +
+    ".syl-editor-mode.active{background:#fff;color:var(--maroon);box-shadow:0 1px 3px rgba(0,0,0,.08)}" +
+    ".syl-editor-mode span{font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;background:#e2e8f0;color:#475569}" +
+    ".syl-editor-mode.active span{background:#fef2f2;color:var(--maroon)}" +
+    ".syl-ed-right-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}" +
+    ".syl-btn-secondary{height:36px;padding:0 13px;border:1px solid var(--border);border-radius:8px;background:#fff;color:#334155;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;cursor:pointer;transition:all .15s ease}" +
+    ".syl-btn-secondary:hover{background:#f8fafc;border-color:#94a3b8}" +
+    ".syl-btn-secondary i{font-size:16px;color:var(--maroon)}" +
+    ".syl-btn-primary{height:36px;padding:0 16px;border:none;border-radius:8px;background:var(--maroon);color:#fff;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;cursor:pointer;transition:all .15s ease;box-shadow:0 1px 3px rgba(122,21,26,.25)}" +
+    ".syl-btn-primary:hover{background:#601014}" +
+    ".syl-btn-primary i{font-size:16px;color:#fff}" +
+    ".syl-btn-sm{height:32px;padding:0 14px;font-size:12px}" +
+    ".syl-editor-status{display:none;padding:8px 14px;margin:0 0 10px;border-radius:8px;font-size:12.5px;font-weight:600;flex-shrink:0;align-items:center;gap:8px}" +
+    ".syl-editor-status.active{display:flex}" +
+    ".syl-editor-status.success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}" +
+    ".syl-editor-status.error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}" +
+    ".syl-editor-status.loading{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}" +
+    ".syl-editor-status i{font-size:16px;flex-shrink:0}" +
+    "@keyframes syl-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}" +
+    ".syl-spin{animation:syl-spin .85s linear infinite;display:inline-block}" +
+    ".syl-ai-loading-box{padding:42px 20px;text-align:center;background:#f8fafc;border:2px dashed #cbd5e1;border-radius:12px;margin:16px 0}" +
+    ".syl-ai-spinner{width:38px;height:38px;margin:0 auto 14px;border:3.5px solid #e2e8f0;border-top-color:var(--maroon);border-radius:50%;animation:syl-spin .75s linear infinite}" +
+    ".syl-ai-loading-title{font-size:14.5px;font-weight:700;color:#1e293b;margin-bottom:4px}" +
+    ".syl-ai-loading-sub{font-size:12.5px;color:#64748b}" +
+    ".syl-editor-list{flex:1 1 auto;min-height:0;max-height:none!important;overflow-y:auto;border:1px solid var(--border);border-radius:10px;background:#fff}" +
+    ".syl-editor-table-wrap{overflow:auto;height:100%}" +
+    ".syl-editor-table{width:100%;min-width:860px;border-collapse:separate;border-spacing:0;font-size:12px}" +
+    ".syl-editor-table th{position:sticky;top:0;z-index:2;background:#f8fafc;color:#566174;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.45px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap}" +
+    ".syl-editor-table td{padding:6px 10px;border-bottom:1px solid #edf0f4;vertical-align:middle}" +
+    ".syl-manual-table .syl-col-no{width:80px}.syl-manual-table .syl-col-month{width:140px}.syl-manual-table .syl-col-link{width:200px}.syl-manual-table .syl-col-actions{width:130px}" +
+    ".syl-col-drag{width:40px;text-align:center}" +
+    ".syl-ed-drag-handle{display:inline-grid;place-items:center;width:28px;height:30px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#64748b;cursor:grab;padding:0;touch-action:none}" +
+    ".syl-ed-drag-handle:hover{background:#f1f5f9;color:var(--maroon);border-color:#cbd5e1}" +
+    ".syl-ed-drag-handle:active{cursor:grabbing}" +
+    ".syl-ed-drag-handle i{font-size:18px}" +
+    ".syl-cell-input{display:block;box-sizing:border-box;width:100%;min-width:0;min-height:34px;padding:6px 8px;border:1px solid #d7dee8;border-radius:6px;background:#fff;color:var(--text-main);font:600 13px var(--font,Arial,sans-serif);outline:none}" +
+    ".syl-cell-input:focus{border-color:var(--maroon);box-shadow:0 0 0 2px rgba(128,29,39,.1)}" +
+    ".syl-cell-number{text-align:center;font-weight:700}" +
+    ".syl-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px}" +
+    ".syl-ed-tag.manual{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:4px;background:#e0f2fe;color:#0369a1;text-transform:uppercase;letter-spacing:.5px}" +
+    ".syl-row-remove{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:30px;padding:4px 8px!important;color:#b91c1c!important;border:1px solid #fecaca!important;border-radius:6px;background:#fff;cursor:pointer;font-size:11.5px!important}" +
+    ".syl-row-remove:hover{background:#fef2f2!important}" +
+    ".syl-ed-footer{display:flex;align-items:center;justify-content:space-between;padding-top:10px;margin-top:8px;border-top:1px solid var(--border);flex-shrink:0}" +
+    ".syl-ed-footer-hint{font-size:11.5px;color:#64748b;display:flex;align-items:center;gap:5px}" +
+    ".syl-ed-footer-hint i{font-size:15px;color:var(--maroon)}" +
+    "@media(max-width:760px){.syl-editor-modal{width:calc(100% - 10px);padding:12px!important}.syl-ed-topbar{flex-direction:column;align-items:stretch}.syl-ed-right-controls{justify-content:flex-end}}" +
     "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}" +
-    "@media(max-width:600px){.syl-grid{grid-template-columns:1fr}.syl-subgrid{grid-template-columns:1fr}.syl-drow{flex-direction:column;align-items:flex-start;gap:6px}.syl-clssub{min-width:0}}";
-    css +=
-      ".syl-editor-modal{max-width:1320px;width:calc(100% - 28px);max-height:94vh;padding:22px;box-sizing:border-box}" +
-      ".syl-editor-toolbar{display:grid;grid-template-columns:minmax(260px,1fr) auto;align-items:end;gap:14px;margin:16px 0 10px}" +
-      ".syl-editor-toolbar label{display:flex;flex-direction:column;gap:7px;color:var(--text-muted);font-size:11px;font-weight:800;letter-spacing:.35px;text-transform:uppercase}" +
-      ".syl-editor-toolbar select{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text-main);font-size:14px;font-weight:700}" +
-      ".syl-editor-addwrap{display:flex;align-items:center;justify-content:flex-end;gap:12px}.syl-editor-addwrap span{color:var(--text-muted);font-size:12px;font-weight:800;white-space:nowrap}" +
-      ".syl-editor-modebar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px;border-bottom:1px solid var(--border);padding-bottom:10px}" +
-      ".syl-editor-mode{display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border:1px solid var(--border);border-radius:9px;background:#f8fafc;color:var(--text-main);font-size:12px;font-weight:800;cursor:pointer}" +
-      ".syl-editor-mode span{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:10px}" +
-      ".syl-editor-mode.active{background:var(--maroon);border-color:var(--maroon);color:#fff}.syl-editor-mode.active span{background:rgba(255,255,255,.2);color:#fff}" +
-      ".syl-editor-note,.syl-editor-gap{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;padding:10px 12px;border:1px solid #dbe3ed;border-radius:9px;background:#f8fafc;color:#475569;font-size:12px;line-height:1.5}" +
-      ".syl-editor-gap{background:#fff8e8;border-color:#f5d99b;color:#854d0e}.syl-editor-note:before{content:'↕';font-size:16px;font-weight:800;color:var(--maroon)}.syl-editor-gap i{font-size:17px;flex:0 0 auto}" +
-      ".syl-editor-list{max-height:58vh;min-height:120px;overflow:auto;border:1px solid var(--border);border-radius:11px;background:#fff}" +
-      ".syl-editor-table-wrap{overflow:auto}.syl-editor-table{width:100%;min-width:960px;border-collapse:separate;border-spacing:0;font-size:12px}.syl-editor-table th{position:sticky;top:0;z-index:2;background:#f3f5f8;color:#566174;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.45px;padding:12px;border-bottom:1px solid var(--border);white-space:nowrap}.syl-editor-table td{padding:8px 10px;border-bottom:1px solid #edf0f4;vertical-align:middle}.syl-editor-table tbody tr:hover{background:#fbfcfe}.syl-editor-table tbody tr:last-child td{border-bottom:0}" +
-      ".syl-manual-table .syl-col-no{width:105px}.syl-manual-table .syl-col-month{width:150px}.syl-manual-table .syl-col-link{width:240px}.syl-manual-table .syl-col-actions{width:150px}" +
-      ".syl-col-drag{width:44px;text-align:center}.syl-ed-drag-handle{display:inline-grid;place-items:center;width:32px;height:34px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#64748b;cursor:grab;padding:0;touch-action:none}.syl-ed-drag-handle:hover{background:#f1f5f9;color:var(--maroon);border-color:#cbd5e1}.syl-ed-drag-handle:active{cursor:grabbing}.syl-ed-drag-handle i{font-size:20px}.syl-manual-table tbody tr.syl-row-dragging{opacity:.42;background:#fff7ed}.syl-manual-table tbody tr.syl-row-dragging td{border-top:2px dashed var(--maroon)}" +
-      ".syl-cell-input{display:block;box-sizing:border-box;width:100%;min-width:0;min-height:38px;padding:8px 9px;border:1px solid #d7dee8;border-radius:7px;background:#fff;color:var(--text-main);font:600 13px var(--font,Arial,sans-serif);outline:none}" +
-      ".syl-cell-input:focus{border-color:var(--maroon);box-shadow:0 0 0 3px rgba(128,29,39,.08)}.syl-cell-number{text-align:center;font-weight:800}.syl-cell-title{min-width:260px}" +
-      ".syl-row-actions{display:flex;align-items:center;gap:7px;white-space:nowrap}.syl-row-remove{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:86px;height:34px;padding:6px 9px!important;color:#b91c1c!important;border-color:#fecaca!important}.syl-row-remove i{font-size:17px}" +
-      ".syl-ed-number{display:inline-flex;min-width:35px;justify-content:center;padding:6px 8px;border-radius:7px;background:#f1f5f9;color:var(--maroon);font-size:13px}" +
-      ".syl-editor-intro{max-width:850px}.syl-editor-footnote{padding:11px 2px 0;font-size:11.5px}" +
-      ".syl-editor-addwrap{flex-wrap:wrap}.syl-editor-bulk-save{background:#8f1d1d!important;border-color:#8f1d1d!important;color:#fff!important;font-weight:600!important;white-space:nowrap}.syl-editor-bulk-save:disabled{opacity:.65;cursor:wait}" +
-      /* Keep editor typography calm and readable; do not inherit the portal's heavy button weights. */
-      "#sylEditorModal{font-weight:400}#sylEditorModal button{font-weight:600!important}#sylEditorModal .syl-editor-toolbar label,#sylEditorModal .syl-editor-fields label{font-weight:600}" +
-      "#sylEditorModal .syl-editor-toolbar select,#sylEditorModal .syl-editor-toolbar input,#sylEditorModal .syl-editor-fields input,#sylEditorModal .syl-editor-fields select{font-weight:400}" +
-      "#sylEditorModal .syl-editor-addwrap span{font-weight:600}#sylEditorModal .syl-editor-mode{font-weight:600}" +
-      "#sylEditorModal .syl-editor-mode.active{background:#fff7f6;border-color:var(--maroon);color:var(--maroon)}#sylEditorModal .syl-editor-mode.active span{background:#f4e1df;color:var(--maroon)}" +
-      "#sylEditorModal .syl-editor-table th{font-weight:600}#sylEditorModal .syl-editor-table td{font-weight:400}" +
-      "#sylEditorModal .syl-ed-title{font-weight:600}#sylEditorModal .syl-ed-link{font-weight:600}" +
-      "#sylEditorModal .syl-ed-action{font-weight:500!important}" +
-      "#sylEditorModal .syl-cell-input{font-weight:400}#sylEditorModal .syl-cell-number{font-weight:600}" +
-      "#sylEditorModal .syl-ed-number{font-weight:600}" +
-      "@media(max-width:760px){.syl-editor-modal{width:calc(100% - 12px);padding:14px!important}.syl-editor-toolbar{grid-template-columns:1fr}.syl-editor-addwrap{justify-content:space-between}.syl-editor-list{max-height:55vh}.syl-editor-intro{max-width:none}}" +
-      "@media(max-width:900px){" +
+    "@media(max-width:600px){.syl-grid{grid-template-columns:1fr}.syl-subgrid{grid-template-columns:1fr}.syl-drow{flex-direction:column;align-items:flex-start;gap:6px}.syl-clssub{min-width:0}}" +
+    "@media(max-width:900px){" +
         "#sylViewSeg, .syl-admin-toolbar, #sylTiming, .syl-mob-filter-bar{display:none!important;}" +
         ".syl-mob-overview{display:flex;flex-direction:column;gap:10px;margin-top:10px;}" +
         ".syl-mob-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;}" +

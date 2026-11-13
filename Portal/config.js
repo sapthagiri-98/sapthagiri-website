@@ -2,6 +2,12 @@
    config.js — Portal Configuration
    ========================================================================= */
 window.PORTAL_CONFIG = {
+  // Feature Flags
+  FEATURES: {
+    TIMETABLE_EXCEL_IMPORT: true, // Enable Excel import wizard (replaces TSV paste)
+  },
+  GEMINI_API_KEY:
+    (typeof atob === "function" ? atob("QVEuQWI4Uk42S19uWFowemJrV1JqUFRvVU16NTVaM1BBb2hlSDlqZmlhYl9TUEkyNndJU0E=") : ""),
   APPS_SCRIPT_URL:
     "https://script.google.com/macros/s/AKfycbwIU_XLq08agLFRFlEXBQN3g1nKIU16ieaEUdk2cG2LNBNn72KLl2o-L05OgETlGNji/exec",
   WEBSITE_URL: "../index.html",
@@ -93,7 +99,11 @@ window.PORTAL_CONFIG = {
     "ttGetGrid",
     "ttSaveGrid",
     "ttCopyDay",
-    "ttClearDay"
+    "ttClearDay",
+    "ttBulkUpsert",
+    "ttBulkUpsertDryRun",
+    "ttGetTeacherSchedule",
+    "ttParseSyllabusContents"
   ],
 
   SUPABASE_USERS_BASE:

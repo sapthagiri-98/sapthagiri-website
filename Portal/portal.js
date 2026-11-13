@@ -210,6 +210,7 @@
   var MENU = [
     { id: "attendance",  label: "Student Attendance",       icon: "assignment_turned_in", href: "attendance.html",           perm: "Daily Student Attendance", desc: "Daily attendance · Monthly sheets · Reports" },
     { id: "homework",    label: "Digital Homework Diary",   icon: "menu_book",            href: "homework.html",             perm: "Digital Homework Diary", desc: "Assign homework · Review submissions" },
+    { id: "schedule",    label: "My Schedule",              icon: "calendar_today",       href: "my-schedule.html",          perm: "My Schedule", teacherOnly: true, desc: "Daily teaching schedule · Timings & classes" },
     { id: "attlog",      label: "My Attendance Log",        icon: "pending_actions",      href: "staff-attendance.html",       perm: "My Attendance Log", teacherOnly: true, desc: "Your punches · Monthly timesheet" },
     { id: "stafftrack",  label: "Staff Attendance",         icon: "groups",               href: "staff-attendance.html",     perm: "Staff Attendance Tracker", mgmt: true, desc: "Monitor punches · Attendance summary" },
     { id: "holidays",    label: "Holidays Management",       icon: "event_busy",           href: "holidays.html",             perm: "Holidays Management", mgmt: true, desc: "Holiday calendar · Add & manage" },
@@ -283,7 +284,7 @@
     var side = document.getElementById("nav");
     if (side) side.innerHTML = '<div class="pv2-sidebar-inner"><div class="pv2-sidebar-title">Portal Modules</div>' + items.map(function (m) { return '<a class="pv2-navitem ' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + m.label + '</span>' + (m.soon ? '<em class="pv2-soon">Soon</em>' : "") + '</a>'; }).join("") + '</div>';
     var mob = document.getElementById("mobileNav");
-    var SHORT = { home: "Home", attendance: "Attendance", homework: "Homework", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", feemgmt: "Fee Mgmt", studentmgmt: "Students", usermgmt: "Users", payroll: "Payroll", timetable: "Timetable" };
+    var SHORT = { home: "Home", attendance: "Attendance", homework: "Homework", schedule: "Schedule", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", feemgmt: "Fee Mgmt", studentmgmt: "Students", usermgmt: "Users", payroll: "Payroll", timetable: "Timetable" };
     // Mobile bottom navigation: a permanent "Home" (dashboard launcher) followed
     // by the same permission-filtered modules used on desktop. No duplicate logic.
     var homeItem = '<a class="' + (activeId === "home" ? "active" : "") + '" href="dashboard.html"><i class="material-icons">home</i><span>Home</span></a>';

@@ -1,5 +1,5 @@
 /* =========================================================================
-   timetable.js — Timetable Management (Management only)  — v2.2 Mobile Redesign
+   timetable.js — Timetable Management (Management only)  — v2.3 Excel Import Wizard
    Fixes & Features:
    (1) Complete mobile-first vertical timetable redesign with zero horizontal scrolling.
    (2) Dual mobile modes: "By Class" and "By Teacher".
@@ -11,6 +11,7 @@
    (7) Symmetrical 6-column Day picker (Mon–Sat) fitted with zero horizontal scroll.
    (8) Preserves desktop table, Excel paste TSV import, copy day, and saving for authorized users.
    (9) Strictly enforces read-only view for mobile admin.
+   (10) NEW: Excel Import Wizard with SheetJS parser, class reconciliation, period mapping, and safe DB upsert.
    ========================================================================= */
 (function () {
   "use strict";
@@ -34,6 +35,11 @@
     _lastWasMobile: null
   };
   var ACTIVITY = { "sports": 1, "games": 1, "karate": 1, "dance": 1, "art zone": 1, "pet": 1, "leisure": 1 };
+
+// Dynamic period count per campus (Primary=8, High School=9)
+function maxPeriodsForCampus(campus) {
+  return (campus === "High School" || campus === "High") ? 9 : 8;
+}
 
   function normTeacher(name) {
     if (!name) return "";
@@ -69,6 +75,9 @@
       renderGrid();
     }
   });
+
+  // Expose BOOT to wizard for class dropdown
+  Object.defineProperty(window, 'TT_BOOT', { get: function () { return BOOT; } });
 
   render();
 
@@ -431,8 +440,9 @@
       byId("ttGrid").innerHTML = '<div class="tt-empty"><i class="material-icons">grid_off</i>No classes for ' + esc(STATE.campus) + '.</div>';
       return;
     }
+    var maxPeriods = maxPeriodsForCampus(STATE.campus);
     var head = '<tr><th class="tt-cls">Class</th>';
-    for (var p = 1; p <= 8; p++) head += '<th>P' + p + '</th>';
+    for (var p = 1; p <= maxPeriods; p++) head += '<th>P' + p + '</th>';
     head += '</tr>';
     var body = STATE.rows.map(function (r, ri) {
       var tds = r.cells.map(function (c, ci) {
@@ -498,8 +508,9 @@
     var sel = byId("ttMobEntitySelect");
     if (sel && sel.value !== STATE.selectedClass) sel.value = STATE.selectedClass;
 
+    var maxPeriods = maxPeriodsForCampus(classRow._campus || STATE.campus);
     var academicCount = 0, activityCount = 0, freeCount = 0;
-    for (var p = 1; p <= 8; p++) {
+    for (var p = 1; p <= maxPeriods; p++) {
       var cell = getPeriodCell(classRow, p);
       if (!cell || !cell.subject || !cell.subject.trim()) {
         freeCount++;
@@ -537,8 +548,9 @@
         '</div>' +
       '</div>';
 
+    var maxPeriods = maxPeriodsForCampus(classRow._campus || STATE.campus);
     var periodsHtml = '<div class="tt-mob-timeline">';
-    for (var p = 1; p <= 8; p++) {
+    for (var p = 1; p <= maxPeriods; p++) {
       var cell = getPeriodCell(classRow, p);
       var hasSubj = !!(cell && cell.subject && cell.subject.trim());
       var isAct = hasSubj && (cell.isActivity || ACTIVITY[cell.subject.toLowerCase()]);
@@ -601,11 +613,27 @@
     if (sel && sel.value !== STATE.selectedTeacher) sel.value = STATE.selectedTeacher;
 
     var allRows = getAllDayRows(STATE.day);
+
+    // Determine max periods across all campuses for this teacher
+    var teacherCampuses = new Set();
+    allRows.forEach(function(r) {
+      for (var p = 1; p <= 9; p++) {
+        var c = getPeriodCell(r, p);
+        if (c && c.teacher && teacherMatches(c.teacher, STATE.selectedTeacher)) {
+          teacherCampuses.add(r._campus || STATE.campus);
+        }
+      }
+    });
+    var maxPeriods = 8;
+    teacherCampuses.forEach(function(c) {
+      maxPeriods = Math.max(maxPeriods, maxPeriodsForCampus(c));
+    });
+
     var teacherSlotsByPeriod = {};
-    for (var p = 1; p <= 8; p++) teacherSlotsByPeriod[p] = [];
+    for (var p = 1; p <= maxPeriods; p++) teacherSlotsByPeriod[p] = [];
 
     allRows.forEach(function (r) {
-      for (var p = 1; p <= 8; p++) {
+      for (var p = 1; p <= maxPeriods; p++) {
         var c = getPeriodCell(r, p);
         if (c && c.teacher && teacherMatches(c.teacher, STATE.selectedTeacher)) {
           teacherSlotsByPeriod[p].push({ className: r.class, campus: r._campus, cell: c });
@@ -617,7 +645,7 @@
     var classesSet = {};
     var teacherCampusesSet = {};
 
-    for (var p = 1; p <= 8; p++) {
+    for (var p = 1; p <= maxPeriods; p++) {
       var slots = teacherSlotsByPeriod[p];
       if (slots.length === 0) {
         freeCount++;
@@ -660,7 +688,7 @@
       '</div>';
 
     var periodsHtml = '<div class="tt-mob-timeline">';
-    for (var p = 1; p <= 8; p++) {
+    for (var p = 1; p <= maxPeriods; p++) {
       var slots = teacherSlotsByPeriod[p];
 
       if (slots.length === 1) {
@@ -753,8 +781,16 @@
     }).catch(function (e) { toast(e.message || e, "err"); });
   }
 
-  /* ---------- import: quote-aware TSV paste from Excel/Sheets ---------- */
-  function openImport() { byId("imText").value = ""; P.openModal("ttImportModal"); }
+  /* ---------- import: Excel Import Wizard ---------- */
+  function openImport() {
+    if (window.TimetableImportWizard) {
+      window.TimetableImportWizard.open();
+    } else {
+      // Fallback to old modal if wizard not loaded
+      byId("imText").value = "";
+      P.openModal("ttImportModal");
+    }
+  }
 
   // parse tab-separated text where cells may be quoted and contain newlines
   function parseTSV(text) {

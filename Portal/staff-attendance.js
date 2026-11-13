@@ -94,6 +94,20 @@
   $("view").innerHTML = shell();
   bind();
   monthCache = {};
+
+  // Track mobile state for responsive re-rendering
+  var _lastWasMobile = isMobile();
+  window.addEventListener("resize", function () {
+    var mob = isMobile();
+    if (mob !== _lastWasMobile) {
+      _lastWasMobile = mob;
+      // Re-render the current month data if loaded
+      if (current) {
+        render(current, $("saMonth") ? $("saMonth").value : P.thisMonth());
+      }
+    }
+  });
+
   try { if (P.Cache && P.Cache.remove) P.Cache.remove("staffmon_" + P.thisMonth()); } catch (e) {}
   loadMonth(P.thisMonth(), true);
 
@@ -109,8 +123,8 @@
         '<button type="button" class="sa-mob-mode-btn ' + (saMobileMode === "today" ? "active" : "") + '" id="saMobBtnToday" data-mode="today"><i class="material-icons">today</i> Today\'s Status</button>' +
         '<button type="button" class="sa-mob-mode-btn ' + (saMobileMode === "month" ? "active" : "") + '" id="saMobBtnMonth" data-mode="month"><i class="material-icons">date_range</i> Monthly View</button>' +
       '</div>' +
-      '<div id="saMobTodaySection" style="' + (saMobileMode === "today" ? "display:block;" : "display:none;") + '"></div>' +
-      '<div id="saMobMonthSection" style="' + (saMobileMode === "month" ? "display:block;" : "display:none;") + '">' +
+      '<div id="saMobTodaySection"></div>' +
+      '<div id="saMobMonthSection">' +
         '<div class="sa-mob-month-nav">' +
           '<button type="button" class="sa-mob-step-btn" id="saPrevMonth" aria-label="Previous Month">‹</button>' +
           '<div class="sa-mob-month-center">' +
@@ -148,17 +162,32 @@
   }
 
   function dayModal() {
-    return '<div class="modal-overlay" id="saDayModal"><div class="modal-content" style="max-width:700px;">' +
-      '<div class="modal-header-container"><h3 id="saDayTitle">Staff on this day</h3><button class="modal-close-icon" data-close="saDayModal">&times;</button></div>' +
-      '<div class="day-drill-tabs" id="saDayTabs"></div><div id="saDayBody"></div>' +
-      '<button class="btn btn-secondary" data-close="saDayModal" style="margin-top:16px;">Close</button></div></div>';
+    return '<div class="modal-overlay" id="saDayModal">' +
+      '<div class="modal-content" style="max-width:720px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;padding:22px 24px;">' +
+        '<div class="modal-header-container" style="flex-shrink:0;margin-bottom:12px;padding-bottom:10px;">' +
+          '<h3 id="saDayTitle" style="margin:0;font-size:18px;font-weight:800;color:var(--text-main);">Staff on this day</h3>' +
+          '<button class="modal-close-icon" data-close="saDayModal">&times;</button>' +
+        '</div>' +
+        '<div class="day-drill-tabs" id="saDayTabs" style="flex-shrink:0;margin-bottom:12px;"></div>' +
+        '<div id="saDayBody" style="flex:1;overflow-y:auto;min-height:140px;max-height:calc(85vh - 170px);-webkit-overflow-scrolling:touch;padding-right:6px;"></div>' +
+        '<div style="flex-shrink:0;padding-top:12px;margin-top:auto;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">' +
+          '<button class="btn btn-secondary" data-close="saDayModal" style="width:auto;min-width:110px;">Close</button>' +
+        '</div>' +
+      '</div></div>';
   }
 
   function employeeModal() {
-    return '<div class="modal-overlay" id="saEmployeeModal"><div class="modal-content" style="max-width:820px;">' +
-      '<div class="modal-header-container"><h3 id="saEmployeeTitle">Attendance details</h3><button class="modal-close-icon" data-close="saEmployeeModal">&times;</button></div>' +
-      '<div id="saEmployeeBody"></div>' +
-      '<button class="btn btn-secondary" data-close="saEmployeeModal" style="margin-top:16px;">Close</button></div></div>';
+    return '<div class="modal-overlay" id="saEmployeeModal">' +
+      '<div class="modal-content" style="max-width:820px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;padding:22px 24px;">' +
+        '<div class="modal-header-container" style="flex-shrink:0;margin-bottom:12px;padding-bottom:10px;">' +
+          '<h3 id="saEmployeeTitle" style="margin:0;font-size:18px;font-weight:800;color:var(--text-main);">Attendance details</h3>' +
+          '<button class="modal-close-icon" data-close="saEmployeeModal">&times;</button>' +
+        '</div>' +
+        '<div id="saEmployeeBody" style="flex:1;overflow-y:auto;min-height:140px;max-height:calc(85vh - 170px);-webkit-overflow-scrolling:touch;padding-right:6px;"></div>' +
+        '<div style="flex-shrink:0;padding-top:12px;margin-top:auto;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">' +
+          '<button class="btn btn-secondary" data-close="saEmployeeModal" style="width:auto;min-width:110px;">Close</button>' +
+        '</div>' +
+      '</div></div>';
   }
 
   function editModal() {
@@ -636,6 +665,17 @@
       });
     }
 
+    var empModal = $("saEmployeeModal");
+    if (empModal && !empModal._backdropBound) {
+      empModal._backdropBound = true;
+      empModal.addEventListener("click", function (e) {
+        if (e.target === empModal) P.closeModal("saEmployeeModal");
+      });
+      Array.prototype.forEach.call(empModal.querySelectorAll("[data-close='saEmployeeModal']"), function (btn) {
+        btn.onclick = function () { P.closeModal("saEmployeeModal"); };
+      });
+    }
+
     P.openModal("saEmployeeModal");
   }
 
@@ -669,7 +709,18 @@
     $("saDayTabs").innerHTML = tabBtn("Present", "t-green", (d.Present || []).length) + tabBtn("Late", "t-orange", (d.Late || []).length) + tabBtn("HalfDay", "t-purple", (d.HalfDay || []).length) + tabBtn("Absent", "t-red", (d.Absent || []).length) + tabBtn("Leave", "t-green", (d.Leave || []).length);
     Array.prototype.forEach.call($("saDayTabs").querySelectorAll("button"), function (b) { b.addEventListener("click", function () { showTab(b.getAttribute("data-k")); }); });
     var first = (d.Late || []).length ? "Late" : ((d.HalfDay || []).length ? "HalfDay" : ((d.Absent || []).length ? "Absent" : ((d.Leave || []).length ? "Leave" : "Present")));
-    showTab(first); P.openModal("saDayModal");
+    showTab(first);
+    var modal = $("saDayModal");
+    if (modal && !modal._backdropBound) {
+      modal._backdropBound = true;
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) P.closeModal("saDayModal");
+      });
+      Array.prototype.forEach.call(modal.querySelectorAll("[data-close='saDayModal']"), function (btn) {
+        btn.onclick = function () { P.closeModal("saDayModal"); };
+      });
+    }
+    P.openModal("saDayModal");
   }
 
   function tabBtn(key, cls, n) { var label = {Present:"Present",Late:"Late",HalfDay:"Half day",Absent:"Absent",Leave:"Leave"}[key] || key; return '<button class="' + cls + '" data-k="' + key + '"><span class="n">' + n + '</span><span class="l">' + label + '</span></button>'; }

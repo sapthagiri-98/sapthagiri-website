@@ -406,6 +406,28 @@
     loadKpis();
     initCalendar();
 
+    // Track mobile state for responsive re-rendering of overview
+    var _lastWasMobile = (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+    window.addEventListener("resize", function () {
+      var mob = (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
+      if (mob !== _lastWasMobile) {
+        _lastWasMobile = mob;
+        // Re-render the current calendar if on overview tab
+        if (st.tab === "overview") {
+          var m = $("exCalMonth");
+          if (m && m.value) {
+            var p = m.value.split("-"), yy = +p[0], mm = +p[1];
+            P.api("getAdminExamCalendarPayload", [m.value], { overlay: false }).then(function (pl) {
+              var events = (pl && pl.events) || {};
+              renderCal(events, yy, mm);
+              var mobGrid = $("exCalGridMob");
+              if (mobGrid) renderCal(events, yy, mm, mobGrid);
+            }).catch(function () {});
+          }
+        }
+      }
+    });
+
     function shell() {
       return '<div class="card wide-card">' +
         '<div class="mod-head"><div><span class="eyebrow">Management</span><h2 style="margin-bottom:4px;">Examinations Management</h2>' +
@@ -444,7 +466,15 @@
     var mobProgClasses = [], mobProgBuckets = [], mobProgClassData = null, mobProgSelectedStudent = null;
 
     function overviewPane() {
-      return '<div id="exMobUpcomingWrap">' +
+      return '<div class="ex-desktop-overview">' +
+        '<div class="ex-caltoolbar"><h3 id="exCalLabel">—</h3>' +
+          '<div class="smart-selector" style="max-width:220px;"><div class="ss-icon"><i class="material-icons">calendar_month</i></div><div class="ss-body"><div class="ss-label">Month</div><input type="month" id="exCalMonth"></div></div></div>' +
+        '</div>' +
+        '<div class="cal-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>' +
+        '<div class="cal-grid" id="exCalGrid" style="gap:6px;"></div>' +
+      '</div>' +
+      '<div class="ex-mobile-overview">' +
+        '<div id="exMobUpcomingWrap">' +
         '<div style="font-size:13.5px;font-weight:800;color:var(--maroon);margin:6px 0 10px;display:flex;align-items:center;gap:6px;">' +
           '<i class="material-icons" style="font-size:18px;">event_upcoming</i> Upcoming & Scheduled Examinations' +
         '</div>' +
@@ -472,10 +502,11 @@
         '<i class="material-icons" id="exMobCalArrow" style="font-size:18px;">expand_more</i>' +
       '</button>' +
       '<div id="exCalGridWrap" class="ex-cal-grid-wrap">' +
-        '<div class="ex-caltoolbar"><h3 id="exCalLabel">—</h3>' +
-          '<div class="smart-selector" style="max-width:220px;"><div class="ss-icon"><i class="material-icons">calendar_month</i></div><div class="ss-body"><div class="ss-label">Month</div><input type="month" id="exCalMonth"></div></div></div>' +
+        '<div class="ex-caltoolbar"><h3 id="exCalLabelMob">—</h3>' +
+          '<div class="smart-selector" style="max-width:220px;"><div class="ss-icon"><i class="material-icons">calendar_month</i></div><div class="ss-body"><div class="ss-label">Month</div><input type="month" id="exCalMonthMob"></div></div></div>' +
         '<div class="cal-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>' +
-        '<div class="cal-grid" id="exCalGrid" style="gap:6px;"></div>' +
+        '<div class="cal-grid" id="exCalGridMob" style="gap:6px;"></div>' +
+      '</div>' +
       '</div>';
     }
 
@@ -542,6 +573,12 @@
     function initCalendar() {
       $("exCalMonth").value = P.thisMonth();
       $("exCalMonth").addEventListener("change", loadCalendar);
+      // Mobile calendar
+      var mobCalMonth = $("exCalMonthMob");
+      if (mobCalMonth) {
+        mobCalMonth.value = P.thisMonth();
+        mobCalMonth.addEventListener("change", loadCalendar);
+      }
       var toggleBtn = $("exMobCalToggle");
       if (toggleBtn) {
         toggleBtn.addEventListener("click", function () {
@@ -559,10 +596,30 @@
       var m = $("exCalMonth").value; if (!m) return;
       var p = m.split("-"), yy = +p[0], mm = +p[1];
       $("exCalLabel").textContent = new Date(yy, mm - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+      // Also update mobile label if visible
+      var mobLabel = $("exCalLabelMob");
+      if (mobLabel) mobLabel.textContent = new Date(yy, mm - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+      // Keep mobile month picker in sync
+      var mobMonth = $("exCalMonthMob");
+      if (mobMonth && mobMonth.value !== m) mobMonth.value = m;
       $("exCalGrid").innerHTML = '<div class="ex-loading" style="grid-column:span 7;"><i class="material-icons">sync</i></div>';
-      P.api("getAdminExamCalendarPayload", [m], { overlay: false }).then(function (pl) { renderCal((pl && pl.events) || {}, yy, mm); }).catch(function (e) { $("exCalGrid").innerHTML = '<div class="ex-empty" style="grid-column:span 7;"><i class="material-icons">error_outline</i>' + esc(e.message || e) + "</div>"; });
+      var mobGrid = $("exCalGridMob");
+      if (mobGrid) mobGrid.innerHTML = '<div class="ex-loading" style="grid-column:span 7;"><i class="material-icons">sync</i></div>';
+      P.api("getAdminExamCalendarPayload", [m], { overlay: false }).then(function (pl) {
+        var events = (pl && pl.events) || {};
+        renderCal(events, yy, mm);
+        // Also render to mobile grid
+        var mobGrid = $("exCalGridMob");
+        if (mobGrid) renderCal(events, yy, mm, mobGrid);
+      }).catch(function (e) {
+        $("exCalGrid").innerHTML = '<div class="ex-empty" style="grid-column:span 7;"><i class="material-icons">error_outline</i>' + esc(e.message || e) + "</div>";
+        var mobGrid = $("exCalGridMob");
+        if (mobGrid) mobGrid.innerHTML = '<div class="ex-empty" style="grid-column:span 7;"><i class="material-icons">error_outline</i>' + esc(e.message || e) + "</div>";
+      });
     }
-    function renderCal(events, yy, mm) {
+    function renderCal(events, yy, mm, targetGrid) {
+      targetGrid = targetGrid || $("exCalGrid");
+      if (!targetGrid) return;
       var pad = new Date(yy, mm - 1, 1).getDay(), dim = new Date(yy, mm, 0).getDate(), today = P.todayIso(), html = "";
       for (var i = 0; i < pad; i++) html += '<div class="ex-calcell empty"></div>';
       var upcomingItems = [];
@@ -579,30 +636,32 @@
         }
         html += '<div class="ex-calcell ' + (isToday ? "today" : "") + '" data-day="' + ds + '"><div class="ex-calnum">' + d + "</div>" + mini + "</div>";
       }
-      $("exCalGrid").innerHTML = html;
-      Array.prototype.forEach.call($("exCalGrid").querySelectorAll(".ex-calcell[data-day]"), function (c) { c.addEventListener("click", function () { openDay(c.getAttribute("data-day")); }); });
+      targetGrid.innerHTML = html;
+      Array.prototype.forEach.call(targetGrid.querySelectorAll(".ex-calcell[data-day]"), function (c) { c.addEventListener("click", function () { openDay(c.getAttribute("data-day")); }); });
 
-      rawUpcomingItems = upcomingItems;
-      var examSel = $("exMobFilterExam"), classSel = $("exMobFilterClass");
-      if (examSel && classSel) {
-        var examsMap = {}, classesMap = {};
-        upcomingItems.forEach(function (it) {
-          if (it.e.examName) examsMap[it.e.examName] = true;
-          var cls = it.e.gradeLabel || it.e.grade;
-          if (cls) classesMap[cls] = true;
-        });
-        var curExam = examSel.value, curClass = classSel.value;
-        examSel.innerHTML = '<option value="">All Exams</option>' + Object.keys(examsMap).sort().map(function (n) {
-          return '<option value="' + esc(n) + '"' + (n === curExam ? ' selected' : '') + '>' + esc(n) + '</option>';
-        }).join("");
-        classSel.innerHTML = '<option value="">All Classes</option>' + Object.keys(classesMap).sort().map(function (c) {
-          return '<option value="' + esc(c) + '"' + (c === curClass ? ' selected' : '') + '>' + esc(c) + '</option>';
-        }).join("");
+      if (targetGrid === $("exCalGrid")) {
+        rawUpcomingItems = upcomingItems;
+        var examSel = $("exMobFilterExam"), classSel = $("exMobFilterClass");
+        if (examSel && classSel) {
+          var examsMap = {}, classesMap = {};
+          upcomingItems.forEach(function (it) {
+            if (it.e.examName) examsMap[it.e.examName] = true;
+            var cls = it.e.gradeLabel || it.e.grade;
+            if (cls) classesMap[cls] = true;
+          });
+          var curExam = examSel.value, curClass = classSel.value;
+          examSel.innerHTML = '<option value="">All Exams</option>' + Object.keys(examsMap).sort().map(function (n) {
+            return '<option value="' + esc(n) + '"' + (n === curExam ? ' selected' : '') + '>' + esc(n) + '</option>';
+          }).join("");
+          classSel.innerHTML = '<option value="">All Classes</option>' + Object.keys(classesMap).sort().map(function (c) {
+            return '<option value="' + esc(c) + '"' + (c === curClass ? ' selected' : '') + '>' + esc(c) + '</option>';
+          }).join("");
 
-        examSel.onchange = renderFilteredUpcoming;
-        classSel.onchange = renderFilteredUpcoming;
+          examSel.onchange = renderFilteredUpcoming;
+          classSel.onchange = renderFilteredUpcoming;
+        }
+        renderFilteredUpcoming();
       }
-      renderFilteredUpcoming();
     }
 
     function renderFilteredUpcoming() {
@@ -713,13 +772,31 @@
       if (!mobProgBuckets.length) {
         P.api("progressGetBucketList", [], { overlay: false }).then(function (bs) {
           var labels = {};
-          (bs || []).forEach(function (b) {
-            if (typeof b === "string") labels[b] = b;
-            else if (b && b.bucket) labels[b.bucket] = b.label || b.bucket;
-          });
+          if (Array.isArray(bs)) {
+            bs.forEach(function (b) {
+              if (typeof b === "string") labels[b] = b;
+              else if (b && typeof b === "object") {
+                var k = String(b.bucket || b.id || b.name || "");
+                var v = String(b.label || b.name || b.bucket || "");
+                if (k) labels[k] = v;
+              }
+            });
+          } else if (bs && typeof bs === "object") {
+            Object.keys(bs).forEach(function (k) {
+              var val = bs[k];
+              labels[k] = (typeof val === "string") ? val : String((val && (val.label || val.name || val.bucket)) || k);
+            });
+          }
           mobProgBuckets = BUCKET_SEQ.map(function (bucket) {
-            return { value: bucket, label: labels[bucket] || bucket };
+            var lbl = labels[bucket] || bucket;
+            if (typeof lbl !== "string") lbl = String(bucket);
+            return { value: bucket, label: lbl };
           });
+          bkSel.innerHTML = '<option value="">Select assessment…</option>' + mobProgBuckets.map(function (b) {
+            return '<option value="' + esc(b.value) + '">' + esc(b.label) + '</option>';
+          }).join("");
+        }).catch(function () {
+          mobProgBuckets = BUCKET_SEQ.map(function (bucket) { return { value: bucket, label: bucket }; });
           bkSel.innerHTML = '<option value="">Select assessment…</option>' + mobProgBuckets.map(function (b) {
             return '<option value="' + esc(b.value) + '">' + esc(b.label) + '</option>';
           }).join("");

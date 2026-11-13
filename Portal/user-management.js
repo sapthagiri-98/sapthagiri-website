@@ -20,6 +20,7 @@
     { key: "Syllabus Tracker",         group: "teacher" },
     { key: "My Attendance Log",        group: "teacherOnly" },
     { key: "Examinations Tracker",     group: "teacherOnly" },
+    { key: "My Schedule",              group: "teacherOnly" },
     { key: "Staff Attendance Tracker", group: "mgmt" },
     { key: "Holidays Management",      group: "mgmt" },
     { key: "Examinations Management",  group: "mgmt" },
@@ -179,13 +180,18 @@
   function buildModules(u) {
     var host = $("fModules");
     var groups = { teacher: "Teacher tools", teacherOnly: "Teacher-only", mgmt: "Management" };
-    var html = "", lastGroup = "";
-    MODULES.forEach(function (m) {
-      if (m.group !== lastGroup) { html += '<div class="um-modhdr">' + groups[m.group] + "</div>"; lastGroup = m.group; }
-      var on = u ? effective(u, m) : (m.group === "mgmt" ? false : m.group === "teacher");
-      html += '<label class="um-mod"><input type="checkbox" data-key="' + esc(m.key) + '" ' +
-        (on ? "checked" : "") + '/> ' + esc(m.key) +
-        "<small>" + (m.group === "mgmt" ? "admin" : m.group === "teacherOnly" ? "staff" : "core") + "</small></label>";
+    var order = ["teacher", "teacherOnly", "mgmt"];
+    var html = "";
+    order.forEach(function (grp) {
+      var inGroup = MODULES.filter(function (m) { return m && m.group === grp; });
+      if (!inGroup.length) return;
+      html += '<div class="um-modhdr">' + groups[grp] + "</div>";
+      inGroup.forEach(function (m) {
+        var on = u ? effective(u, m) : (m.group === "mgmt" ? false : true);
+        html += '<label class="um-mod"><input type="checkbox" data-key="' + esc(m.key) + '" ' +
+          (on ? "checked" : "") + '/> ' + esc(m.key) +
+          "<small>" + (m.group === "mgmt" ? "admin" : m.group === "teacherOnly" ? "staff" : "core") + "</small></label>";
+      });
     });
     host.innerHTML = html;
   }
@@ -237,7 +243,35 @@
   }
   async function boot() {
     if (P && P.bootPage) { try { P.bootPage("usermgmt"); } catch (_e) {} }
-    try { MODULES = await api("userModuleKeys", []); } catch (_e) { MODULES = MODULES_FALLBACK; }
+    try {
+      var serverMods = await api("userModuleKeys", []);
+      if (Array.isArray(serverMods) && serverMods.length) {
+        var list = serverMods.map(function (m) {
+          if (typeof m === "string") return { key: m, group: "teacher" };
+          return m;
+        });
+        var hasSched = list.some(function (m) { return m && m.key === "My Schedule"; });
+        if (!hasSched) {
+          var lastTeacherOnlyIdx = -1;
+          for (var i = list.length - 1; i >= 0; i--) {
+            if (list[i] && list[i].group === "teacherOnly") {
+              lastTeacherOnlyIdx = i;
+              break;
+            }
+          }
+          if (lastTeacherOnlyIdx >= 0) {
+            list.splice(lastTeacherOnlyIdx + 1, 0, { key: "My Schedule", group: "teacherOnly" });
+          } else {
+            list.push({ key: "My Schedule", group: "teacherOnly" });
+          }
+        }
+        MODULES = list;
+      } else {
+        MODULES = MODULES_FALLBACK;
+      }
+    } catch (_e) {
+      MODULES = MODULES_FALLBACK;
+    }
     // Delegated click handler — survives every table re-render.
     $("umList").addEventListener("click", function (ev) {
       var btn = ev.target.closest ? ev.target.closest(".um-ic") : null;

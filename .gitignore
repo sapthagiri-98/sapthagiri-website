@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+Portal/node_modules/
+
+# Test coverage and reports
+coverage/
+Portal/coverage/
+
+# Build and test caches
+.vite/
+.vitest/
+*.log
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment / local secrets
+.env
+.env.local
+*.local
