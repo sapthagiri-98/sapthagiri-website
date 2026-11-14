@@ -70,7 +70,7 @@
         '<div class="timing-line" id="sylTiming"></div>' +
         '<div id="sylCards"><div class="syl-empty"><i class="material-icons">touch_app</i>Tap a class above to load its lessons.</div></div>' +
       '</div>' +
-      sessionsModal() + explainModal();
+      sessionsModal() + explainModal() + spokenModal();
 
     bindModals();
     P.api("getTeacherClassSubjects", [me], { text: "Loading your classes…" }).then(function (list) {
@@ -115,6 +115,24 @@
   function renderCards(catalog, cls, subject) {
     var cards = $("sylCards");
     if (!catalog.length) { cards.innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No lessons found for this class &amp; subject.</div>'; return; }
+
+    var isSpoken = /spoken\s*(english|skills)/i.test(String(subject).trim());
+
+    if (isSpoken) {
+      // Day-wise presentation for Spoken English / Spoken Skills
+      var out = '<div class="syl-sechead focus"><i class="material-icons">record_voice_over</i> Day-wise Spoken English Plans (' + catalog.length + ' Days)</div>';
+      out += catalog.map(function (item, idx) {
+        return cardHtml(item, idx, cls, subject);
+      }).join("");
+      cards.innerHTML = '<div class="syl-grid spoken-grid">' + out + '</div>';
+
+      Array.prototype.forEach.call(cards.querySelectorAll("[data-spoken]"), function (b) {
+        b.addEventListener("click", function () {
+          openSpokenModal(cls, subject, b.getAttribute("data-spoken"), b.getAttribute("data-day"));
+        });
+      });
+      return;
+    }
 
     // bucket by target month
     var buckets = {}, unscheduled = [];
@@ -163,7 +181,19 @@
     var monthPill = '<span class="syl-pill month"><i class="material-icons">event</i>' + esc(item.targetMonth || "—") + '</span>';
 
     var actions;
-    if (item.type === "AstraGen") {
+    if (item.type === "SpokenEnglish" || /spoken\s*(english|skills)/i.test(String(subject).trim())) {
+      var doneTasks = item.completedTasks || 0;
+      var totTasks = item.totalTasks || 4;
+      var statusBadge = pct === 100
+        ? '<span class="syl-pill" style="background:#dcfce7;color:#15803d;font-weight:700;"><i class="material-icons" style="font-size:13px;">check_circle</i> Completed</span>'
+        : (pct > 0
+          ? '<span class="syl-pill" style="background:#fef3c7;color:#b45309;font-weight:700;"><i class="material-icons" style="font-size:13px;">timelapse</i> In Progress (' + doneTasks + '/' + totTasks + ')</span>'
+          : '<span class="syl-pill" style="background:#f1f5f9;color:#64748b;font-weight:700;"><i class="material-icons" style="font-size:13px;">pending</i> Pending</span>');
+      actions = '<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px;">' +
+        statusBadge +
+        '<button class="syl-view" data-spoken="' + esc(item.name) + '" data-day="' + esc(item.lessonNo || idx + 1) + '"><i class="material-icons">menu_book</i> View Lesson &amp; Checklist</button>' +
+        '</div>';
+    } else if (item.type === "AstraGen") {
       actions = '<button class="syl-view" data-sessions="' + esc(item.name) + '"><i class="material-icons">play_circle</i> View Sessions</button>';
     } else {
       actions =
@@ -249,6 +279,199 @@
     body.innerHTML = tabs;
     Array.prototype.forEach.call(body.querySelectorAll(".syl-tab"), function (b) { b.addEventListener("click", function () { openTab(b.getAttribute("data-sess"), b); }); });
     openTab(encodeURIComponent(names[0]), body.querySelector(".syl-tab"));
+  }
+
+  /* ---------------- Spoken English Lesson Viewer & Checklist ---------------- */
+  function openSpokenModal(cls, subject, lessonName, dayNum) {
+    var titleEl = $("sylSpokenTitle"), bodyEl = $("sylSpokenBody");
+    if (!titleEl || !bodyEl) return;
+    titleEl.textContent = lessonName;
+    bodyEl.innerHTML = '<div class="syl-empty"><i class="material-icons">sync</i>Loading lesson content &amp; checklist…</div>';
+    P.openModal("sylSpokenModal");
+
+    // Retrieve embedded structured lesson content if available
+    var dataMap = window.SpokenEnglishData || {};
+    var lessonData = dataMap[cls + "||" + dayNum] || dataMap["Class " + cls.replace(/\D/g, "") + "||" + dayNum];
+
+    // Fetch checklist tasks from database
+    P.api("extractTasksFromDrivePDF", [cls, subject, lessonName, me], { overlay: false }).then(function (res) {
+      var tasksBySession = res || {};
+      var checklistTasks = tasksBySession["Daily Checklist"] || [];
+      if (!checklistTasks.length) {
+        Object.keys(tasksBySession).forEach(function (k) {
+          if (!checklistTasks.length) checklistTasks = tasksBySession[k] || [];
+        });
+      }
+      renderSpokenLessonView(cls, subject, lessonName, dayNum, lessonData, checklistTasks);
+    }).catch(function (e) {
+      renderSpokenLessonView(cls, subject, lessonName, dayNum, lessonData, []);
+    });
+  }
+
+  function renderSpokenLessonView(cls, subject, lessonName, dayNum, lessonData, checklistTasks) {
+    var bodyEl = $("sylSpokenBody");
+    var html = "";
+
+    // 1. Lesson Header Card
+    html += '<div class="syl-spoken-card" style="margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">';
+    html += '<span style="font-size:12px;font-weight:800;color:var(--maroon,#7a151a);background:#fff5f5;padding:4px 8px;border-radius:6px;border:1px solid #fed7d7;">' + esc(cls) + ' · Day ' + esc(dayNum) + '</span>';
+    if (lessonData && lessonData.video_url) {
+      html += '<a href="' + esc(lessonData.video_url) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:5px;background:#dc2626;color:#fff;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;text-decoration:none;"><i class="material-icons" style="font-size:15px;color:#fff;">smart_display</i> Watch Preparation Video</a>';
+    }
+    html += '</div>';
+
+    if (lessonData && lessonData.objective) {
+      html += '<div style="font-size:13px;line-height:1.5;color:#1e293b;"><b>ప్రధాన లక్ష్యం (Objective):</b> ' + esc(lessonData.objective) + '</div>';
+    }
+    html += '</div>';
+
+    // 2. Interactive Tables (if parsed)
+    if (lessonData && lessonData.tables && lessonData.tables.length) {
+      html += '<div style="margin-bottom:16px;">';
+      html += '<h4 style="margin:0 0 8px;font-size:14px;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:var(--maroon,#7a151a);font-size:18px;">table_chart</i> Sentence Models &amp; Classroom Practice</h4>';
+      lessonData.tables.forEach(function (tbl, tIdx) {
+        if (!tbl || !tbl.length) return;
+        html += '<div style="overflow-x:auto;margin-bottom:12px;border:1px solid #e2e8f0;border-radius:8px;">';
+        html += '<table class="ex-table" style="width:100%;border-collapse:collapse;font-size:12.5px;">';
+        tbl.forEach(function (row, rIdx) {
+          var isHeader = (rIdx === 0);
+          html += '<tr style="' + (isHeader ? 'background:#f8fafc;font-weight:800;color:#0f172a;' : 'background:#fff;border-top:1px solid #f1f5f9;') + '">';
+          row.forEach(function (cell) {
+            var tag = isHeader ? 'th' : 'td';
+            html += '<' + tag + ' style="padding:8px 10px;text-align:left;vertical-align:top;white-space:normal;line-height:1.4;">' + esc(cell) + '</' + tag + '>';
+          });
+          html += '</tr>';
+        });
+        html += '</table></div>';
+      });
+      html += '</div>';
+    }
+
+    // 3. Full Lesson Text Sections
+    if (lessonData && lessonData.full_content) {
+      html += '<div style="margin-bottom:18px;">';
+      html += '<h4 style="margin:0 0 8px;font-size:14px;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:var(--maroon,#7a151a);font-size:18px;">library_books</i> Teaching Instructions &amp; Classroom Plan</h4>';
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;max-height:260px;overflow-y:auto;font-size:12.5px;line-height:1.6;color:#334155;white-space:pre-wrap;font-family:Inter,system-ui,sans-serif;">' + esc(lessonData.full_content) + '</div>';
+      html += '</div>';
+    }
+
+    // 4. Daily Teacher Checklist (Section 10)
+    html += '<div class="syl-spoken-checklist-box" style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px;margin-top:14px;">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">';
+    html += '<h4 style="margin:0;font-size:14px;color:#166534;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:#16a34a;font-size:18px;">checklist</i> Teacher Daily Checklist (పాఠం చివర Self-check)</h4>';
+    html += '<span id="sylSpokenChkCount" style="font-size:12px;font-weight:800;color:#15803d;"></span>';
+    html += '</div>';
+    html += '<p style="margin:0 0 12px;font-size:12px;color:#15803d;line-height:1.4;">Complete all 3–4 items below during your period to mark today\'s Spoken English lesson as Done.</p>';
+
+    var chkList = checklistTasks.length ? checklistTasks : (lessonData && lessonData.checklist ? lessonData.checklist.map(function (c, ci) {
+      return { taskKey: "SPOKEN::" + cls + "::" + dayNum + "::CHK::" + (ci + 1), content: c, checked: false };
+    }) : []);
+
+    if (!chkList.length) {
+      html += '<div class="ex-empty" style="padding:10px;">No checklist items found for this lesson.</div>';
+    } else {
+      html += '<div id="sylSpokenChkItems" style="display:flex;flex-direction:column;gap:8px;">';
+      chkList.forEach(function (t, i) {
+        var isChecked = !!t.checked;
+        html += '<label class="syl-spoken-chk-item ' + (isChecked ? 'checked' : '') + '" style="display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid ' + (isChecked ? '#86efac' : '#cbd5e1') + ';padding:10px 12px;border-radius:8px;cursor:pointer;transition:all 0.15s ease;">';
+        html += '<input type="checkbox" data-task-key="' + esc(t.taskKey) + '" ' + (isChecked ? 'checked' : '') + ' style="margin-top:3px;accent-color:#16a34a;width:18px;height:18px;flex-shrink:0;">';
+        html += '<span style="font-size:13px;line-height:1.45;color:#1e293b;">' + esc(t.content) + '</span>';
+        html += '</label>';
+      });
+      html += '</div>';
+
+      html += '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">';
+      html += '<button type="button" class="btn btn-secondary" data-close="sylSpokenModal" style="width:auto;padding:8px 14px;">Close</button>';
+      html += '<button type="button" class="btn btn-success" id="sylSpokenSaveBtn" style="width:auto;padding:8px 16px;display:inline-flex;align-items:center;gap:6px;"><i class="material-icons" style="font-size:16px;color:#fff;">save</i> Save Daily Progress</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    bodyEl.innerHTML = html;
+
+    // Wire checklist interaction and live counter
+    function updateCounter() {
+      var inputs = bodyEl.querySelectorAll("#sylSpokenChkItems input[type='checkbox']");
+      var done = 0;
+      Array.prototype.forEach.call(inputs, function (inp) { if (inp.checked) done++; });
+      var countEl = $("sylSpokenChkCount");
+      if (countEl) countEl.textContent = done + " / " + inputs.length + " Completed";
+      var saveBtn = $("sylSpokenSaveBtn");
+      if (saveBtn) {
+        if (done === inputs.length && inputs.length > 0) {
+          saveBtn.innerHTML = '<i class="material-icons" style="font-size:16px;color:#fff;">check_circle</i> Mark Lesson Done (' + done + '/' + inputs.length + ')';
+          saveBtn.classList.remove("btn-primary");
+          saveBtn.classList.add("btn-success");
+        } else {
+          saveBtn.innerHTML = '<i class="material-icons" style="font-size:16px;color:#fff;">save</i> Save In Progress (' + done + '/' + inputs.length + ')';
+          saveBtn.classList.remove("btn-success");
+          saveBtn.classList.add("btn-primary");
+        }
+      }
+    }
+
+    Array.prototype.forEach.call(bodyEl.querySelectorAll("#sylSpokenChkItems input[type='checkbox']"), function (inp) {
+      inp.addEventListener("change", function () {
+        var label = inp.closest(".syl-spoken-chk-item");
+        if (label) {
+          label.classList.toggle("checked", inp.checked);
+          label.style.borderColor = inp.checked ? '#86efac' : '#cbd5e1';
+          label.style.background = inp.checked ? '#f0fdf4' : '#fff';
+        }
+        updateCounter();
+      });
+    });
+    updateCounter();
+
+    // Wire save button
+    var saveBtn = $("sylSpokenSaveBtn");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", function () {
+        saveSpokenChecklist(cls, subject, lessonName, dayNum);
+      });
+    }
+  }
+
+  function saveSpokenChecklist(cls, subject, lessonName, dayNum) {
+    var bodyEl = $("sylSpokenBody"), saveBtn = $("sylSpokenSaveBtn");
+    var inputs = bodyEl.querySelectorAll("#sylSpokenChkItems input[type='checkbox']");
+    if (!inputs.length) return;
+
+    var total = inputs.length, checkedCount = 0;
+    var savePromises = [];
+
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<i class="material-icons" style="font-size:16px;color:#fff;">sync</i> Saving…';
+    }
+
+    Array.prototype.forEach.call(inputs, function (inp) {
+      var isChecked = inp.checked;
+      if (isChecked) checkedCount++;
+      var taskKey = inp.getAttribute("data-task-key");
+      if (taskKey) {
+        savePromises.push(P.api("saveTaskProgress", [taskKey, isChecked, me, "Spoken English Check"], { overlay: false }));
+      }
+    });
+
+    Promise.all(savePromises).then(function () {
+      P.closeModal("sylSpokenModal");
+      var isFullyDone = (checkedCount === total && total > 0);
+      var msg = isFullyDone
+        ? "All " + total + " checklist items completed! Lesson marked Done."
+        : "Checklist progress saved (" + checkedCount + "/" + total + " completed).";
+      toast(msg, "ok");
+
+      // Reload catalog to refresh progress bar and badges
+      delete catalogCache[cls + "||" + subject];
+      delete tasksCache[cls + "||" + subject + "||" + lessonName];
+      loadCatalog(cls, subject);
+    }).catch(function (e) {
+      toast("Error saving checklist: " + (e.message || e), "err");
+    }).finally(function () {
+      if (saveBtn) saveBtn.disabled = false;
+    });
   }
   function openTab(encName, chip) {
     var name = decodeURIComponent(encName), panel = $("sylSessPanel");
@@ -1936,6 +2159,11 @@
       '<button id="sylExplainRegen" class="btn btn-warning-action" style="width:auto;padding:6px 12px;font-size:12px;"><i class="material-icons" style="color:#fff;font-size:14px;">refresh</i> Regenerate</button>' +
       '<button class="modal-close-icon" data-close="sylExplainModal">&times;</button></div></div>' +
       '<div id="sylExplainBody" style="overflow-y:auto;flex-grow:1;padding-right:4px;"></div></div></div>';
+  }
+  function spokenModal() {
+    return '<div class="modal-overlay" id="sylSpokenModal" style="z-index:1200;"><div class="modal-content" style="max-width:840px;width:100%;max-height:90vh;display:flex;flex-direction:column;">' +
+      '<div class="modal-header-container"><h3 id="sylSpokenTitle" style="font-size:16px;">Spoken English Lesson</h3><button class="modal-close-icon" data-close="sylSpokenModal">&times;</button></div>' +
+      '<div id="sylSpokenBody" style="overflow-y:auto;flex-grow:1;padding-right:4px;"></div></div></div>';
   }
   function drillModal() {
     return '<div class="modal-overlay" id="sylDrillModal"><div class="modal-content" style="max-width:640px;width:100%;max-height:86vh;display:flex;flex-direction:column;">' +

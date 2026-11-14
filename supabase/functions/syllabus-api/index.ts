@@ -107,6 +107,12 @@ function matchesSyllabusRow(teacherSubject: string, grade: any, rowSubject: stri
   const ts = normSubjKey(teacherSubject);
   const b = normSubjKey(rowSubject);
   const f = normSubjKey(rowStrand);
+
+  // Spoken English and Spoken Skills are treated as the same subject
+  if (ts === "spokenenglish" || ts === "spokenskills") {
+    return b === "spokenenglish" || b === "spokenskills";
+  }
+
   const gNum = gradeToNumber(grade);
   if (gNum !== null && gNum >= 6 && gNum <= 10) {
     if (ts === "maths" || ts === "maths-1") return (b === "maths" || b === "maths-1") && f !== "maths-2";
