@@ -87,24 +87,12 @@ def parse_and_slice_pdf(file_path, file_label):
         
         # Checklist from self-check section
         checklists = []
-        for p_txt in pages_txt:
-            if re.search(r'self[\s\-]check', p_txt, re.I):
-                capture = False
-                for line in p_txt.split('\n'):
-                    ls = line.strip()
-                    if re.search(r'self[\s\-]check', ls, re.I):
-                        capture = True
-                        continue
-                    if capture:
-                        if re.match(r'^(?:\[\s*\]|[☐•\-])\s*(.*)', ls):
-                            item = re.sub(r'^[\[\]☐•\-\s]+', '', ls).strip()
-                            if len(item) > 5:
-                                checklists.append(item)
-                        elif ls.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', 'SPOKEN')):
-                            if checklists:
-                                break
-            if checklists:
-                break
+        for line in last_txt.split('\n'):
+            line_s = line.strip()
+            if any(marker in line_s for marker in ['☐', '', '•', '- ']) and ('నేను' in line_s or 'పిల్ల' in line_s or 'విద్యార్థి' in line_s or 'గుర్తించాను' in line_s or 'చేశాను' in line_s or 'వివరించాను' in line_s or 'ఇచ్చాను' in line_s or 'అవకాశం' in line_s):
+                cleaned_chk = line_s.replace('•', '').replace('☐', '').replace('', '').replace('’', '').strip()
+                if cleaned_chk and len(cleaned_chk) > 10:
+                    checklists.append(cleaned_chk)
                     
         if not checklists:
             checklists = [
@@ -210,3 +198,4 @@ BEGIN
 
 if __name__ == '__main__':
     run()
+

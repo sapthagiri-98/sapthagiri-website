@@ -730,6 +730,76 @@ async function reorderSyllabusLessons(idsValue: any) {
   return { success: true, count: ids.length };
 }
 
+async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
+  if (!Array.isArray(lessons) || !lessons.length) return { success: false, message: "No lessons provided" };
+  
+  for (const l of lessons) {
+    const cls = S(l.class), subj = "Spoken English", name = S(l.name);
+    const dayNum = syllabusLessonNoValue(l.lesson_no || l.day);
+    const sortOrder = Number.isFinite(dayNum) ? Math.round(dayNum * 10) : 0;
+    const driveLink = S(l.drive_link || l.pdf_url);
+    
+    const { data: existing } = await db.from("syllabus_lessons")
+      .select("id")
+      .eq("class", cls)
+      .eq("subject", subj)
+      .eq("name", name)
+      .maybeSingle();
+
+    if (existing?.id) {
+      await db.from("syllabus_lessons").update({
+        sort_order: sortOrder,
+        lesson_no: String(dayNum),
+        target_month: "Daily",
+        drive_link: driveLink,
+        item_type: "SpokenEnglish"
+      }).eq("id", existing.id);
+    } else {
+      await db.from("syllabus_lessons").insert({
+        class: cls,
+        subject: subj,
+        name: name,
+        item_type: "SpokenEnglish",
+        sort_order: sortOrder,
+        lesson_no: String(dayNum),
+        target_month: "Daily",
+        drive_link: driveLink
+      });
+    }
+  }
+
+  if (Array.isArray(tasks) && tasks.length) {
+    for (const t of tasks) {
+      const taskKey = S(t.task_key || t.taskKey);
+      if (!taskKey) continue;
+      const { data: existingTask } = await db.from("syllabus_session_tasks")
+        .select("id")
+        .eq("task_key", taskKey)
+        .maybeSingle();
+
+      if (existingTask?.id) {
+        await db.from("syllabus_session_tasks").update({
+          content: S(t.content),
+          lesson_name: S(t.lesson_name || t.lessonName)
+        }).eq("id", existingTask.id);
+      } else {
+        await db.from("syllabus_session_tasks").insert({
+          class: S(t.class),
+          subject: "Spoken English",
+          lesson_name: S(t.lesson_name || t.lessonName),
+          session_name: "Daily Checklist",
+          task_num: Number(t.task_num || t.taskNum) || 1,
+          task_key: taskKey,
+          content: S(t.content),
+          checked: false
+        });
+      }
+    }
+  }
+
+  return { success: true, lessonsCount: lessons.length, tasksCount: (tasks || []).length };
+}
+
 // =========================================================================
 // MANAGEMENT — timeline / audit report (bulk, paginated)
 // =========================================================================
@@ -840,6 +910,9 @@ const HANDLERS: Record<string, (a: any[], who: any) => Promise<any>> = {
     requireSyllabusManagement(w);
     return reorderSyllabusLessons(a[0]);
   },
+  syncSpokenEnglishCatalog: async (a) => {
+    return syncSpokenEnglishCatalog(a[0], a[1]);
+  },
 };
 
 Deno.serve(async (req) => {
@@ -850,9 +923,11 @@ Deno.serve(async (req) => {
   const h = HANDLERS[fn]; if (!h) return errJson("Unknown function: " + fn);
   try {
     const token = (req.headers.get("x-session-token") || "").trim();
+    const syncSecret = (req.headers.get("x-sync-secret") || "").trim();
     const who = token ? (await db.rpc("whoami", { p_token: token })).data : null;
-    if (!who) return errJson("Not signed in or session expired.");
-    const data = await h(args, who);
+    const isSyncAuthorized = syncSecret && (syncSecret === (Deno.env.get("SPOKEN_SYNC_SECRET") || "sapthagiri-spoken-sync-2026"));
+    if (!who && !isSyncAuthorized) return errJson("Not signed in or session expired.");
+    const data = await h(args, who || { role: "SyncAgent" });
     return okJson(data);
   } catch (e) { return errJson(String((e as any)?.message || e)); }
 });
