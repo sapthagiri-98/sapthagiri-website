@@ -35,7 +35,7 @@
       '<div class="mod-head"><div><span class="eyebrow">Staff Portal</span><h2 style="margin-bottom:4px;">Examinations Tracker</h2>' +
       '<p class="view-description" style="margin:0;">Your exams, their syllabus, and marks entry once an exam is done.</p></div></div>' +
       '<div id="exUpcoming" style="margin-bottom:14px;"></div>' +
-      '<div class="ex-tabs" id="exTabs">' +
+      '<div class="ex-tabs ex-teacher-tabs" id="exTabs">' +
         '<button class="active" data-t="schedule"><i class="material-icons">calendar_month</i> Schedule</button>' +
         '<button data-t="marks"><i class="material-icons">edit_note</i> Marks Entry</button>' +
       '</div>' +

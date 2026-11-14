@@ -1339,7 +1339,10 @@
 
 /* Mobile Redesign for Examinations Management */
 @media(max-width:900px){
-  .ex-tabs, #exKpis, .ex-kpis, .ex-mob-tab-wrap, #exNewBtn{display:none!important;}
+  .ex-tabs:not(.ex-teacher-tabs), #exKpis, .ex-kpis, .ex-mob-tab-wrap, #exNewBtn{display:none!important;}
+  .ex-teacher-tabs{display:flex!important;width:100%;background:#f1f5f9;border-radius:12px;padding:4px;gap:6px;margin:8px 0 14px;}
+  .ex-teacher-tabs button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 12px;font-size:12.5px;font-weight:800;border:none;background:transparent;color:#64748b;border-radius:9px;cursor:pointer;transition:all 0.15s ease;}
+  .ex-teacher-tabs button.active{background:#fff;color:var(--maroon);box-shadow:0 1px 3px rgba(0,0,0,0.08);}
   .ex-mob-mode-seg{display:flex;gap:6px;background:#f1f5f9;padding:4px;border-radius:12px;margin:8px 0 14px;}
   .ex-mob-mode-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 12px;font-size:12.5px;font-weight:800;border:none;background:transparent;color:#64748b;border-radius:9px;cursor:pointer;transition:all 0.15s ease;}
   .ex-mob-mode-btn.active{background:#fff;color:#7a151a;box-shadow:0 1px 3px rgba(0,0,0,0.08);}
