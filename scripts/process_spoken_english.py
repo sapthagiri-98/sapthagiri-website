@@ -122,8 +122,29 @@ def run():
     files = [
         (r'C:\Users\vipul\Downloads\Spoken_English_Day1_Day2_Nursery_to_Class10_Telugu_Final.pdf', 'Days 1-2'),
         (r'C:\Users\vipul\Downloads\Spoken_English_Day3_Day4_Continuation_Telugu_Final.pdf', 'Days 3-4'),
-        (r'C:\Users\vipul\Downloads\Spoken_English_Day5_Day6_Continuation_Redo_Telugu_Final.pdf', 'Days 5-6')
+        (r'C:\Users\vipul\Downloads\Spoken_English_Day5_Day6_Continuation_Redo_Telugu_Final.pdf', 'Days 5-6'),
+        (r'C:\Users\vipul\Downloads\Spoken_English_Day7_Day8_Continuation_Nursery_to_Class10_Telugu.pdf', 'Days 7-8'),
     ]
+    
+    # Auto-discover any future Spoken_English_Day*.pdf in Downloads (e.g. Day 9, Day 10, etc.)
+    downloads = os.path.expanduser(r'C:\Users\vipul\Downloads')
+    known_paths = set(os.path.normpath(f[0]).lower() for f in files)
+    
+    # Ignore older duplicate drafts
+    ignore_files = {
+        'spoken_english_day3_day4_nursery_to_class10_telugu_final.pdf',
+        'spoken_english_day5_day6_continuation_nursery_to_class10_telugu.pdf'
+    }
+    
+    if os.path.exists(downloads):
+        for fname in os.listdir(downloads):
+            if fname.lower().endswith('.pdf') and 'spoken_english' in fname.lower() and 'day' in fname.lower():
+                if fname.lower() in ignore_files:
+                    continue
+                full_p = os.path.normpath(os.path.join(downloads, fname))
+                if full_p.lower() not in known_paths:
+                    files.append((full_p, fname))
+                    known_paths.add(full_p.lower())
     
     all_lessons = []
     for fpath, label in files:
@@ -192,9 +213,11 @@ BEGIN
 
     sql += "\nEND $$;\n"
 
+    with open('scripts/seed_spoken_english.sql', 'w', encoding='utf-8') as f:
+        f.write(sql)
     with open('scripts/seed_spoken_english_days1_to_6.sql', 'w', encoding='utf-8') as f:
         f.write(sql)
-    print("Updated scripts/seed_spoken_english_days1_to_6.sql")
+    print("Updated scripts/seed_spoken_english.sql and scripts/seed_spoken_english_days1_to_6.sql")
 
 if __name__ == '__main__':
     run()
