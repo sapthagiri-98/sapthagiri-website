@@ -165,7 +165,7 @@
       '<div class="a4">' +
         // -------- letterhead (logo image already contains the school name) --------
         '<div class="a4-top">' +
-          '<img class="a4-logo" src="header-logo.png" alt="' + esc(d.school.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';">' +
+          '<img class="a4-logo" src="logo-full.jpg" alt="' + esc(d.school.name) + '" onerror="this.src=\'header-logo.png\';">' +
           '<div class="a4-school" style="display:none">' + esc(d.school.name) + '</div>' +
           '<div class="a4-line">' + esc(d.school.line1) + '</div>' +
           '<div class="a4-line">Since 1998 · Day &amp; Residential · ' + esc(d.school.phone) + '</div>' +

@@ -95,18 +95,53 @@
     $("exCalGrid").innerHTML = html;
     Array.prototype.forEach.call($("exCalGrid").querySelectorAll(".ex-calcell[data-day]"), function (c) { c.addEventListener("click", function () { openDay(c.getAttribute("data-day")); }); });
   }
-  function openDay(ds) {
-    var list = st.events[ds] || [];
-    $("exDayTitle").textContent = "Exams on " + P.prettyDate(ds);
-    if (!list.length) { $("exDayBody").innerHTML = '<div class="ex-empty"><i class="material-icons">event_busy</i>No exams on this date.</div>'; P.openModal("exDayModal"); return; }
-    $("exDayBody").innerHTML = list.map(function (e, i) {
-      var syl = e.syllabus ? esc(e.syllabus) : '<em style="color:var(--text-muted);">(No syllabus assigned)</em>';
-      return '<div class="ex-card ' + (e.completed ? "completed" : "sched") + '" style="grid-template-columns:1fr;">' +
-        '<div><div class="t">' + (i + 1) + ". " + esc(e.examName) + '</div><div class="meta"><span><i class="material-icons">groups</i>' + esc(e.grade) + "</span><span><i class='material-icons'>menu_book</i>" + esc(e.subject) + "</span>" + (e.dayName ? "<span><i class='material-icons'>today</i>" + esc(e.dayName) + "</span>" : "") + "</div></div>" +
-        '<div class="ex-syl">' + syl + "</div></div>";
-    }).join("");
-    P.openModal("exDayModal");
-  }
+    function resolveExamRowId(e, ds) {
+      if (e && e.rowId) return e.rowId;
+      if (!st.assignedList || !st.assignedList.length) return null;
+      var es = String(e.subject || "").trim().toLowerCase();
+      var en = String(e.examName || "").trim().toLowerCase();
+      var match = st.assignedList.find(function (x) {
+        return String(x.grade || "").trim().toLowerCase() === String(e.grade || "").trim().toLowerCase() &&
+          String(x.subject || "").trim().toLowerCase() === es &&
+          String(x.examName || "").trim().toLowerCase() === en &&
+          (!x.date || x.date === ds);
+      });
+      return match ? match.rowId : null;
+    }
+    function openDay(ds) {
+      var list = st.events[ds] || [];
+      $("exDayTitle").textContent = "Exams on " + P.prettyDate(ds);
+      if (!list.length) { $("exDayBody").innerHTML = '<div class="ex-empty"><i class="material-icons">event_busy</i>No exams on this date.</div>'; P.openModal("exDayModal"); return; }
+      $("exDayBody").innerHTML = list.map(function (e, i) {
+        var rowId = resolveExamRowId(e, ds);
+        var hasSyl = !!e.syllabus;
+        var cta = "";
+        if (rowId) {
+          if (!hasSyl) {
+            cta = '<button class="ex-abtn accent" data-day-addsyl="' + rowId + '" data-grade="' + esc(e.grade) + '" data-subject="' + esc(e.subject) + '"><i class="material-icons">library_books</i> Add Syllabus</button>';
+          } else {
+            cta = '<button class="ex-abtn" data-day-addsyl="' + rowId + '" data-grade="' + esc(e.grade) + '" data-subject="' + esc(e.subject) + '"><i class="material-icons">edit</i> Change</button>';
+          }
+        }
+        var syl = hasSyl
+          ? '<div class="ex-syl"><b>Syllabus:</b> ' + esc(e.syllabus) + "</div>"
+          : '<div class="ex-syl empty">Syllabus not yet added</div>';
+
+        return '<div class="ex-card ' + (!hasSyl ? "psyl" : (e.completed ? "completed" : "sched")) + '">' +
+          '<div><div class="t">' + (i + 1) + ". " + esc(e.examName) + '</div><div class="meta"><span><i class="material-icons">groups</i>' + esc(e.grade) + "</span><span><i class='material-icons'>menu_book</i>" + esc(e.subject) + "</span>" + (e.dayName ? "<span><i class='material-icons'>today</i>" + esc(e.dayName) + "</span>" : "") + "</div></div>" +
+          '<div class="ex-cardacts">' + cta + "</div>" +
+          syl + "</div>";
+      }).join("");
+
+      Array.prototype.forEach.call($("exDayBody").querySelectorAll("[data-day-addsyl]"), function (b) {
+        b.addEventListener("click", function () {
+          P.closeModal("exDayModal");
+          openPicker(+b.getAttribute("data-day-addsyl"), b.getAttribute("data-grade"), b.getAttribute("data-subject"));
+        });
+      });
+
+      P.openModal("exDayModal");
+    }
 
   /* ---------------- pending syllabus / assigned exams ---------------- */
   function loadPending() {

@@ -257,4 +257,155 @@ describe('Teacher Schedule Logic & Consolidation', () => {
     const pnumBadges = Array.from(document.querySelectorAll('.tsch-pbadge .pnum')).map(el => el.textContent)
     expect(pnumBadges).toContain('P2, P3')
   })
+
+  it('normalizes teacher titles and expands phonetic/ERP spelling variants', async () => {
+    const fs = await import('fs')
+    const path = await import('path')
+    const code = fs.readFileSync(path.resolve(__dirname, '../my-schedule-component.js'), 'utf8')
+    eval(code)
+
+    const TS = (window as any).TeacherSchedule
+    expect(TS).toBeDefined()
+    expect(TS.normalizeTeacherName).toBeDefined()
+    expect(TS.getTeacherVariants).toBeDefined()
+    expect(TS.teacherMatches).toBeDefined()
+
+    // Title removal
+    expect(TS.normalizeTeacherName('Mr. Sathish')).toBe('Sathish')
+    expect(TS.normalizeTeacherName('Mrs. Sunitha')).toBe('Sunitha')
+    expect(TS.normalizeTeacherName('Dr. Rajesh')).toBe('Rajesh')
+    expect(TS.normalizeTeacherName('Sathish Sir')).toBe('Sathish')
+    expect(TS.normalizeTeacherName('Mr. Satish')).toBe('Satish')
+
+    // Variant expansion
+    const sathishVariants = TS.getTeacherVariants('Mr. Sathish')
+    expect(sathishVariants).toContain('Sathish')
+    expect(sathishVariants).toContain('Satish')
+    expect(sathishVariants).toContain('Mr. Sathish')
+
+    const satishVariants = TS.getTeacherVariants('Satish')
+    expect(satishVariants).toContain('Satish')
+    expect(satishVariants).toContain('Sathish')
+
+    const knrVariants = TS.getTeacherVariants('KNR')
+    expect(knrVariants).toContain('KNR')
+    expect(knrVariants).toContain('Narsimha Reddy Kasireddy')
+
+    // Teacher matching against timetable cell contents
+    expect(TS.teacherMatches('Satish', sathishVariants)).toBe(true)
+    expect(TS.teacherMatches('Social\nSatish', sathishVariants)).toBe(true)
+    expect(TS.teacherMatches('English📖\nSatish', sathishVariants)).toBe(true)
+    expect(TS.teacherMatches('Satish, Santosh', sathishVariants)).toBe(true)
+    expect(TS.teacherMatches('Harika', sathishVariants)).toBe(false)
+  })
+
+  it('resolves Mr. Sathish Saturday schedule via ttGetGrid fallback when ttGetTeacherSchedule is undeployed', async () => {
+    document.body.innerHTML = '<div id="sathishScheduleMount"></div>'
+
+    // Mock Portal where ttGetTeacherSchedule fails with "Unknown function" (production edge state),
+    // and ttGetGrid provides the Saturday High School grid with Satish as teacher
+    const mockHighSchoolSaturdayGrid = {
+      campus: 'High',
+      weekday: 6,
+      periods: 9,
+      rows: [
+        {
+          class: '6',
+          cells: [
+            { period_no: 1, subject: 'Maths', teacher: 'Ramana Prasad' },
+            { period_no: 4, subject: 'Social', teacher: 'Satish' },
+            { period_no: 8, subject: 'English', teacher: 'Satish' }
+          ]
+        },
+        {
+          class: '7',
+          cells: [
+            { period_no: 2, subject: 'English', teacher: 'Satish' },
+            { period_no: 7, subject: 'Social', teacher: 'Satish' }
+          ]
+        },
+        {
+          class: '8',
+          cells: [
+            { period_no: 1, subject: 'Social', teacher: 'Satish' },
+            { period_no: 4, subject: 'Telugu', teacher: 'Thirupathi' }
+          ]
+        },
+        {
+          class: '9',
+          cells: [
+            { period_no: 3, subject: 'Social', teacher: 'Satish' },
+            { period_no: 4, subject: 'Biology', teacher: 'Rajesh' }
+          ]
+        },
+        {
+          class: '10',
+          cells: [
+            { period_no: 5, subject: 'Social', teacher: 'Satish' },
+            { period_no: 7, subject: 'Physics', teacher: 'Harika' }
+          ]
+        }
+      ]
+    }
+
+    ;(window as any).Portal = {
+      esc: (s: any) => String(s || ''),
+      Session: {
+        get: () => ({ name: 'Sathish', role: 'Teacher', s1In: '08:40', s1Out: '16:40' })
+      },
+      api: vi.fn((fn: string, args: any[]) => {
+        if (fn === 'ttGetTeacherSchedule') {
+          return Promise.reject(new Error('Unknown function: ttGetTeacherSchedule'))
+        }
+        if (fn === 'ttGetGrid') {
+          if (args[0] === 'High' && args[1] === 6) {
+            return Promise.resolve(mockHighSchoolSaturdayGrid)
+          }
+          return Promise.resolve({ campus: 'Primary', weekday: 6, periods: 8, rows: [] })
+        }
+        if (fn === 'getTimesheetData') {
+          return Promise.resolve({
+            userShiftProfile: { s1In: '08:40:00', s1Out: '16:40:00', shiftType: 'SINGLE' }
+          })
+        }
+        return Promise.resolve([])
+      })
+    }
+
+    const fs = await import('fs')
+    const path = await import('path')
+    const code = fs.readFileSync(path.resolve(__dirname, '../my-schedule-component.js'), 'utf8')
+    eval(code)
+
+    const instance = (window as any).TeacherSchedule.mount('sathishScheduleMount', (window as any).Portal.Session.get())
+    expect(instance).toBeDefined()
+
+    // Explicitly load Saturday (weekday 6)
+    instance.loadDay(6)
+
+    // Wait for async promises to settle
+    await new Promise(r => setTimeout(r, 60))
+
+    // Verify stats in DOM: 7 teaching periods, 0 activity, 2 free (out of 9 High School periods)
+    const stTeach = document.querySelector('#tschStatTeach')
+    const stAct = document.querySelector('#tschStatAct')
+    const stFree = document.querySelector('#tschStatFree')
+
+    expect(stTeach?.textContent).toBe('7')
+    expect(stAct?.textContent).toBe('0')
+    expect(stFree?.textContent).toBe('2')
+
+    // Verify empty state is NOT rendered
+    const emptyState = document.querySelector('.tsch-empty')
+    expect(emptyState).toBeNull()
+
+    // Verify assigned period cards are rendered
+    const pcards = document.querySelectorAll('.tsch-pcard:not(.is-free)')
+    expect(pcards.length).toBe(7)
+
+    // Check that Class 8 Social (P1), Class 7 English (P2), Class 9 Social (P3), etc. appear
+    const pSubjects = Array.from(document.querySelectorAll('.tsch-psubject')).map(el => el.textContent)
+    expect(pSubjects).toContain('Social')
+    expect(pSubjects).toContain('English')
+  })
 })

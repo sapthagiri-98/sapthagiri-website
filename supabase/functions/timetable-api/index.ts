@@ -455,10 +455,71 @@ async function handleTtBulkUpsert(args: any[], dryRun: boolean) {
 // Fetches a teacher's schedule across one or all weekdays with shift profile
 // =========================================================================
 async function handleTtGetTeacherSchedule(teacherName: string, weekday?: number) {
-  const tName = S(teacherName);
-  if (!tName) return { error: "Teacher name is required", periods: [] };
+  const rawName = S(teacherName);
+  if (!rawName) return { error: "Teacher name is required", periods: [] };
 
-  let q = db.from("hw_timetable").select("*").ilike("teacher_name", `%${tName}%`);
+  const clean = rawName
+    .replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "")
+    .replace(/\s+(?:SIR|MADAM)$/i, "")
+    .trim();
+
+  const nameVariants = new Set<string>([clean, rawName]);
+  const lower = clean.toLowerCase();
+
+  // Known phonetic and ERP spelling variants
+  if (lower === "sathish" || lower === "satish") {
+    nameVariants.add("Sathish");
+    nameVariants.add("Satish");
+  }
+  if (lower === "knr" || lower.includes("narsimha")) {
+    nameVariants.add("KNR");
+    nameVariants.add("Narsimha Reddy Kasireddy");
+    nameVariants.add("Narsimha Reddy");
+  }
+  if (lower === "santosh" || lower === "santhosh") {
+    nameVariants.add("Santosh");
+    nameVariants.add("Santhosh");
+  }
+  if (lower.startsWith("srinivas")) {
+    nameVariants.add("Srinivas");
+    nameVariants.add("Srinivas Kodipunjula");
+    nameVariants.add("Srinivas Pulloori");
+    nameVariants.add("Srinivas Vallakati");
+  }
+  if (lower.startsWith("ramana")) {
+    nameVariants.add("Ramana Prasad");
+    nameVariants.add("Ramana");
+  }
+
+  // Also query teacher_aliases table if present
+  try {
+    const { data: u } = await db.from("users").select("id, name").ilike("name", clean).maybeSingle();
+    if (u) {
+      nameVariants.add(S(u.name));
+      const { data: aliases } = await db.from("teacher_aliases").select("alias_name").eq("user_id", u.id);
+      for (const a of aliases || []) if (S(a.alias_name)) nameVariants.add(S(a.alias_name));
+    } else {
+      const { data: alias } = await db.from("teacher_aliases").select("user_id").ilike("alias_name", clean).maybeSingle();
+      if (alias?.user_id) {
+        const { data: u2 } = await db.from("users").select("name").eq("id", alias.user_id).maybeSingle();
+        if (u2) nameVariants.add(S(u2.name));
+        const { data: aliases2 } = await db.from("teacher_aliases").select("alias_name").eq("user_id", alias.user_id);
+        for (const a of aliases2 || []) if (S(a.alias_name)) nameVariants.add(S(a.alias_name));
+      }
+    }
+  } catch (_) {}
+
+  const variantsList = [...nameVariants].filter(Boolean);
+
+  let q = db.from("hw_timetable").select("*");
+  if (variantsList.length === 1) {
+    q = q.ilike("teacher_name", `%${variantsList[0]}%`);
+  } else {
+    // Multi-variant OR filter
+    const orFilter = variantsList.map((v) => `teacher_name.ilike.%${v}%`).join(",");
+    q = q.or(orFilter);
+  }
+
   if (weekday && weekday >= 1 && weekday <= 6) {
     q = q.eq("weekday", weekday);
   }
@@ -482,23 +543,26 @@ async function handleTtGetTeacherSchedule(teacherName: string, weekday?: number)
 
   let shift = { s1In: "08:45", s1Out: "16:30", shiftType: "SINGLE" };
   try {
-    const { data: u } = await db.from("users")
-      .select("s1_in, s1_out, s2_in, s2_out, shift_type, work_days")
-      .ilike("name", `%${tName}%`)
-      .maybeSingle();
-    if (u && (u.s1_in || u.s1_out)) {
-      shift = {
-        s1In: u.s1_in ? S(u.s1_in).slice(0, 5) : "08:45",
-        s1Out: u.s1_out ? S(u.s1_out).slice(0, 5) : "16:30",
-        shiftType: u.shift_type || "SINGLE",
-      };
+    for (const v of variantsList) {
+      const { data: u } = await db.from("users")
+        .select("s1_in, s1_out, s2_in, s2_out, shift_type, work_days")
+        .ilike("name", `%${v}%`)
+        .maybeSingle();
+      if (u && (u.s1_in || u.s1_out)) {
+        shift = {
+          s1In: u.s1_in ? S(u.s1_in).slice(0, 5) : "08:45",
+          s1Out: u.s1_out ? S(u.s1_out).slice(0, 5) : "16:30",
+          shiftType: u.shift_type || "SINGLE",
+        };
+        break;
+      }
     }
   } catch (_) {
     // Keep default shift fallback
   }
 
   return {
-    teacherName: tName,
+    teacherName: clean,
     weekday: weekday || 0,
     periods,
     shift,

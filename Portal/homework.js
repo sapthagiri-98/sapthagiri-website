@@ -245,12 +245,39 @@
         })
         .catch(function (e) { resultBox(false, "Load failed", e.message || String(e)); });
     } else {
-      P.api("getAssignmentsByDate", [date, session.name], { perf: "Load Diary", text: "Loading diary…" })
-        .then(function (list) {
-          var processed = groupTeacherAssignments(list || []);
-          renderTeacher(processed);
-        })
-        .catch(function (e) { resultBox(false, "Load failed", e.message || String(e)); });
+      var tName = session.name || "";
+      var variants = (window.TeacherSchedule && window.TeacherSchedule.getTeacherVariants)
+        ? window.TeacherSchedule.getTeacherVariants(tName)
+        : [tName, String(tName).replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "").trim()];
+      var clean = String(tName).replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "").trim().toLowerCase();
+      if ((clean === "sathish" || clean === "satish") && variants.indexOf("Satish") < 0) variants.push("Satish");
+
+      function loadTeacherDiary(idx) {
+        if (idx >= variants.length) {
+          renderTeacher([]);
+          return;
+        }
+        var curName = variants[idx];
+        P.api("getAssignmentsByDate", [date, curName], { perf: "Load Diary", text: "Loading diary…" })
+          .then(function (list) {
+            if (list && list.length > 0) {
+              var processed = groupTeacherAssignments(list);
+              renderTeacher(processed);
+            } else if (idx + 1 < variants.length) {
+              loadTeacherDiary(idx + 1);
+            } else {
+              renderTeacher([]);
+            }
+          })
+          .catch(function (e) {
+            if (idx + 1 < variants.length) {
+              loadTeacherDiary(idx + 1);
+            } else {
+              resultBox(false, "Load failed", e.message || String(e));
+            }
+          });
+      }
+      loadTeacherDiary(0);
     }
   }
 

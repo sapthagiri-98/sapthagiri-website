@@ -19,6 +19,7 @@
   "use strict";
   var P = window.Portal;
   var esc = P.esc, $ = function (id) { return document.getElementById(id); };
+  var Calc = window.ExamCalc || (typeof globalThis !== "undefined" ? globalThis.ExamCalc : null);
 
   var session0 = P.Session.get();
   if (!session0) { location.replace("login.html"); return; }
@@ -51,6 +52,38 @@
     if (s === "PENDING_SYLLABUS") return '<span class="ex-status psyl">No syllabus</span>';
     return '<span class="ex-status draft">Draft</span>';
   }
+  function gradeNumFromClass(clsStr) {
+    var m = String(clsStr || "").match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+  function normSubject(s) {
+    var t = String(s || "").trim();
+    if (/^math/i.test(t)) return "Maths";
+    if (/^social/i.test(t)) return "Social";
+    if (/^(science|general\s*science)$/i.test(t)) return "Science";
+    return t;
+  }
+  var BUCKET_LABELS = {
+    "FA-1": "FA-1 (CT 1 & 2)",
+    "FA-2": "FA-2 (CT 3 & 4)",
+    "SA-1": "SA-1 (Term 1)",
+    "FA-3": "FA-3 (CT 5 & 6)",
+    "FA-4": "FA-4 (CT 7 & 8)",
+    "SA-2": "SA-2 (Final)"
+  };
+  function examBucketForName(en) {
+    if (window.ExamScheduleImportParser && window.ExamScheduleImportParser.examNameToBucket) {
+      var b = window.ExamScheduleImportParser.examNameToBucket(en);
+      if (b) return b;
+    }
+    if (/(?:class\s*test|ct)[\s-]*[12]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*1\b/i.test(en)) return "FA-1";
+    if (/(?:class\s*test|ct)[\s-]*[34]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*2\b/i.test(en)) return "FA-2";
+    if (/(?:summative\s*assessment|sa)[\s-]*1\b/i.test(en)) return "SA-1";
+    if (/(?:class\s*test|ct)[\s-]*[56]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*3\b/i.test(en)) return "FA-3";
+    if (/(?:class\s*test|ct)[\s-]*[78]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*4\b/i.test(en)) return "FA-4";
+    if (/(?:summative\s*assessment|sa)[\s-]*2\b/i.test(en)) return "SA-2";
+    return "";
+  }
 
   /* =======================================================================
      SHARED MARKS-ENTRY ENGINE (used by both Admin "Marks Entry" and
@@ -61,6 +94,23 @@
   function renderSingle(g, hostId, isMgmt, entryUser, refresh) {
     var isMobileReadOnly = P.isMobileAdmin(session);
     var host = $(hostId), locked = g.locked || isMobileReadOnly, html = "";
+    
+    // Physics and Biology max for SA-1/SA-2 in split classes (Grades 8-10): Exam is 40, Int is 10
+    var isSplit = false;
+    if (window.ExamCalc && window.ExamCalc.isSplitScienceGrade) {
+      isSplit = window.ExamCalc.isSplitScienceGrade(g.className);
+    } else {
+      var gn = gradeNumFromClass(g.className);
+      isSplit = (gn !== null && gn >= 8 && gn <= 10);
+    }
+    if (isSplit && /^SA-[12]$/.test(g.bucket) && (g.subject === "Physics" || g.subject === "Biology")) {
+      if (g.component === "EX" || g.component === "Exam" || g.component === "Summative Exam") {
+        g.max = 40;
+      } else if (g.component === "IN" || g.component === "Int" || g.component === "Internal Marks") {
+        g.max = 10;
+      }
+    }
+
     if (locked) html += '<div class="ex-lock"><i class="material-icons">lock</i>' + (isMobileReadOnly ? "View Only — Mobile Admin Read Only Mode" : (isMgmt ? "Locked — unlock to edit." : "Locked by management. Contact management to change.")) + "</div>";
     html += '<div class="ex-note" style="margin-bottom:10px;"><b>' + esc(g.className) + " · " + esc(g.subject) + "</b> — " + esc(g.bucket) + " · " + esc(g.componentLabel) + ' &middot; <span style="color:var(--text-muted);">max ' + esc(g.max) + "</span></div>";
     html += '<div class="ex-entrylist">';
@@ -102,8 +152,28 @@
   // class grid (admin: all-subjects academic / holistic indicators)
   function renderClassGrid(g, hostId, user, onLockToggled) {
     var host = $(hostId), locked = g.locked, html = "", cols = [];
-    if (g.mode === "academic") cols = g.subjects.map(function (s) { return { key: s, label: s, max: g.max }; });
-    else cols = g.indicators.map(function (i) { return { key: i.key, label: i.label, max: i.max }; });
+    if (g.mode === "academic") {
+      var isSplit = false;
+      if (window.ExamCalc && window.ExamCalc.isSplitScienceGrade) {
+        isSplit = window.ExamCalc.isSplitScienceGrade(g.className);
+      } else {
+        var gn = gradeNumFromClass(g.className);
+        isSplit = (gn !== null && gn >= 8 && gn <= 10);
+      }
+      cols = g.subjects.map(function (s) {
+        var colMax = g.max;
+        if (isSplit && /^SA-[12]$/.test(g.bucket) && (s === "Physics" || s === "Biology")) {
+          if (g.component === "EX" || g.component === "Exam" || g.component === "Summative Exam") {
+            colMax = 40;
+          } else if (g.component === "IN" || g.component === "Int" || g.component === "Internal Marks") {
+            colMax = 10;
+          }
+        }
+        return { key: s, label: s, max: colMax };
+      });
+    } else {
+      cols = g.indicators.map(function (i) { return { key: i.key, label: i.label, max: i.max }; });
+    }
     if (locked) html += '<div class="ex-lock"><i class="material-icons">lock</i>Locked — unlock to edit.</div>';
     html += '<div class="ex-note" style="margin-bottom:10px;"><b>' + esc(g.className) + "</b> — " + esc(g.bucket) + " · " + esc(g.componentLabel || (g.mode === "holistic" ? "Holistic Indicators" : "")) + "</div>";
     html += '<div class="ex-tablewrap"><table class="ex-table"><thead><tr><th class="name">Roll · Student</th>';
@@ -399,7 +469,7 @@
      ADMIN — Examinations Management
      ======================================================================= */
   function bootAdmin() {
-    var st = { tab: "overview", editingRow: null, pickLessons: [], presets: [], marksMounted: false, locksLoaded: false, reportData: null, holisticMounted: false };
+    var st = { tab: "overview", editingRow: null, pickLessons: [], presets: [], marksMounted: false, locksLoaded: false, reportData: null, holisticMounted: false, lockMatrix: null, lastScheduleRows: [] };
 
     $("view").innerHTML = shell();
     bindTabs();
@@ -434,8 +504,9 @@
         '<p class="view-description" style="margin:0;">Schedule exams, add syllabus, enter marks, control locks and generate tabulation reports.</p></div>' +
         '<button class="btn btn-warning-action" id="exNewBtn" style="width:auto;padding:10px 16px;"><i class="material-icons" style="color:#fff;">add</i> New Exam</button></div>' +
         '<div class="ex-mob-mode-seg" id="exMobModeSeg">' +
-          '<button type="button" class="ex-mob-mode-btn active" id="exMobUpcomingBtn" data-m="upcoming"><i class="material-icons">event_upcoming</i> Upcoming Exams</button>' +
-          '<button type="button" class="ex-mob-mode-btn" id="exMobProgressBtn" data-m="progress"><i class="material-icons">school</i> Student Progress Report</button>' +
+          '<button type="button" class="ex-mob-mode-btn active" id="exMobUpcomingBtn" data-m="upcoming"><i class="material-icons">event_upcoming</i> Upcoming</button>' +
+          '<button type="button" class="ex-mob-mode-btn" id="exMobProgressBtn" data-m="progress"><i class="material-icons">school</i> Progress Report</button>' +
+          '<button type="button" class="ex-mob-mode-btn" id="exMobClassTestBtn" data-m="classtest"><i class="material-icons">quiz</i> Class Test</button>' +
         '</div>' +
         '<div class="ex-kpis" id="exKpis"></div>' +
         '<div class="ex-mob-tab-wrap">' +
@@ -460,10 +531,11 @@
         '<div id="exPaneMarks" style="display:none;"></div>' +
         '<div id="exPaneLocks" style="display:none;"></div>' +
         '<div id="exPaneReports" style="display:none;"></div><div id="exPaneHolistic" style="display:none;"></div>' +
-        '</div>' + formModal() + dayModal() + pickModal();
+        '</div>' + formModal() + dayModal() + pickModal() + lockManagerModal();
     }
     var rawUpcomingItems = [];
     var mobProgClasses = [], mobProgBuckets = [], mobProgClassData = null, mobProgSelectedStudent = null;
+    var mobCTClasses = [], mobCTOptions = [], mobCTData = null, mobCTSelectedStudent = null;
 
     function overviewPane() {
       return '<div class="ex-desktop-overview">' +
@@ -497,6 +569,19 @@
         '</div>' +
         '<div id="exMobProgBody"><div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">fact_check</i>Select a Class and Assessment above to view student marks &amp; progress reports.</div></div>' +
       '</div>' +
+      '<div id="exMobClassTestWrap" style="display:none;">' +
+        '<div class="ex-mob-prog-controls">' +
+          '<div class="ex-mob-filter-strip">' +
+            '<div class="ex-mob-filter-box"><label>Class</label><select id="exMobCTClass" class="mob-select"><option value="">Select class…</option></select></div>' +
+            '<div class="ex-mob-filter-box"><label>Class Test</label><select id="exMobCTTest" class="mob-select"><option value="">Select test…</option></select></div>' +
+          '</div>' +
+          '<div style="position:relative;margin-bottom:10px;">' +
+            '<i class="material-icons" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:18px;pointer-events:none;">search</i>' +
+            '<input type="search" id="exMobCTSearch" class="mob-search" style="width:100%!important;height:38px!important;padding:6px 10px 6px 34px!important;border:1px solid #cbd5e1!important;border-radius:10px!important;font-size:13px!important;background:#fff!important;box-sizing:border-box!important;" placeholder="Search student name or roll…">' +
+          '</div>' +
+        '</div>' +
+        '<div id="exMobCTBody"><div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">quiz</i>Pick a Class and Class Test above to inspect student marks.</div></div>' +
+      '</div>' +
       '<button type="button" class="ex-cal-toggle" id="exMobCalToggle">' +
         '<span><i class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:6px;">calendar_month</i> View Monthly Calendar Grid</span>' +
         '<i class="material-icons" id="exMobCalArrow" style="font-size:18px;">expand_more</i>' +
@@ -520,22 +605,20 @@
         });
       }
 
-      var upBtn = $("exMobUpcomingBtn"), prBtn = $("exMobProgressBtn");
-      if (upBtn && prBtn) {
-        upBtn.addEventListener("click", function () {
-          upBtn.classList.add("active");
-          prBtn.classList.remove("active");
-          $("exMobUpcomingWrap").style.display = "block";
-          $("exMobProgressWrap").style.display = "none";
-        });
-        prBtn.addEventListener("click", function () {
-          prBtn.classList.add("active");
-          upBtn.classList.remove("active");
-          $("exMobUpcomingWrap").style.display = "none";
-          $("exMobProgressWrap").style.display = "block";
-          initMobileProgressReport();
-        });
+      var upBtn = $("exMobUpcomingBtn"), prBtn = $("exMobProgressBtn"), ctBtn = $("exMobClassTestBtn");
+      function switchMobMode(mode) {
+        if (upBtn) upBtn.classList.toggle("active", mode === "upcoming");
+        if (prBtn) prBtn.classList.toggle("active", mode === "progress");
+        if (ctBtn) ctBtn.classList.toggle("active", mode === "classtest");
+        if ($("exMobUpcomingWrap")) $("exMobUpcomingWrap").style.display = mode === "upcoming" ? "block" : "none";
+        if ($("exMobProgressWrap")) $("exMobProgressWrap").style.display = mode === "progress" ? "block" : "none";
+        if ($("exMobClassTestWrap")) $("exMobClassTestWrap").style.display = mode === "classtest" ? "block" : "none";
+        if (mode === "progress") initMobileProgressReport();
+        if (mode === "classtest") initMobileClassTest();
       }
+      if (upBtn) upBtn.addEventListener("click", function () { switchMobMode("upcoming"); });
+      if (prBtn) prBtn.addEventListener("click", function () { switchMobMode("progress"); });
+      if (ctBtn) ctBtn.addEventListener("click", function () { switchMobMode("classtest"); });
 
       $("exNewBtn").addEventListener("click", openCreate);
       Array.prototype.forEach.call(document.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { P.closeModal(b.getAttribute("data-close")); }); });
@@ -728,10 +811,7 @@
       var word = kind === "SA" ? "SUMMATIVE ASSESSMENT" : "FORMATIVE ASSESSMENT";
       return word + " - " + n;
     }
-    function gradeToGPA(grade) {
-      var map = { A1: 10, A2: 9, B1: 8, B2: 7, C1: 6, C2: 5, D: 4, E: 0 };
-      return (grade in map) ? map[grade] : 0;
-    }
+    // GPA and Letter grade systems have been removed per requirements. Reporting is marks & percentage based.
     function studentIdText(s) {
       return s.studentId || s.studentID || s.idNumber || s.admissionNo || s.admissionNumber || s.admNo || s.id || "—";
     }
@@ -742,15 +822,25 @@
       return raw === "ab" || raw === "abs" || raw === "absent" || raw === "a";
     }
     function intelligentImpression(s, subjects, maxPerSubject) {
-      var scored = subjects.map(function (subject) {
-        var c = (s.subjects || {})[subject] || {}, t = c.Tot;
-        var val = (t && t.has && t.value !== "" && t.value != null && !isNaN(Number(t.value))) ? Number(t.value) : null;
-        return { subject: subject, value: val };
-      }).filter(function (x) { return x.value != null; });
-      var pct = s.hasAny ? Number(s.percent || 0) : 0;
+      var d = (st && st.reportData) || mobProgClassData || {};
+      var evalRes = Calc.calculateStudent(s, d.bucket, d.class);
+      if (!evalRes.isComplete) {
+        return "The assessment is incomplete. Marks are still required for " + evalRes.missingSubjects.join(", ") + ". The overall result should be reviewed after all subject marks are entered.";
+      }
+      if (evalRes.status === "NOT PASSED") {
+        return "The student has not met the minimum pass mark in " + evalRes.failedSubjects.join(", ") + ". Focused teaching, revision and correction of mistakes are needed in these areas.";
+      }
+      var scored = [];
+      Object.keys(evalRes.subjects).forEach(function (k) {
+        var rep = evalRes.subjects[k];
+        if (rep.isComplete && rep.scored != null) {
+          scored.push({ subject: rep.displayName, value: rep.scored, max: rep.max, pct: (rep.scored / rep.max) * 100 });
+        }
+      });
       if (!scored.length) return "Assessment marks are incomplete or pending.";
-      scored.sort(function (a, b) { return b.value - a.value; });
+      scored.sort(function (a, b) { return b.pct - a.pct; });
       var strongest = scored[0], focus = scored[scored.length - 1];
+      var pct = evalRes.percent;
       var opening = pct >= 80 ? "A very good effort overall." : pct >= 60 ? "A good effort overall." : pct >= 40 ? "A satisfactory effort with scope for improvement." : "More consistent effort and regular support are required.";
       var strength = "The work in " + strongest.subject + " is encouraging.";
       var next = focus.subject === strongest.subject ? "Continue the same regular practice." : "Please give extra attention to " + focus.subject + " through daily revision.";
@@ -880,14 +970,14 @@
       html += '<div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:8px;">Showing ' + visStudents.length + ' students in Class ' + esc(d.class) + ' · ' + esc(d.bucket) + '</div>';
 
       visStudents.forEach(function (s, idx) {
-        var hasMarks = !!s.hasAny;
+        var evalRes = Calc.calculateStudent(s, d.bucket, d.class);
         var scorePill = "";
-        if (hasMarks) {
-          var pct = Number(s.percent || 0);
+        if (evalRes.isComplete) {
+          var pct = evalRes.percent;
           var pcol = pct >= 80 ? "#15803d" : (pct >= 50 ? "#0284c7" : "#b45309");
-          scorePill = '<span class="pill" style="background:#f0fdf4;color:' + pcol + ';font-weight:800;font-size:11px;">' + s.totalScored + '/' + overallMax + ' (' + pct + '%) · ' + esc(s.grade || '') + '</span>';
+          scorePill = '<span class="pill" style="background:#f0fdf4;color:' + pcol + ';font-weight:800;font-size:11px;">' + evalRes.totalScored + '/' + evalRes.totalMax + ' (' + pct + '%) · ' + esc(evalRes.status) + '</span>';
         } else {
-          scorePill = '<span class="pill" style="background:#f1f5f9;color:#64748b;font-weight:700;font-size:11px;">Marks Pending</span>';
+          scorePill = '<span class="pill" style="background:#fffbeb;color:#b45309;font-weight:700;font-size:11px;"><i class="material-icons" style="font-size:12px;vertical-align:middle;">warning</i> Marks Pending</span>';
         }
 
         html += '<div class="ex-mob-student-card" data-idx="' + idx + '">' +
@@ -919,35 +1009,64 @@
     }
 
     function renderMobSingleStudentReport(host, d, s) {
-      var subjects = filterSubjects(d);
+      var evalRes = Calc.calculateStudent(s, d.bucket, d.class);
       var isSABucket = !!d.isSA;
       var maxPerSubject = isSABucket ? 100 : 50;
-      var overallMax = subjects.length * maxPerSubject;
-      var hasMarks = !!s.hasAny;
-      var pct = hasMarks ? Number(s.percent || 0) : 0;
-      var gpa = hasMarks ? gradeToGPA(s.grade) : "—";
-      var impression = intelligentImpression(s, subjects, maxPerSubject);
+      var impression = intelligentImpression(s, Object.keys(evalRes.subjects), maxPerSubject);
 
-      var subRowsHtml = subjects.map(function (subj) {
-        var subData = (s.subjects || {})[subj] || {};
-        var tot = subData.Tot;
-        var scoredText = '<span style="color:#64748b;font-style:italic;">— (Pending)</span>';
-        var isAbsent = isAbsentCell(tot);
+      var subRowsHtml = Object.keys(evalRes.subjects).map(function (subjKey) {
+        var rep = evalRes.subjects[subjKey];
+        if (rep.isSplit) {
+          var phyHtml = rep.physics.isComplete
+            ? '<b style="color:#0f172a;">' + rep.physics.scored + '</b> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.physics.max + '</span>'
+            : (rep.physics.isAbsent ? '<span style="color:#b91c1c;font-weight:700;">Ab (Absent)</span>' : '<span style="color:#d97706;font-style:italic;font-size:11.5px;"><i class="material-icons" style="font-size:12px;vertical-align:middle;">pending</i> Marks not yet entered</span>');
+          var bioHtml = rep.biology.isComplete
+            ? '<b style="color:#0f172a;">' + rep.biology.scored + '</b> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.biology.max + '</span>'
+            : (rep.biology.isAbsent ? '<span style="color:#b91c1c;font-weight:700;">Ab (Absent)</span>' : '<span style="color:#d97706;font-style:italic;font-size:11.5px;"><i class="material-icons" style="font-size:12px;vertical-align:middle;">pending</i> Marks not yet entered</span>');
+          var combHtml = rep.isComplete
+            ? '<b style="color:' + (rep.scored >= rep.max * 0.35 ? '#15803d' : '#b45309') + ';font-size:14px;">' + rep.scored + '</b> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.max + '</span>'
+            : '<span style="color:#d97706;font-style:italic;font-size:12px;">Incomplete</span>';
 
-        if (isAbsent) {
-          scoredText = '<span style="color:#b91c1c;font-weight:800;">Ab (Absent)</span>';
-        } else if (tot && tot.has && tot.value !== "" && tot.value != null && !isNaN(Number(tot.value))) {
-          var val = Number(tot.value);
-          var subPct = (val / maxPerSubject) * 100;
-          var subCol = subPct >= 80 ? "#15803d" : (subPct >= 50 ? "#0284c7" : "#b45309");
-          scoredText = '<b style="color:' + subCol + ';">' + val + '</b>';
+          return '<div class="ex-mob-subj-row" style="background:#f8fafc;border-left:3.5px solid var(--brand-primary,#800000);padding:8px 10px;margin-bottom:6px;border-radius:6px;">' +
+            '<div style="width:100%;">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+                '<div class="ex-mob-sr-name" style="font-weight:800;color:#0f172a;">Science (Combined)</div>' +
+                '<div class="ex-mob-sr-score">' + combHtml + '</div>' +
+              '</div>' +
+              '<div style="display:flex;justify-content:space-between;font-size:12px;color:#475569;padding:4px 0 3px 8px;border-top:1px dashed #cbd5e1;">' +
+                '<span>↳ Physics:</span><span>' + phyHtml + '</span>' +
+              '</div>' +
+              '<div style="display:flex;justify-content:space-between;font-size:12px;color:#475569;padding:3px 0 2px 8px;">' +
+                '<span>↳ Biology:</span><span>' + bioHtml + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }
+
+        var scoredText = "";
+        if (rep.isComplete) {
+          var val = rep.scored;
+          var subPct = (val / rep.max) * 100;
+          var subCol = subPct >= 80 ? "#15803d" : (subPct >= 35 ? "#0284c7" : "#b45309");
+          scoredText = '<b style="color:' + subCol + ';">' + val + '</b> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.max + '</span>';
+        } else if (rep.isAbsent) {
+          scoredText = '<span style="color:#b91c1c;font-weight:800;">Ab (Absent)</span> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.max + '</span>';
+        } else {
+          scoredText = '<span style="color:#d97706;font-style:italic;"><i class="material-icons" style="font-size:13px;vertical-align:middle;">pending</i> Marks not yet entered</span>';
         }
 
         return '<div class="ex-mob-subj-row">' +
-          '<div class="ex-mob-sr-name">' + esc(subj) + '</div>' +
-          '<div class="ex-mob-sr-score">' + scoredText + ' <span style="font-size:11px;color:#94a3b8;">/ ' + maxPerSubject + '</span></div>' +
+          '<div class="ex-mob-sr-name">' + esc(rep.displayName) + '</div>' +
+          '<div class="ex-mob-sr-score">' + scoredText + '</div>' +
         '</div>';
       }).join("");
+
+      var alertHtml = !evalRes.isComplete
+        ? '<div class="ex-mob-rep-alert" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:8px;align-items:flex-start;">' +
+            '<i class="material-icons" style="color:#d97706;font-size:20px;flex-shrink:0;">warning_amber</i>' +
+            '<div style="font-size:12px;color:#92400e;line-height:1.4;"><b>Assessment Incomplete</b><br>Marks are not yet entered for: <b>' + esc(evalRes.missingSubjects.join(', ')) + '</b>. Overall totals and percentages will be calculated once all marks are entered.</div>' +
+          '</div>'
+        : '';
 
       host.innerHTML =
         '<div class="ex-mob-report-view">' +
@@ -957,16 +1076,17 @@
             '</button>' +
             '<span style="font-size:12px;font-weight:800;color:var(--brand-primary,#800000);">Class ' + esc(d.class) + '</span>' +
           '</div>' +
+          alertHtml +
           '<div class="ex-mob-rep-card">' +
             '<div class="ex-mob-rep-header">' +
               '<div class="ex-mob-rep-title">' + esc(s.name) + '</div>' +
               '<div class="ex-mob-rep-sub">Roll #' + esc(s.roll || "—") + ' · ID: ' + esc(studentIdText(s)) + ' · ' + esc(bucketTitleWords(d.bucket)) + '</div>' +
             '</div>' +
             '<div class="ex-mob-rep-kpis">' +
-              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val">' + (hasMarks ? (s.totalScored + '/' + overallMax) : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Total Marks</div></div>' +
-              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#0284c7;">' + (hasMarks ? (pct + '%') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Percentage</div></div>' +
-              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#15803d;">' + (hasMarks ? (s.grade || '—') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Grade</div></div>' +
-              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#7a151a;">' + (hasMarks ? gpa : '—') + '</div><div class="ex-mob-rep-kpi-lbl">GPA</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val">' + (evalRes.isComplete ? (evalRes.totalScored + '/' + evalRes.totalMax) : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Total Marks</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#0284c7;">' + (evalRes.isComplete ? (evalRes.percent + '%') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Percentage</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:' + (evalRes.status === 'PASSED' ? '#15803d' : (evalRes.status === 'NOT PASSED' ? '#b91c1c' : '#d97706')) + ';">' + esc(evalRes.status) + '</div><div class="ex-mob-rep-kpi-lbl">Overall Result</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#64748b;">' + (evalRes.isComplete ? (s.rank || '—') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Class Rank</div></div>' +
             '</div>' +
             '<div class="ex-mob-rep-subjs-box">' +
               '<div class="ex-mob-rep-sec-title"><i class="material-icons">menu_book</i> Subject Breakdown</div>' +
@@ -984,6 +1104,248 @@
         backBtn.addEventListener("click", function () {
           mobProgSelectedStudent = null;
           renderMobProgressView();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      }
+    }
+
+    /* =======================================================================
+       MOBILE ADMIN: VIEW INDIVIDUAL CLASS TEST MARKS (Strictly View-Only)
+       ======================================================================= */
+    function initMobileClassTest() {
+      var clsSel = $("exMobCTClass"), testSel = $("exMobCTTest");
+      if (!clsSel || !testSel) return;
+
+      if (!mobCTClasses.length) {
+        P.api("progressGetClasses", [], { overlay: false }).then(function (cs) {
+          mobCTClasses = cs || [];
+          clsSel.innerHTML = '<option value="">Select class…</option>' + mobCTClasses.map(function (c) {
+            return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+          }).join("");
+        });
+      }
+
+      clsSel.onchange = function () {
+        mobCTSelectedStudent = null;
+        mobCTData = null;
+        var cls = clsSel.value;
+        testSel.innerHTML = '<option value="">Loading tests…</option>';
+        if (!cls) {
+          testSel.innerHTML = '<option value="">Select test…</option>';
+          $("exMobCTBody").innerHTML = '<div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">quiz</i>Pick a Class and Class Test above to inspect student marks.</div>';
+          return;
+        }
+        P.api("marksGetAdminExamOptions", [cls], { overlay: false }).then(function (opts) {
+          mobCTOptions = opts || [];
+          testSel.innerHTML = '<option value="">Select test…</option>' + mobCTOptions.map(function (o, i) {
+            return '<option value="' + i + '">' + esc(o.label || (o.bucket + " · " + o.component)) + '</option>';
+          }).join("");
+        }).catch(function () {
+          testSel.innerHTML = '<option value="">Error loading tests</option>';
+        });
+      };
+
+      testSel.onchange = function () {
+        mobCTSelectedStudent = null;
+        loadMobClassTestData();
+      };
+
+      var sInput = $("exMobCTSearch");
+      if (sInput) {
+        sInput.oninput = function () {
+          renderMobClassTestView();
+        };
+      }
+    }
+
+    function loadMobClassTestData() {
+      var cls = $("exMobCTClass") ? $("exMobCTClass").value : "";
+      var optIdx = $("exMobCTTest") ? $("exMobCTTest").value : "";
+      var host = $("exMobCTBody");
+      if (!host) return;
+
+      if (!cls || optIdx === "") {
+        host.innerHTML = '<div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">quiz</i>Pick both a Class and a Class Test above to view marks.</div>';
+        return;
+      }
+
+      var opt = mobCTOptions[+optIdx];
+      if (!opt) return;
+
+      host.innerHTML = '<div class="inline-loader"><i class="material-icons">sync</i>Loading test marks…</div>';
+      P.api("marksGetClassGrid", [cls, opt.bucket, opt.component], { overlay: false }).then(function (res) {
+        mobCTData = (res && res.data) || res || {};
+        mobCTData.testLabel = opt.label || (opt.bucket + " · " + opt.component);
+        mobCTData.bucket = opt.bucket;
+        mobCTData.component = opt.component;
+        renderMobClassTestView();
+      }).catch(function (e) {
+        host.innerHTML = '<div class="ex-empty" style="padding:16px;"><i class="material-icons">error_outline</i>Error: ' + esc(e.message || e) + '</div>';
+      });
+    }
+
+    function renderMobClassTestView() {
+      var host = $("exMobCTBody");
+      if (!host || !mobCTData) return;
+      var d = mobCTData;
+      var rows = d.rows || [];
+      var subjects = d.subjects || [];
+      var maxPerSub = Number(d.max) || 20;
+
+      if (!rows.length) {
+        host.innerHTML = '<div class="ex-empty" style="padding:20px 14px;"><i class="material-icons">person_off</i>No students found in ' + esc(d.className || "") + '.</div>';
+        return;
+      }
+
+      if (mobCTSelectedStudent) {
+        renderMobSingleClassTestReport(host, d, mobCTSelectedStudent);
+        return;
+      }
+
+      var q = ($("exMobCTSearch") ? $("exMobCTSearch").value : "").trim().toLowerCase();
+      var visRows = rows;
+      if (q) {
+        visRows = rows.filter(function (r) {
+          var name = String(r.name || "").toLowerCase();
+          var roll = String(r.roll || "").toLowerCase();
+          var id = String(r.id || "").toLowerCase();
+          return name.indexOf(q) >= 0 || roll.indexOf(q) >= 0 || id.indexOf(q) >= 0;
+        });
+      }
+
+      if (!visRows.length) {
+        host.innerHTML = '<div class="ex-empty" style="padding:16px;"><i class="material-icons">search_off</i>No students matching “' + esc(q) + '”.</div>';
+        return;
+      }
+
+      var html = '<div class="ex-mob-student-list">';
+      html += '<div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:8px;">Showing ' + visRows.length + ' students in Class ' + esc(d.className) + ' · ' + esc(d.testLabel) + ' (Max ' + maxPerSub + ' per subject)</div>';
+
+      visRows.forEach(function (r, idx) {
+        var totalScored = 0, enteredCount = 0, isComplete = true;
+        subjects.forEach(function (subj) {
+          var c = (r.cells || {})[subj] || {};
+          if (c.absent) {
+            enteredCount++;
+          } else if (c.scored !== "" && c.scored != null && !isNaN(Number(c.scored))) {
+            totalScored += Number(c.scored);
+            enteredCount++;
+          } else {
+            isComplete = false;
+          }
+        });
+
+        var totalMax = subjects.length * maxPerSub;
+        var pill = "";
+        if (isComplete && enteredCount > 0) {
+          var pct = Math.round((totalScored / totalMax) * 1000) / 10;
+          var pcol = pct >= 80 ? "#15803d" : (pct >= 50 ? "#0284c7" : "#b45309");
+          pill = '<span class="pill" style="background:#f0fdf4;color:' + pcol + ';font-weight:800;font-size:11px;">' + totalScored + '/' + totalMax + ' (' + pct + '%)</span>';
+        } else {
+          pill = '<span class="pill" style="background:#fffbeb;color:#b45309;font-weight:700;font-size:11px;">' + (enteredCount ? enteredCount + '/' + subjects.length + ' entered' : 'Marks Pending') + '</span>';
+        }
+
+        html += '<div class="ex-mob-ct-card" data-idx="' + idx + '">' +
+          '<div class="ex-mob-ct-head">' +
+            '<div>' +
+              '<span class="ex-mob-ct-roll">#' + esc(r.roll || idx + 1) + '</span> ' +
+              '<span class="ex-mob-ct-name">' + esc(r.name) + '</span>' +
+            '</div>' +
+            pill +
+          '</div>' +
+          '<div class="ex-mob-ct-sub">' +
+            '<span>ID: ' + esc(r.id || "—") + '</span>' +
+            '<span style="color:var(--brand-primary,#800000);font-weight:700;">Inspect Marks <i class="material-icons" style="font-size:13px;vertical-align:middle;">arrow_forward</i></span>' +
+          '</div>' +
+        '</div>';
+      });
+
+      html += '</div>';
+      host.innerHTML = html;
+
+      Array.prototype.forEach.call(host.querySelectorAll(".ex-mob-ct-card[data-idx]"), function (card) {
+        card.addEventListener("click", function () {
+          var idx = +card.getAttribute("data-idx");
+          mobCTSelectedStudent = visRows[idx];
+          renderMobClassTestView();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      });
+    }
+
+    function renderMobSingleClassTestReport(host, d, r) {
+      var subjects = d.subjects || [];
+      var maxPerSub = Number(d.max) || 20;
+      var totalScored = 0, enteredCount = 0, isComplete = true, missingSubjects = [];
+
+      var subRowsHtml = subjects.map(function (subj) {
+        var c = (r.cells || {})[subj] || {};
+        var valHtml = "";
+        if (c.absent) {
+          valHtml = '<span style="color:#b91c1c;font-weight:800;">Ab (Absent)</span>';
+          enteredCount++;
+        } else if (c.scored !== "" && c.scored != null && !isNaN(Number(c.scored))) {
+          var sVal = Number(c.scored);
+          totalScored += sVal;
+          enteredCount++;
+          var subPct = (sVal / maxPerSub) * 100;
+          var subCol = subPct >= 80 ? "#15803d" : (subPct >= 35 ? "#0284c7" : "#b45309");
+          valHtml = '<b style="color:' + subCol + ';font-size:15px;">' + sVal + '</b> <span style="font-size:12px;color:#64748b;">/ ' + maxPerSub + '</span>';
+        } else {
+          isComplete = false;
+          missingSubjects.push(subj);
+          valHtml = '<span style="color:#d97706;font-style:italic;font-size:12px;"><i class="material-icons" style="font-size:13px;vertical-align:middle;">pending</i> Marks not yet entered</span>';
+        }
+
+        return '<div class="ex-mob-ct-row">' +
+          '<div class="sub-name">' + esc(subj) + '</div>' +
+          '<div class="sub-mark">' + valHtml + '</div>' +
+        '</div>';
+      }).join("");
+
+      var totalMax = subjects.length * maxPerSub;
+      var pct = isComplete && enteredCount > 0 ? (Math.round((totalScored / totalMax) * 1000) / 10) : null;
+
+      var alertHtml = !isComplete
+        ? '<div class="ex-mob-rep-alert" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;gap:8px;align-items:flex-start;">' +
+            '<i class="material-icons" style="color:#d97706;font-size:20px;flex-shrink:0;">warning_amber</i>' +
+            '<div style="font-size:12px;color:#92400e;line-height:1.4;"><b>Marks Pending</b><br>Marks have not yet been entered for: <b>' + esc(missingSubjects.join(", ")) + '</b>. Total and percentage will show once all subjects are entered.</div>' +
+          '</div>'
+        : '';
+
+      host.innerHTML =
+        '<div class="ex-mob-report-view">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+            '<button type="button" class="btn btn-secondary" id="exMobCTBackBtn" style="padding:6px 12px;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px;">' +
+              '<i class="material-icons" style="font-size:16px;">arrow_back</i> Back to List' +
+            '</button>' +
+            '<span style="font-size:11.5px;font-weight:700;color:#64748b;background:#f1f5f9;padding:4px 8px;border-radius:6px;"><i class="material-icons" style="font-size:13px;vertical-align:middle;">lock</i> View Only</span>' +
+          '</div>' +
+          alertHtml +
+          '<div class="ex-mob-rep-card">' +
+            '<div class="ex-mob-rep-header">' +
+              '<div class="ex-mob-rep-title">' + esc(r.name) + '</div>' +
+              '<div class="ex-mob-rep-sub">Roll #' + esc(r.roll || "—") + ' · ID: ' + esc(r.id || "—") + ' · Class ' + esc(d.className) + '</div>' +
+              '<div style="font-size:12px;font-weight:700;color:var(--brand-primary,#800000);margin-top:4px;">' + esc(d.testLabel) + ' (Max ' + maxPerSub + ' per subject)</div>' +
+            '</div>' +
+            '<div class="ex-mob-rep-kpis">' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val">' + (isComplete ? (totalScored + '/' + totalMax) : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Total Marks</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#0284c7;">' + (isComplete ? (pct + '%') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Percentage</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:' + (isComplete ? '#15803d' : '#d97706') + ';">' + (isComplete ? 'Complete' : 'Incomplete') + '</div><div class="ex-mob-rep-kpi-lbl">Test Status</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#64748b;">' + enteredCount + '/' + subjects.length + '</div><div class="ex-mob-rep-kpi-lbl">Subjects Entered</div></div>' +
+            '</div>' +
+            '<div class="ex-mob-rep-subjs-box">' +
+              '<div class="ex-mob-rep-sec-title"><i class="material-icons">menu_book</i> Subject-wise Marks</div>' +
+              '<div class="ex-mob-ct-grid">' + subRowsHtml + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      var backBtn = $("exMobCTBackBtn");
+      if (backBtn) {
+        backBtn.addEventListener("click", function () {
+          mobCTSelectedStudent = null;
+          renderMobClassTestView();
           window.scrollTo({ top: 0, behavior: "smooth" });
         });
       }
@@ -1011,10 +1373,61 @@
           '<div class="ex-field"><label>Exam name</label><select id="exSchExam"><option value="">All exam names</option></select></div>' +
           '<div class="ex-field"><label>Class</label><select id="exSchClass"><option value="">All classes</option></select></div>' +
           '<button class="ex-abtn" id="exSchClear"><i class="material-icons">refresh</i> Clear</button>' +
-        '</div><div id="exSchBody"><div class="ex-empty"><i class="material-icons">edit_calendar</i>Loading…</div></div>';
+          '<button class="ex-abtn" id="exSchLockMgrBtn" title="Manage syllabus mapping & marks locks"><i class="material-icons">admin_panel_settings</i> Lock Manager</button>' +
+          (isAdmin ? '<button class="ex-abtn primary" id="exSchImportBtn" style="margin-left:auto;"><i class="material-icons">upload_file</i> Import Excel Schedule</button>' : '') +
+        '</div>' +
+        '<div id="exSchLockBanner" style="margin-bottom:12px;display:none;"></div>' +
+        '<div id="exSchReadiness" style="margin-bottom:12px;display:none;"></div>' +
+        '<div id="exSchBody"><div class="ex-empty"><i class="material-icons">edit_calendar</i>Loading…</div></div>';
       $("exSchExam").addEventListener("change", loadSchedule);
       $("exSchClass").addEventListener("change", loadSchedule);
       $("exSchClear").addEventListener("click", function () { $("exSchExam").value = ""; $("exSchClass").value = ""; loadSchedule(); });
+      if ($("exSchLockMgrBtn")) {
+        $("exSchLockMgrBtn").addEventListener("click", function () {
+          var curExam = $("exSchExam").value;
+          var curBucket = curExam ? examBucketForName(curExam) : "";
+          openSmartLockModal(curBucket);
+        });
+      }
+      if ($("exSchLockModalBucketSel")) {
+        $("exSchLockModalBucketSel").addEventListener("change", function () {
+          renderSmartLockModalMatrix();
+        });
+      }
+      if ($("exSchLockModalUnlockAllBtn")) {
+        $("exSchLockModalUnlockAllBtn").addEventListener("click", function () {
+          var bkt = $("exSchLockModalBucketSel").value;
+          var rows = (st.lockMatrix && st.lockMatrix.rows) || [];
+          var classes = rows.map(function (r) { return r.class; });
+          if (!classes.length) classes = ["6", "7", "8", "9", "10"];
+          setBatchLock(classes, bkt, false, $("exSchLockModalUnlockAllBtn"));
+        });
+      }
+      if ($("exSchLockModalLockAllBtn")) {
+        $("exSchLockModalLockAllBtn").addEventListener("click", function () {
+          var bkt = $("exSchLockModalBucketSel").value;
+          var rows = (st.lockMatrix && st.lockMatrix.rows) || [];
+          var classes = rows.map(function (r) { return r.class; });
+          if (!classes.length) classes = ["6", "7", "8", "9", "10"];
+          setBatchLock(classes, bkt, true, $("exSchLockModalLockAllBtn"));
+        });
+      }
+      if ($("exSchImportBtn")) {
+        $("exSchImportBtn").addEventListener("click", function () {
+          if (window.ExamScheduleImportUI) {
+            window.ExamScheduleImportUI.open(function (res) {
+              toast(res.message, "ok");
+              P.api("examGetScheduleFilters", [], { overlay: false }).then(function (f) {
+                f = f || { examNames: [], classes: [] };
+                $("exSchExam").innerHTML = '<option value="">All exam names</option>' + (f.examNames || []).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + "</option>"; }).join("");
+                $("exSchClass").innerHTML = '<option value="">All classes</option>' + (f.classes || []).map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + "</option>"; }).join("");
+                loadSchedule();
+              }).catch(function () { loadSchedule(); });
+              loadKpis();
+            });
+          }
+        });
+      }
       P.api("examGetScheduleFilters", [], { overlay: false }).then(function (f) {
         f = f || { examNames: [], classes: [] };
         $("exSchExam").innerHTML = '<option value="">All exam names</option>' + (f.examNames || []).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + "</option>"; }).join("");
@@ -1025,10 +1438,310 @@
     function loadSchedule() {
       var en = $("exSchExam").value, cls = $("exSchClass").value;
       $("exSchBody").innerHTML = '<div class="ex-loading"><i class="material-icons">sync</i></div>';
-      P.api("examGetScheduleTable", [en, cls], { overlay: false }).then(function (rows) { renderSchedule(rows || [], en, cls); }).catch(function (e) { $("exSchBody").innerHTML = '<div class="ex-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + "</div>"; });
+      Promise.all([
+        P.api("examGetScheduleTable", [en, cls], { overlay: false }),
+        (st.lockMatrix ? Promise.resolve(st.lockMatrix) : P.api("locksGetMatrix", [], { overlay: false }).catch(function () { return null; }))
+      ]).then(function (results) {
+        var rows = results[0] || [];
+        if (results[1]) st.lockMatrix = results[1];
+        st.lastScheduleRows = rows;
+        renderSchedule(rows, en, cls);
+      }).catch(function (e) {
+        $("exSchBody").innerHTML = '<div class="ex-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + "</div>";
+      });
     }
+
+    function setBatchLock(classes, bucket, willLock, triggerBtn) {
+      var origHtml = triggerBtn ? triggerBtn.innerHTML : "";
+      if (triggerBtn) {
+        triggerBtn.disabled = true;
+        triggerBtn.innerHTML = '<i class="material-icons" style="animation:spin 1s linear infinite;font-size:16px;display:inline-block;vertical-align:middle;margin-right:4px;">sync</i> Updating…';
+      }
+      // Optimistic local update so UI reflects INSTANTLY without waiting for network or refresh
+      if (st.lockMatrix && st.lockMatrix.rows) {
+        st.lockMatrix.rows.forEach(function (r) {
+          if (!classes || !classes.length || classes.indexOf(r.class) !== -1 || classes.indexOf(String(r.class)) !== -1) {
+            r.locks = r.locks || {};
+            r.locks[bucket] = willLock;
+          }
+        });
+      }
+      renderSmartLockModalMatrix();
+      renderLockBanner(st.lastScheduleRows || [], $("exSchExam").value, $("exSchClass").value);
+
+      var calls = classes.map(function (c) {
+        return P.api("locksSetBucket", [c, bucket, willLock, me]);
+      });
+      Promise.all(calls).then(function () {
+        toast((willLock ? "Locked " : "Unlocked ") + (classes.length > 1 ? "all classes" : classes[0]) + " · " + bucket, "ok");
+        return P.api("locksGetMatrix", [], { overlay: false });
+      }).then(function (m) {
+        if (m) st.lockMatrix = m;
+        renderLockBanner(st.lastScheduleRows || [], $("exSchExam").value, $("exSchClass").value);
+        renderSmartLockModalMatrix();
+      }).catch(function (e) {
+        toast("Error: " + (e.message || e), "err");
+      }).finally(function () {
+        if (triggerBtn) {
+          triggerBtn.disabled = false;
+          if (origHtml) triggerBtn.innerHTML = origHtml;
+        }
+      });
+    }
+
+    function renderLockBanner(rows, examName, className) {
+      var banner = $("exSchLockBanner");
+      if (!banner) return;
+      if (!st.lockMatrix || !st.lockMatrix.rows || !st.lockMatrix.rows.length) {
+        banner.style.display = "none";
+        return;
+      }
+
+      var matrixRows = st.lockMatrix.rows;
+      var targetClasses = [];
+      if (className) {
+        var gn = gradeNumFromClass(className);
+        var matched = matrixRows.find(function (r) { return gradeNumFromClass(r.class) === gn; });
+        if (matched) targetClasses.push(matched.class);
+        else targetClasses.push(className);
+      } else {
+        targetClasses = matrixRows.map(function (r) { return r.class; });
+      }
+
+      var bucket = examName ? examBucketForName(examName) : "";
+      if (!bucket && rows && rows.length > 0) {
+        var firstBucket = examBucketForName(rows[0].examName);
+        if (firstBucket) {
+          var allSame = rows.every(function (r) { return examBucketForName(r.examName) === firstBucket; });
+          if (allSame) bucket = firstBucket;
+        }
+      }
+
+      banner.style.display = "block";
+
+      if (bucket) {
+        var lockedCount = 0;
+        targetClasses.forEach(function (c) {
+          var gn = gradeNumFromClass(c);
+          var row = matrixRows.find(function (r) { return gradeNumFromClass(r.class) === gn; });
+          if (row && row.locks && row.locks[bucket]) lockedCount++;
+        });
+
+        var allLocked = lockedCount === targetClasses.length;
+        var allOpen = lockedCount === 0;
+        var bucketLabel = BUCKET_LABELS[bucket] || bucket;
+        var classLabel = className ? ("Class " + className) : "Classes 6–10";
+
+        var bg = allLocked ? "#fff8f8" : (allOpen ? "#f0fdf4" : "#fffdf5");
+        var border = allLocked ? "#fecaca" : (allOpen ? "#bbf7d0" : "#fef08a");
+        var statusBadge = allLocked
+          ? '<span class="ex-status psyl" style="display:inline-flex;align-items:center;gap:4px;"><i class="material-icons" style="font-size:13px;">lock</i> Locked for Teachers</span>'
+          : (allOpen
+            ? '<span class="ex-status sched" style="display:inline-flex;align-items:center;gap:4px;"><i class="material-icons" style="font-size:13px;">lock_open</i> Open for Teachers</span>'
+            : '<span class="ex-status pdate" style="display:inline-flex;align-items:center;gap:4px;"><i class="material-icons" style="font-size:13px;">tune</i> Partially Locked (' + lockedCount + '/' + targetClasses.length + ')</span>');
+
+        var buttonsHtml = "";
+        if (allLocked) {
+          buttonsHtml = '<button type="button" class="btn btn-success ex-banner-unlock" style="width:auto;padding:6px 14px;font-size:12px;font-weight:700;"><i class="material-icons" style="font-size:15px;color:#fff;">lock_open</i> Unlock for Teachers</button>' +
+            '<button type="button" class="ex-abtn ex-banner-matrix" style="padding:6px 10px;font-size:12px;"><i class="material-icons" style="font-size:14px;">tune</i> Matrix</button>';
+        } else if (allOpen) {
+          buttonsHtml = '<button type="button" class="ex-abtn danger ex-banner-lock" style="padding:6px 14px;font-size:12px;font-weight:700;"><i class="material-icons" style="font-size:15px;">lock</i> Lock Window</button>' +
+            '<button type="button" class="ex-abtn ex-banner-matrix" style="padding:6px 10px;font-size:12px;"><i class="material-icons" style="font-size:14px;">tune</i> Matrix</button>';
+        } else {
+          buttonsHtml = '<button type="button" class="btn btn-success ex-banner-unlock" style="width:auto;padding:6px 12px;font-size:12px;font-weight:700;"><i class="material-icons" style="font-size:15px;color:#fff;">lock_open</i> Unlock All</button>' +
+            '<button type="button" class="ex-abtn danger ex-banner-lock" style="padding:6px 12px;font-size:12px;font-weight:700;"><i class="material-icons" style="font-size:15px;">lock</i> Lock All</button>' +
+            '<button type="button" class="ex-abtn ex-banner-matrix" style="padding:6px 10px;font-size:12px;"><i class="material-icons" style="font-size:14px;">tune</i> Matrix</button>';
+        }
+
+        banner.innerHTML =
+          '<div style="background:' + bg + ';border:1px solid ' + border + ';border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;box-shadow:var(--shadow-sm);">' +
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+              '<div style="display:flex;align-items:center;gap:6px;">' +
+                '<i class="material-icons" style="color:var(--maroon);font-size:20px;">security</i>' +
+                '<span style="font-size:13px;font-weight:800;color:var(--text-main);">Syllabus &amp; Marks Window:</span>' +
+              '</div>' +
+              '<div>' + statusBadge + '</div>' +
+              '<div style="font-size:12.5px;color:var(--text-muted);">' +
+                '<span>' + esc(bucketLabel) + (examName ? ' · ' + esc(examName) : '') + ' (' + classLabel + ')</span>' +
+              '</div>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-left:auto;">' +
+              buttonsHtml +
+            '</div>' +
+          '</div>';
+
+        var unBtn = banner.querySelector(".ex-banner-unlock");
+        if (unBtn) {
+          unBtn.addEventListener("click", function () {
+            setBatchLock(targetClasses, bucket, false, unBtn);
+          });
+        }
+        var lkBtn = banner.querySelector(".ex-banner-lock");
+        if (lkBtn) {
+          lkBtn.addEventListener("click", function () {
+            setBatchLock(targetClasses, bucket, true, lkBtn);
+          });
+        }
+        var mxBtn = banner.querySelector(".ex-banner-matrix");
+        if (mxBtn) {
+          mxBtn.addEventListener("click", function () {
+            openSmartLockModal(bucket);
+          });
+        }
+      } else {
+        var pills = BUCKET_SEQ.map(function (b) {
+          var lockedCountB = 0;
+          matrixRows.forEach(function (r) { if (r.locks && r.locks[b]) lockedCountB++; });
+          var bAllLocked = lockedCountB === matrixRows.length;
+          var bAllOpen = lockedCountB === 0;
+          var pillClass = bAllLocked ? "psyl" : (bAllOpen ? "sched" : "pdate");
+          var icon = bAllLocked ? "lock" : (bAllOpen ? "lock_open" : "tune");
+          var label = b;
+          return '<span class="ex-status ' + pillClass + '" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:3px 8px;" data-open-bucket="' + b + '" title="' + (bAllLocked ? 'Locked for all classes' : (bAllOpen ? 'Open for all classes' : 'Partially locked')) + '"><i class="material-icons" style="font-size:12px;">' + icon + '</i>' + label + '</span>';
+        }).join(" ");
+
+        banner.innerHTML =
+          '<div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;box-shadow:var(--shadow-sm);">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+              '<div style="display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;color:var(--text-main);">' +
+                '<i class="material-icons" style="font-size:17px;color:var(--maroon);">admin_panel_settings</i> Lock Status:' +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' + pills + '</div>' +
+            '</div>' +
+            '<button type="button" class="ex-abtn ex-banner-matrix" style="padding:4px 10px;font-size:12px;margin-left:auto;"><i class="material-icons" style="font-size:14px;">admin_panel_settings</i> Lock Manager</button>' +
+          '</div>';
+
+        Array.prototype.forEach.call(banner.querySelectorAll("[data-open-bucket]"), function (p) {
+          p.addEventListener("click", function () {
+            openSmartLockModal(p.getAttribute("data-open-bucket"));
+          });
+        });
+        var mxBtnAll = banner.querySelector(".ex-banner-matrix");
+        if (mxBtnAll) {
+          mxBtnAll.addEventListener("click", function () {
+            openSmartLockModal("");
+          });
+        }
+      }
+    }
+
+    function openSmartLockModal(initialBucket) {
+      if (initialBucket && $("exSchLockModalBucketSel")) {
+        $("exSchLockModalBucketSel").value = initialBucket;
+      }
+      renderSmartLockModalMatrix();
+      P.openModal("exSchLockModal");
+    }
+
+    function renderSmartLockModalMatrix() {
+      var body = $("exSchLockModalBody");
+      if (!body) return;
+      if (!st.lockMatrix) {
+        body.innerHTML = '<div class="ex-loading"><i class="material-icons">sync</i>Loading lock matrix…</div>';
+        P.api("locksGetMatrix", [], { overlay: false }).then(function (m) {
+          st.lockMatrix = m;
+          renderSmartLockModalMatrix();
+        }).catch(function (e) {
+          body.innerHTML = '<div class="ex-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + "</div>";
+        });
+        return;
+      }
+
+      var buckets = st.lockMatrix.buckets || BUCKET_SEQ;
+      var rows = st.lockMatrix.rows || [];
+      if (!rows.length) {
+        body.innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No high-school classes found.</div>';
+        return;
+      }
+
+      var activeBucket = $("exSchLockModalBucketSel") ? $("exSchLockModalBucketSel").value : "";
+      var html = '<div class="ex-tablewrap" style="margin:0;"><table class="ex-table" style="font-size:12.5px;"><thead><tr><th class="name" style="width:110px;">Class</th>';
+      buckets.forEach(function (b) {
+        var sub = b === "FA-1" ? "CT 1-2" : (b === "FA-2" ? "CT 3-4" : (b === "SA-1" ? "Term 1" : (b === "FA-3" ? "CT 5-6" : (b === "FA-4" ? "CT 7-8" : "Final"))));
+        var isColActive = b === activeBucket;
+        var colStyle = isColActive ? 'background:rgba(243,112,33,0.08);border-left:2px solid var(--accent);border-right:2px solid var(--accent);' : '';
+        html += '<th style="text-align:center;' + colStyle + '">' + esc(b) + '<br><span style="font-size:10px;font-weight:normal;color:var(--text-muted);">' + esc(sub) + '</span></th>';
+      });
+      html += '</tr></thead><tbody>';
+
+      rows.forEach(function (row) {
+        html += '<tr><td class="name"><b>Class ' + esc(row.class) + '</b></td>';
+        buckets.forEach(function (b) {
+          var locked = !!(row.locks && row.locks[b]);
+          var isColActive = b === activeBucket;
+          var tdStyle = isColActive ? 'background:rgba(243,112,33,0.05);border-left:2px solid rgba(243,112,33,0.3);border-right:2px solid rgba(243,112,33,0.3);' : '';
+          var btnClass = locked ? "danger" : "";
+          var style = locked ? "" : "border-color:#16a34a;color:#16a34a;background:#fff;";
+          var icon = locked ? "lock" : "lock_open";
+          var txt = locked ? "Locked" : "Open";
+          html += '<td style="text-align:center;' + tdStyle + '"><button type="button" class="ex-abtn ' + btnClass + ' smlock-cell" data-class="' + esc(row.class) + '" data-bucket="' + esc(b) + '" data-locked="' + (locked ? "1" : "0") + '" style="' + style + 'padding:4px 8px;font-size:11.5px;"><i class="material-icons" style="font-size:13px;">' + icon + '</i> ' + txt + '</button></td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      body.innerHTML = html;
+
+      Array.prototype.forEach.call(body.querySelectorAll(".smlock-cell"), function (btn) {
+        btn.addEventListener("click", function () {
+          var cls = btn.getAttribute("data-class");
+          var bucket = btn.getAttribute("data-bucket");
+          var willLock = btn.getAttribute("data-locked") !== "1";
+          btn.disabled = true;
+          btn.innerHTML = '<i class="material-icons" style="animation:spin 1s linear infinite;font-size:13px;display:inline-block;vertical-align:middle;">sync</i>';
+
+          // Optimistic local update
+          var r = (st.lockMatrix.rows || []).find(function (x) { return x.class === cls; });
+          if (r) {
+            r.locks = r.locks || {};
+            r.locks[bucket] = willLock;
+          }
+
+          P.api("locksSetBucket", [cls, bucket, willLock, me]).then(function () {
+            toast((willLock ? "Locked " : "Unlocked ") + "Class " + cls + " · " + bucket, "ok");
+            renderSmartLockModalMatrix();
+            renderLockBanner(st.lastScheduleRows || [], $("exSchExam").value, $("exSchClass").value);
+          }).catch(function (e) {
+            toast("Error: " + (e.message || e), "err");
+            if (r) r.locks[bucket] = !willLock;
+            renderSmartLockModalMatrix();
+          });
+        });
+      });
+    }
+
     function renderSchedule(rows, examName, className) {
       var body = $("exSchBody");
+      var readinessHost = $("exSchReadiness");
+
+      // Render Smart Lock Banner for Schedule
+      renderLockBanner(rows, examName, className);
+
+      // Update Examination Readiness Summary
+      if (readinessHost) {
+        if (rows && rows.length > 0) {
+          var totalRows = rows.length;
+          var submittedCount = 0;
+          var pendingCount = 0;
+          rows.forEach(function (r) {
+            var hasSyl = (r.status === "SCHEDULED") || (r.lessonsRaw && r.lessonsRaw.trim().length > 0);
+            if (hasSyl) submittedCount++;
+            else pendingCount++;
+          });
+          var pct = Math.round((submittedCount / totalRows) * 100);
+          var badgeClass = pct === 100 ? "sched" : (submittedCount > 0 ? "pdate" : "psyl");
+          var badgeLabel = pct === 100 ? "Ready (100%)" : (submittedCount > 0 ? ("Partially Ready (" + pct + "% · " + submittedCount + "/" + totalRows + " mapped)") : "Pending Syllabus Mapping (0/" + totalRows + ")");
+          readinessHost.style.display = "block";
+          readinessHost.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px;">' +
+            '<div><b>Examination Readiness:</b> <span class="ex-status ' + badgeClass + '" style="margin-left:8px;">' + badgeLabel + '</span>' +
+            (pendingCount > 0 ? (' <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">(' + pendingCount + ' portion' + (pendingCount > 1 ? 's' : '') + ' pending teacher mapping)</span>') : '') +
+            '</div>' +
+            (examName ? ('<span class="ex-note" style="margin:0;"><b>' + esc(examName) + '</b></span>') : '') +
+          '</div>';
+        } else {
+          readinessHost.style.display = "none";
+        }
+      }
+
       if (!rows.length) { body.innerHTML = '<div class="ex-empty"><i class="material-icons">event_busy</i>No exams match this filter. Create exams with “New Exam”, then schedule them here.</div>'; return; }
 
       var isMob = (window.innerWidth || document.documentElement.clientWidth || 0) <= 900;
@@ -1190,14 +1903,42 @@
       if (!g || !subj) { toast("Choose class and subject first.", "err"); return; }
       $("exPickBody").innerHTML = '<div class="ex-loading"><i class="material-icons">sync</i></div>';
       P.openModal("exPickModal");
-      P.api("getSyllabusMasterLessons", [g, subj], { overlay: false }).then(function (list) {
+
+      var isMaths = /^(math|maths|mathematics|maths-1|maths-2)$/i.test(String(subj).trim());
+      var gn = gradeNumFromClass(g);
+      var isHighSchool = (gn !== null && gn >= 8 && gn <= 10);
+
+      var fetchPromise;
+      if (isMaths && isHighSchool) {
+        fetchPromise = Promise.all([
+          P.api("getSyllabusMasterLessons", [g, "Maths"], { overlay: false }).catch(function () { return []; }),
+          P.api("getSyllabusMasterLessons", [g, "Maths-2"], { overlay: false }).catch(function () { return []; })
+        ]).then(function (results) {
+          var m1 = (results[0] || []).map(function (l) { l._strand = "Maths-1"; return l; });
+          var m2 = (results[1] || []).map(function (l) { l._strand = "Maths-2"; return l; });
+          if (!m1.length) {
+            return P.api("getSyllabusMasterLessons", [g, "Maths-1"], { overlay: false }).catch(function () { return []; }).then(function (m1alt) {
+              m1 = (m1alt || []).map(function (l) { l._strand = "Maths-1"; return l; });
+              return m1.concat(m2);
+            });
+          }
+          return m1.concat(m2);
+        });
+      } else {
+        fetchPromise = P.api("getSyllabusMasterLessons", [g, subj], { overlay: false });
+      }
+
+      fetchPromise.then(function (list) {
         if (!list || !list.length) { $("exPickBody").innerHTML = '<div class="ex-empty"><i class="material-icons">inbox</i>No lessons in Syllabus Master for this class/subject.</div>'; return; }
         var sel = {}; st.pickLessons.forEach(function (x) { sel[x.toLowerCase()] = true; });
         $("exPickBody").innerHTML = list.map(function (l, i) {
           var on = sel[l.name.toLowerCase()];
-          return '<label class="ex-pickitem ' + (on ? "on" : "") + '" data-name="' + esc(l.name) + '"><input type="checkbox" ' + (on ? "checked" : "") + '><span class="no">' + esc(l.lessonNo || (i + 1)) + '</span><span class="nm">' + esc(l.name) + '</span><span class="mo">' + esc(l.targetMonth || "") + "</span></label>";
+          var strand = l._strand ? ('<span class="ex-strand-badge ' + (l._strand === "Maths-1" ? "maths-1" : "maths-2") + '" style="margin-left:6px;font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;' + (l._strand === "Maths-1" ? "background:#dbeafe;color:#1e40af;" : "background:#fce7f3;color:#9d174d;") + '">' + esc(l._strand) + '</span>') : "";
+          return '<label class="ex-pickitem ' + (on ? "on" : "") + '" data-name="' + esc(l.name) + '"><input type="checkbox" ' + (on ? "checked" : "") + '><span class="no">' + esc(l.lessonNo || (i + 1)) + '</span><span class="nm">' + esc(l.name) + strand + '</span><span class="mo">' + esc(l.targetMonth || "") + "</span></label>";
         }).join("");
         Array.prototype.forEach.call($("exPickBody").querySelectorAll(".ex-pickitem input"), function (c) { c.addEventListener("change", function () { c.closest(".ex-pickitem").classList.toggle("on", c.checked); }); });
+      }).catch(function (e) {
+        $("exPickBody").innerHTML = '<div class="ex-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>';
       });
     }
     function commitPicker() {
@@ -1541,10 +2282,22 @@
        - A missing subject total is INCOMPLETE, not PASSED.
        ----------------------------------------------------------------- */
     function assessmentResult(student, subjects, bucket, className, maxPerSubject) {
+      if (window.ExamCalc) {
+        var res = window.ExamCalc.calculateStudent(student, bucket, className);
+        return {
+          status: res.status,
+          failed: res.failedSubjects || [],
+          missing: res.missingSubjects || [],
+          totalScored: res.totalScored,
+          totalMax: res.totalMax,
+          percent: res.percent,
+          isComplete: res.isComplete
+        };
+      }
       var isSummative = bucket === "SA-1" || bucket === "SA-2";
       var pct = student && student.hasAny ? Number(student.percent) : 0;
       if (!isSummative) {
-        var faStatus = pct >= 33 ? "PASSED" : "NOT PASSED";
+        var faStatus = pct >= 35 ? "PASSED" : "NOT PASSED";
         return { status: faStatus, failed: [], missing: [] };
       }
 
@@ -1557,8 +2310,8 @@
       var cells = student.subjects || {};
 
       // The Telangana SSC structure treats Physical Science and Biological
-      // Science as the two parts of one Science subject in Classes IX-X.
-      if (grade === 9 || grade === 10) {
+      // Science as the two parts of one Science subject in Classes VIII-X.
+      if (grade >= 8 && grade <= 10) {
         var hasPhysics = subjects.indexOf("Physics") >= 0;
         var hasBiology = subjects.indexOf("Biology") >= 0;
         if (hasPhysics && hasBiology) {
@@ -1622,7 +2375,7 @@
         '<div id="repTab" style="display:none;">' +
           '<div id="repTabScaler">' +
             '<div class="rep-print-head">' +
-              '<img src="receipt-header-logo.png" alt="' + esc((P.CONFIG.SCHOOL || {}).name || "School") + '" onerror="this.style.display=\'none\'">' +
+              '<img src="logo-full.jpg" alt="' + esc((P.CONFIG.SCHOOL || {}).name || "School") + '" onerror="this.src=\'header-logo.png\'">' +
             '</div>' +
             '<div class="rep-doc-title" id="repDocTitle"></div>' +
             '<div class="rep-doc-legend" id="repDocLegend"></div>' +
@@ -1669,6 +2422,10 @@
       var n = Math.round((Number(v) + Number.EPSILON) * 2) / 2;
       return Number.isInteger(n) ? String(n) : n.toFixed(1);
     }
+    function roundHalf(v) {
+      if (v === "" || v == null || isNaN(Number(v))) return null;
+      return Math.round((Number(v) + Number.EPSILON) * 2) / 2;
+    }
     function cell(c) {
       if (!c) return '<td class="miss">&ndash;</td>';
       var show = (c.value === "" || c.value == null) ? "&ndash;" : roundHalfValue(c.value);
@@ -1694,6 +2451,53 @@
       var show = (c.value === "" || c.value == null) ? "&ndash;" : roundHalfValue(c.value);
       return '<td class="' + (c.has ? "" : "miss ") + (extraClass || "") + '">' + show + '</td>';
     }
+    function detectClassSANeedsHalving(students, bucket, className) {
+      if (!students || !students.length) return false;
+      var isSA = window.ExamCalc ? window.ExamCalc.isSABucket(bucket) : /^SA-[12]$/i.test(String(bucket || "").trim());
+      if (!isSA) return false;
+      var isSplit = window.ExamCalc ? window.ExamCalc.isSplitScienceGrade(className) : (function () {
+        var gn = gradeNumFromClass(className);
+        return gn !== null && gn >= 8 && gn <= 10;
+      })();
+      if (!isSplit) return false;
+
+      return students.some(function (st) {
+        if (!st) return false;
+        var checkSub = function (sub) {
+          if (!sub) return false;
+          var name = sub.subject || sub.name;
+          if (name !== "Physics" && name !== "Biology") return false;
+          var cells = (sub.cells && (sub.cells.CT1 || sub.cells.EX || sub.cells.Exam || sub.cells.Tot || sub.cells.ct1)) ? sub.cells : sub;
+          var exCell = cells.EX || cells.Exam || cells.exam || cells["1"] || {};
+          var inCell = cells.IN || cells.Int || cells.internal || cells.int || cells["2"] || {};
+          var totCell = cells.Tot || cells.tot || cells.total || cells["T"] || {};
+
+          var exVal = exCell.value != null ? exCell.value : (typeof exCell === "number" ? exCell : sub.exam);
+          var inVal = inCell.value != null ? inCell.value : (typeof inCell === "number" ? inCell : sub.int);
+          var totVal = totCell.value != null ? totCell.value : (typeof totCell === "number" ? totCell : sub.total);
+
+          return Number(exVal) > 40 || Number(inVal) > 10 || Number(totVal) > 50;
+        };
+
+        if (Array.isArray(st.subjects)) {
+          for (var i = 0; i < st.subjects.length; i++) {
+            if (checkSub(st.subjects[i])) return true;
+          }
+        } else if (st.subjects && typeof st.subjects === "object") {
+          for (var k in st.subjects) {
+            if (Object.prototype.hasOwnProperty.call(st.subjects, k)) {
+              var s = st.subjects[k] || {};
+              s.subject = s.subject || k;
+              if (checkSub(s)) return true;
+            }
+          }
+        }
+        if (st.Physics && checkSub(Object.assign({ subject: "Physics" }, st.Physics))) return true;
+        if (st.Biology && checkSub(Object.assign({ subject: "Biology" }, st.Biology))) return true;
+        return false;
+      });
+    }
+
     function renderTab() {
       var d = st.reportData;
       if (!d || !d.students || !d.students.length) { $("repHint").textContent = "No students found for this class."; $("repTab").style.display = "none"; return; }
@@ -1705,7 +2509,17 @@
       var subjectLabels = isSABucket ? ["1", "2", "T"] : ["1", "2", "3", "4", "T"];
       var subjectMax = isSABucket ? ["80", "20", "100"] : ["20", "20", "5", "25", "50"];
       var perSub = subjectKeys.length;
-      var overallMax = subjects.length * (isSABucket ? 100 : 50);
+      var overallMax = isSABucket ? 600 : 300;
+      var isSplitScience = (function () {
+        if (window.ExamCalc && window.ExamCalc.isSplitScienceGrade) {
+          return window.ExamCalc.isSplitScienceGrade(d.class);
+        }
+        var gn = gradeNumFromClass(d.class);
+        return gn !== null && gn >= 8 && gn <= 10;
+      })();
+
+      var saNeedsHalve = detectClassSANeedsHalving(d.students, d.bucket, d.class);
+      var calcOpts = { saNeedsHalving: saNeedsHalve };
 
       $("repDocTitle").textContent = bucketTitleWords(d.bucket) + " MARKS SHEET (" + academicYearStr() + ")";
       $("repDocLegend").innerHTML = buildLegendHtml(d, isSABucket);
@@ -1723,9 +2537,13 @@
       var h1 = '<tr class="top"><th rowspan="2">Sl<br>No</th><th rowspan="2">Student Name</th>';
       var h2 = '<tr class="sub">';
       subjects.forEach(function (subj) {
+        var isPhyBio = isSplitScience && (subj === "Physics" || subj === "Biology");
+        var curMax = isPhyBio
+          ? (isSABucket ? ["40", "10", "50"] : subjectMax)
+          : subjectMax;
         h1 += '<th class="grp" colspan="' + perSub + '">' + esc(subj) + '</th>';
         subjectLabels.forEach(function (label, i) {
-          h2 += '<th class="' + (i === 0 ? 'grp ' : '') + (i === subjectLabels.length - 1 ? 'sumhead' : '') + '">' + label + '<span class="mx">(' + subjectMax[i] + ')</span></th>';
+          h2 += '<th class="' + (i === 0 ? 'grp ' : '') + (i === subjectLabels.length - 1 ? 'sumhead' : '') + '">' + label + '<span class="mx">(' + curMax[i] + ')</span></th>';
         });
       });
       h1 += '<th class="grp" colspan="4">Holistic Indicators</th>';
@@ -1734,7 +2552,9 @@
       h2 += '<th class="grp total-head">' + esc(d.bucket) + '<span class="mx">(' + overallMax + ')</span></th><th class="total-head">%</th><th class="total-head">P/F</th><th class="total-head">Rank</th></tr>';
 
       var rankRows = d.students.map(function (student, index) {
-        return { index: index, score: student.hasAny ? Number(student.totalScored) : null };
+        var evalRes = window.ExamCalc ? window.ExamCalc.calculateStudent(student, d.bucket, d.class, calcOpts) : null;
+        var score = (evalRes && evalRes.isComplete) ? evalRes.totalScored : null;
+        return { index: index, score: score };
       }).filter(function (r) { return r.score != null && !isNaN(r.score); })
         .sort(function (a, b) { return b.score - a.score; });
       var rankByIndex = {}, lastScore = null, lastRank = 0;
@@ -1746,11 +2566,35 @@
 
       var body = "";
       d.students.forEach(function (s, idx) {
+        var evalRes = window.ExamCalc ? window.ExamCalc.calculateStudent(s, d.bucket, d.class, calcOpts) : null;
         var cells = "";
         subjects.forEach(function (subj) {
-          var c = s.subjects[subj] || {};
+          var isPhyBio = isSplitScience && (subj === "Physics" || subj === "Biology");
+          var subRep = (window.ExamCalc && window.ExamCalc.calculateSubjectReport)
+            ? window.ExamCalc.calculateSubjectReport(s, subj, d.bucket, d.class, calcOpts)
+            : null;
+          var comps = subRep && subRep.components ? subRep.components : {};
+          var directSub = (s.subjects || {})[subj] || {};
+          var directCells = (directSub.cells && (directSub.cells.CT1 || directSub.cells.EX || directSub.cells.Exam)) ? directSub.cells : directSub;
+
           subjectKeys.forEach(function (key, ci) {
-            cells += reportCell(c[key], (ci === 0 ? "grp " : "") + (ci === subjectKeys.length - 1 ? "sub-total" : ""));
+            var comp = comps[key];
+            var dirCell = directCells[key];
+            var has = (comp && comp.has) || (dirCell && dirCell.has);
+            var isAb = (comp && comp.absent) || isAbsentCell(dirCell);
+            var val = null;
+            if (isAb) {
+              val = "Ab";
+            } else if (isPhyBio && !isSABucket) {
+              val = (dirCell && dirCell.value != null && dirCell.value !== "") ? dirCell.value : (comp && comp.has ? comp.scored : null);
+            } else if (comp && comp.has && comp.scored != null) {
+              val = comp.scored;
+            } else if (dirCell && dirCell.has && dirCell.value !== "" && dirCell.value != null) {
+              var rawNum = Number(dirCell.value);
+              val = (!isNaN(rawNum) && isPhyBio && isSABucket && saNeedsHalve) ? (rawNum * 0.5) : dirCell.value;
+            }
+            var cObj = { has: !!has, value: val };
+            cells += reportCell(cObj, (ci === 0 ? "grp " : "") + (ci === subjectKeys.length - 1 ? "sub-total" : ""));
           });
         });
 
@@ -1762,14 +2606,19 @@
         }
         cells += '<td class="sub-total">' + (holHas ? roundHalfValue(holTotal) : '&ndash;') + '</td>';
 
-        var pct = s.hasAny ? Number(s.percent) : 0;
-        body += '<tr class="' + (!s.hasAny ? 'norow' : '') + '">' +
+        var isComplete = evalRes ? evalRes.isComplete : false;
+        var totalScoredStr = (evalRes && evalRes.isComplete) ? roundHalfValue(evalRes.totalScored) : '&ndash;';
+        var pctStr = (evalRes && evalRes.isComplete) ? (evalRes.percent + "%") : '&ndash;';
+        var pfCode = evalRes ? (evalRes.status === "PASSED" ? "P" : (evalRes.status === "NOT PASSED" ? "F" : "I")) : passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject);
+        var rankStr = (evalRes && evalRes.isComplete && rankByIndex[idx]) ? rankByIndex[idx] : '&ndash;';
+
+        body += '<tr class="' + (!isComplete ? 'norow' : '') + '">' +
           '<td>' + esc(s.roll != null && s.roll !== "" ? s.roll : (idx + 1)) + '</td>' +
           '<td class="student-name">' + esc(s.name) + '</td>' + cells +
-          '<td class="grp grand-total">' + (s.hasAny ? roundHalfValue(s.totalScored) : '&ndash;') + '</td>' +
-          '<td class="grand-total">' + (s.hasAny ? s.percent : '&ndash;') + '</td>' +
-          '<td class="grand-total">' + ((s.hasAny || d.isSA) ? passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject) : '&ndash;') + '</td>' +
-          '<td class="grand-total">' + (rankByIndex[idx] || '&ndash;') + '</td></tr>';
+          '<td class="grp grand-total">' + totalScoredStr + '</td>' +
+          '<td class="grand-total">' + pctStr + '</td>' +
+          '<td class="grand-total">' + pfCode + '</td>' +
+          '<td class="grand-total">' + rankStr + '</td></tr>';
       });
 
       $("repTable").innerHTML = colHtml + '<thead>' + h1 + h2 + '</thead><tbody>' + body + '</tbody>';
@@ -1782,7 +2631,7 @@
         var grade = gradeNumFromClass(d.class);
         var passRule = grade === 10
           ? 'Pass rule: 35% in each subject; Hindi (Second Language) 20%; Science combines Physics + Biology.'
-          : (grade === 9
+          : (grade >= 8
             ? 'Pass rule: 35% in each subject; Science combines Physics + Biology.'
             : 'Pass rule: school benchmark of 35% in each academic subject.');
         return '<b>Academic :</b> 1 - Summative Exam, 2 - Internal Marks, T - Total; <b>Result :</b> P - all subjects passed, F - one or more subjects below minimum, I - marks incomplete; <b>' + esc(passRule) + '</b> <b>Holistic :</b> 1 - ' +
@@ -1806,18 +2655,64 @@
       var isSABucket = d.isSA, subCols = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "HA", "UT", "Tot"];
       var colLabels = d.colLabels || {};
       var header = ["Roll", "Student"];
-      subjects.forEach(function (subj) { subCols.forEach(function (c) { header.push(subj + " " + (colLabels[c] || c)); }); });
+      var isSplitScience = (function () {
+        if (window.ExamCalc && window.ExamCalc.isSplitScienceGrade) {
+          return window.ExamCalc.isSplitScienceGrade(d.class);
+        }
+        var gn = gradeNumFromClass(d.class);
+        return gn !== null && gn >= 8 && gn <= 10;
+      })();
+      var saNeedsHalve = detectClassSANeedsHalving(d.students, d.bucket, d.class);
+      var calcOpts = { saNeedsHalving: saNeedsHalve };
+
+      subjects.forEach(function (subj) {
+        var isPhyBio = isSplitScience && (subj === "Physics" || subj === "Biology");
+        var curMax = isPhyBio
+          ? (isSABucket ? ["40", "10", "50"] : ["10", "10", "2.5", "12.5", "25"])
+          : (isSABucket ? ["80", "20", "100"] : ["20", "20", "5", "25", "50"]);
+        subCols.forEach(function (c, ci) {
+          header.push(subj + " " + (colLabels[c] || c) + " (" + curMax[ci] + ")");
+        });
+      });
       (d.holisticParams || []).forEach(function (p) { header.push("Holistic: " + p.parameter); });
       header.push("Total", "Max", "%", "P/F");
       var lines = [header.map(csvEsc).join(",")];
       d.students.forEach(function (s) {
+        var evalRes = window.ExamCalc ? window.ExamCalc.calculateStudent(s, d.bucket, d.class, calcOpts) : null;
         var row = [s.roll, s.name];
         subjects.forEach(function (subj) {
-          var c = s.subjects[subj] || {};
-          subCols.forEach(function (k) { var v = c[k]; row.push(v && v.value !== "" && v.value != null ? v.value : ""); });
+          var isPhyBio = isSplitScience && (subj === "Physics" || subj === "Biology");
+          var subRep = (window.ExamCalc && window.ExamCalc.calculateSubjectReport)
+            ? window.ExamCalc.calculateSubjectReport(s, subj, d.bucket, d.class, calcOpts)
+            : null;
+          var comps = subRep && subRep.components ? subRep.components : {};
+          var directSub = (s.subjects || {})[subj] || {};
+          var directCells = (directSub.cells && (directSub.cells.CT1 || directSub.cells.EX || directSub.cells.Exam)) ? directSub.cells : directSub;
+
+          subCols.forEach(function (k) {
+            var comp = comps[k];
+            var dirCell = directCells[k];
+            var has = (comp && comp.has) || (dirCell && dirCell.has);
+            var isAb = (comp && comp.absent) || isAbsentCell(dirCell);
+            var v = "";
+            if (isAb) {
+              v = "Ab";
+            } else if (comp && comp.has && comp.scored != null) {
+              v = comp.scored;
+            } else if (dirCell && dirCell.has && dirCell.value !== "" && dirCell.value != null) {
+              var rawNum = Number(dirCell.value);
+              v = (!isNaN(rawNum) && isPhyBio && (isSABucket ? saNeedsHalve : true)) ? (rawNum * 0.5) : dirCell.value;
+            }
+            row.push(v != null && v !== "" ? roundHalfValue(v) : "");
+          });
         });
         (d.holisticParams || []).forEach(function (p) { var v = s.holistic ? s.holistic[p.parameter] : null; row.push(v && v.value !== "" ? v.value : ""); });
-        row.push(s.hasAny ? s.totalScored : "", s.totalMax, s.hasAny ? s.percent : "", (s.hasAny || d.isSA) ? passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject) : "");
+        
+        var totScored = (evalRes && evalRes.isComplete) ? roundHalfValue(evalRes.totalScored) : "";
+        var totMax = evalRes ? evalRes.totalMax : (isSABucket ? 600 : 300);
+        var pct = (evalRes && evalRes.isComplete) ? evalRes.percent : "";
+        var pf = evalRes ? (evalRes.status === "PASSED" ? "P" : (evalRes.status === "NOT PASSED" ? "F" : "I")) : passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject);
+        row.push(totScored, totMax, pct, pf);
         lines.push(row.map(csvEsc).join(","));
       });
       var blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -1895,107 +2790,219 @@
        from the "Academic Parameters" super-header, matching the sample. */
     function buildProgressReports(idxs) {
       var d = st.reportData;
-      var subjects = filterSubjects(d);
       var isSABucket = !!d.isSA;
-      var maxPerSubject = d.maxPerSubject || (isSABucket ? 100 : 50);
+      var maxPerSubject = isSABucket ? 100 : 50;
       var title = bucketTitleWords(d.bucket) + " PROGRESS REPORT (" + academicYearStr() + ")";
       var holP = (d.holisticParams || []).slice();
       var colLabels = d.colLabels || {};
       var academicKeys = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "CTAvg", "HA", "UT", "Tot"];
       var ctNumbers = { "FA-1": [1, 2], "FA-2": [3, 4], "FA-3": [5, 6], "FA-4": [7, 8] }[d.bucket] || [1, 2];
       var internalSource = d.bucket === "SA-2" ? "Internal (FA-1 to FA-4)" : "Internal (FA-1 & FA-2)";
-      var academicHeads = isSABucket ? ["Summative Exam", internalSource, "Total"] : ["Class Test " + ctNumbers[0], "Class Test " + ctNumbers[1], "Average of Class Tests " + ctNumbers[0] + " & " + ctNumbers[1], "Home Assignment", "Unit Test", "Total"];
+      var academicHeads = isSABucket
+        ? ["Summative Exam", internalSource, "Total"]
+        : ["Class Test " + ctNumbers[0], "Class Test " + ctNumbers[1], "Average of Class Tests " + ctNumbers[0] + " & " + ctNumbers[1], "Home Assignment", "Unit Test", "Total"];
       var academicMax = isSABucket
-        ? [maxFromLabel(colLabels.Exam) || "80", maxFromLabel(colLabels.Int) || "20", String(maxPerSubject)]
-        : [maxFromLabel(colLabels.CT1) || "20", maxFromLabel(colLabels.CT2) || "20", "20", maxFromLabel(colLabels.HA) || "5", maxFromLabel(colLabels.UT) || "25", String(maxPerSubject)];
-      var componentMaximums = academicMax.map(function (max) { return Number(max) * subjects.length; });
-      var ranks = classRankMap(d.students || []);
+        ? ["80", "20", "100"]
+        : ["20", "20", "20", "5", "25", "50"];
 
-      function componentValue(student, subject, key) {
-        var cells = (student.subjects || {})[subject] || {};
-        if (key === "CTAvg") {
-          var c1 = cells.CT1, c2 = cells.CT2;
-          if (!c1 || !c2 || !c1.has || !c2.has || c1.value === "" || c2.value === "" || c1.value == null || c2.value == null || isNaN(Number(c1.value)) || isNaN(Number(c2.value))) return null;
-          return (Number(c1.value) + Number(c2.value)) / 2;
+      var displaySubjects = ["Telugu", "Hindi", "English", "Maths", "Science", "Social"];
+      var componentMaximums = isSABucket
+        ? [480, 120, 600]
+        : [120, 120, 120, 30, 150, 300];
+
+      var isSplitScience = (function () {
+        if (window.ExamCalc && window.ExamCalc.isSplitScienceGrade) {
+          return window.ExamCalc.isSplitScienceGrade(d.class);
         }
-        var v = cells[key];
-        return v && v.has && v.value !== "" && v.value != null && !isNaN(Number(v.value)) ? Number(v.value) : null;
-      }
-      function hasCompleteFASubject(student, subject) {
-        return ["CT1", "CT2", "HA", "UT", "Tot"].every(function (key) { return componentValue(student, subject, key) != null; });
-      }
-      var classAverages = subjects.map(function (subject) {
-        var vals = (d.students || []).filter(function (student) {
-          return isSABucket ? subjectTotalValue(student, subject) != null : hasCompleteFASubject(student, subject);
-        }).map(function (student) { return subjectTotalValue(student, subject); });
-        return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : 0;
+        var gn = gradeNumFromClass(d.class);
+        return gn !== null && gn >= 8 && gn <= 10;
+      })();
+
+      var saNeedsHalve = detectClassSANeedsHalving(d.students, d.bucket, d.class);
+      var calcOpts = { saNeedsHalving: saNeedsHalve };
+
+      // Rank mapping for complete students only
+      var rankRows = (d.students || []).map(function (s, i) {
+        var res = window.ExamCalc ? window.ExamCalc.calculateStudent(s, d.bucket, d.class, calcOpts) : null;
+        return { index: i, score: (res && res.isComplete) ? res.totalScored : null };
+      }).filter(function (r) { return r.score != null; })
+        .sort(function (a, b) { return b.score - a.score; });
+      var ranks = {}, lastScore = null, lastRank = 0;
+      rankRows.forEach(function (r, pos) {
+        if (lastScore === null || Math.abs(r.score - lastScore) > 0.000001) lastRank = pos + 1;
+        ranks[r.index] = lastRank;
+        lastScore = r.score;
       });
+
+      // Class averages for the 6 standard subjects (for chart comparison)
+      var classAverages = displaySubjects.map(function (subj) {
+        var vals = [];
+        (d.students || []).forEach(function (student) {
+          var rep = window.ExamCalc ? window.ExamCalc.calculateSubjectReport(student, subj, d.bucket, d.class, calcOpts) : null;
+          if (rep && rep.isComplete && rep.scored != null) {
+            vals.push(rep.scored);
+          }
+        });
+        return vals.length ? (vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) : 0;
+      });
+
+      function renderProgressCell(comp, dirCell, isTot, scale) {
+        var s = (typeof scale === "number") ? scale : 1;
+        var cls = isTot ? "pr-tot pr-col-total " : "";
+        var has = (comp && comp.has) || (dirCell && dirCell.has);
+        if (!has) return '<td class="' + cls + 'pr-miss">&ndash;</td>';
+        if ((comp && comp.absent) || isAbsentCell(dirCell)) return '<td class="' + cls + 'pr-absent">Ab</td>';
+        var val = null;
+        if (comp && comp.scored != null) {
+          val = comp.scored;
+          if (comp.max && val > comp.max) {
+            val = roundHalf(val * 0.5);
+          }
+        } else if (dirCell && dirCell.value != null && dirCell.value !== "") {
+          val = Number(dirCell.value) * s;
+        }
+        if (val == null) return '<td class="' + cls + 'pr-miss">&ndash;</td>';
+        return '<td class="' + cls + '">' + roundHalfValue(val) + '</td>';
+      }
 
       var pages = idxs.map(function (idx) {
         var s = d.students[idx]; if (!s) return "";
-        var pct = s.hasAny ? Number(s.percent) : 0;
-        var componentTotals = academicKeys.map(function (key) {
-          if (key === "Tot") return s.hasAny ? Number(s.totalScored) : null;
-          var vals = subjects.map(function (subject) { return componentValue(s, subject, key); }).filter(function (v) { return v != null; });
-          return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) : null;
-        });
-        var academicRows = subjects.map(function (subject) {
-          var cells = (s.subjects || {})[subject] || {};
-          return '<tr><td class="pr-subjectname">' + esc(subject) + '</td>' + academicKeys.map(function (key, i) {
-            var value = componentValue(s, subject, key), sourceCell = key === "CTAvg" ? null : cells[key];
-            var shown = key === "CTAvg" && (isAbsentCell(cells.CT1) || isAbsentCell(cells.CT2)) ? "Ab" : progressCellText(sourceCell, value);
-            return '<td class="' + (shown === "Ab" ? 'pr-absent ' : '') + (i === academicKeys.length - 1 ? 'pr-tot' : '') + '">' + shown + '</td>';
-          }).join("") + '</tr>';
-        }).join("");
+        var evalRes = window.ExamCalc
+          ? window.ExamCalc.calculateStudent(s, d.bucket, d.class, calcOpts)
+          : null;
 
+        var academicRows = "";
+        displaySubjects.forEach(function (subjKey) {
+          var rep = evalRes ? evalRes.subjects[subjKey] : null;
+          if (!rep) return;
+
+          if (rep.isSplit) {
+            var dirPhy = (s.subjects || {})["Physics"] || {};
+            var dirPhyCells = (dirPhy.cells && (dirPhy.cells.CT1 || dirPhy.cells.EX || dirPhy.cells.Exam)) ? dirPhy.cells : dirPhy;
+            var dirBio = (s.subjects || {})["Biology"] || {};
+            var dirBioCells = (dirBio.cells && (dirBio.cells.CT1 || dirBio.cells.EX || dirBio.cells.Exam)) ? dirBio.cells : dirBio;
+
+            // Science Combined Row (Centered with badge)
+            academicRows += '<tr class="pr-comb-row"><td class="pr-subjectname"><div class="pr-tree-center"><span class="pr-comb-title">Science</span> <span class="pr-badge-comb">Combined</span></div></td>';
+            academicKeys.forEach(function (k, ki) {
+              academicRows += renderProgressCell(rep.components[k], null, ki === academicKeys.length - 1);
+            });
+            academicRows += '</tr>';
+
+            // Physics Sub-row (Centered with tree branch)
+            academicRows += '<tr class="pr-sub-row"><td class="pr-subjectname"><div class="pr-tree-center"><span class="pr-tree-bullet">├─</span> <span class="pr-tree-name">Physics</span> <span class="pr-sub-max">(Max ' + (isSABucket ? '50' : '25') + ')</span></div></td>';
+            academicKeys.forEach(function (k, ki) {
+              academicRows += renderProgressCell(rep.physics.components[k], dirPhyCells[k], ki === academicKeys.length - 1, isSABucket ? (saNeedsHalve ? 0.5 : 1.0) : 0.5);
+            });
+            academicRows += '</tr>';
+
+            // Biology Sub-row (Centered with tree branch)
+            academicRows += '<tr class="pr-sub-row"><td class="pr-subjectname"><div class="pr-tree-center"><span class="pr-tree-bullet">└─</span> <span class="pr-tree-name">Biology</span> <span class="pr-sub-max">(Max ' + (isSABucket ? '50' : '25') + ')</span></div></td>';
+            academicKeys.forEach(function (k, ki) {
+              academicRows += renderProgressCell(rep.biology.components[k], dirBioCells[k], ki === academicKeys.length - 1, isSABucket ? (saNeedsHalve ? 0.5 : 1.0) : 0.5);
+            });
+            academicRows += '</tr>';
+          } else {
+            // Regular subject row (Grades 6-7 Science, or Telugu, Hindi, English, Maths, Social)
+            var dirSub = (s.subjects || {})[subjKey] || {};
+            var dirCells = (dirSub.cells && (dirSub.cells.CT1 || dirSub.cells.EX || dirSub.cells.Exam)) ? dirSub.cells : dirSub;
+            academicRows += '<tr><td class="pr-subjectname">' + esc(rep.displayName) + '</td>';
+            academicKeys.forEach(function (k, ki) {
+              academicRows += renderProgressCell(rep.components[k], dirCells[k], ki === academicKeys.length - 1);
+            });
+            academicRows += '</tr>';
+          }
+        });
+
+        // Component totals across the 6 subjects
+        var isComp = evalRes ? evalRes.isComplete : false;
+        var componentTotals = academicKeys.map(function (k) {
+          if (k === "Tot") {
+            return isComp ? evalRes.totalScored : null;
+          }
+          var sum = 0, allHave = true;
+          displaySubjects.forEach(function (subjKey) {
+            var rep = evalRes ? evalRes.subjects[subjKey] : null;
+            if (!rep) { allHave = false; return; }
+            var comp = rep.components[k];
+            if (!comp || !comp.has) { allHave = false; return; }
+            if (comp.scored != null) sum += comp.scored;
+          });
+          return allHave ? (window.ExamCalc ? window.ExamCalc.roundHalf(sum) : roundHalf(sum)) : null;
+        });
+
+        var totalRow = '<tr class="pr-component-total"><td class="pr-tot-label">Component Total</td>' + componentTotals.map(function (val, i) {
+          var isTot = i === componentTotals.length - 1;
+          return '<td class="' + (isTot ? 'pr-col-total' : '') + '">' + (val == null ? '&ndash;' : esc(roundHalfValue(val)) + ' / ' + esc(roundHalfValue(componentMaximums[i]))) + '</td>';
+        }).join('') + '</tr>';
+
+        // Result strip
+        var statusStr = evalRes ? evalRes.status : "INCOMPLETE";
+        var resultDetail = "";
+        if (evalRes) {
+          if (!evalRes.isComplete) {
+            resultDetail = '<small>Marks pending: ' + esc(evalRes.missingSubjects.join(', ')) + '</small>';
+          } else if (evalRes.status === "NOT PASSED") {
+            resultDetail = '<small>Below minimum: ' + esc(evalRes.failedSubjects.join(', ')) + '</small>';
+          } else {
+            resultDetail = ""; // Clean display without redundant repetition
+          }
+        }
+
+        var resultStrip = '<div class="pr-result-strip">' +
+          '<div class="pr-result-card"><span>Percentage</span><b>' + (isComp ? esc(evalRes.percent) + '%' : '&ndash;') + '</b></div>' +
+          '<div class="pr-result-card"><span>Rank</span><b>' + (isComp && ranks[idx] ? ranks[idx] : '&ndash;') + '</b></div>' +
+          '<div class="pr-result-card"><span>Overall Result</span><b>' + esc(statusStr) + '</b>' + resultDetail + '</div>' +
+        '</div>';
+
+        // Chart values
+        var chartVals = displaySubjects.map(function (subjKey) {
+          var rep = evalRes ? evalRes.subjects[subjKey] : null;
+          return (rep && rep.isComplete && rep.scored != null) ? rep.scored : 0;
+        });
+
+        // Attendance & Impression
+        var attendance = attendanceRowsForStudent(d, s);
+        var assessmentAbsent = studentHasAssessmentAbsence(s, displaySubjects, academicKeys.filter(function (k) { return k !== "CTAvg" && k !== "Tot"; }));
+        var impression = intelligentImpression(s, displaySubjects, maxPerSubject, attendance.overallPercentage, assessmentAbsent);
+        if (evalRes && !evalRes.isComplete) {
+          impression = 'The assessment is incomplete. Marks are still required for ' + evalRes.missingSubjects.join(', ') + '. The overall result will be finalized once all components are entered.';
+        } else if (evalRes && evalRes.status === "NOT PASSED") {
+          impression = 'The student has not met the minimum pass mark in ' + evalRes.failedSubjects.join(', ') + '. Focused revision, practice and teacher guidance are needed in these areas.';
+        }
+
+        // Holistic Assessment
         var holTotal = 0, holHas = false, holMaximum = 0;
         var holisticRows = holP.map(function (parameter, i) {
           var v = s.holistic ? s.holistic[parameter.parameter] : null, shown = "&ndash;";
           var maximum = Number(parameter.max == null ? (parameter.maximum == null ? 10 : parameter.maximum) : parameter.max) || 10;
           holMaximum += maximum;
           if (v && v.has && v.value !== "" && v.value != null) { holTotal += Number(v.value); holHas = true; shown = esc(roundHalfValue(v.value)); }
-          return '<tr><td class="pr-hol-no">' + (i + 1) + '</td><td class="pr-hol-name">' + esc(parameter.parameter) + '</td><td>' + esc(roundHalfValue(maximum)) + '</td><td>' + shown + '</td></tr>';
+          return '<tr><td class="pr-hol-no">' + (i + 1) + '</td><td class="pr-hol-name">' + esc(parameter.parameter) + '</td><td>' + esc(roundHalfValue(maximum)) + '</td><td class="pr-hol-score">' + shown + '</td></tr>';
         }).join("");
-        holisticRows += '<tr class="pr-holistic-total"><td colspan="2" class="pr-scorelabel">Total</td><td class="pr-scorelabel">' + esc(roundHalfValue(holMaximum)) + '</td><td class="pr-scoreval">' + (holHas ? esc(roundHalfValue(holTotal)) : "&ndash;") + '</td></tr>';
+        holisticRows += '<tr class="pr-holistic-total"><td colspan="2" class="pr-scorelabel">Total</td><td class="pr-scorelabel">' + esc(roundHalfValue(holMaximum)) + '</td><td class="pr-scoreval pr-col-total">' + (holHas ? esc(roundHalfValue(holTotal)) : "&ndash;") + '</td></tr>';
 
-        var headCells = academicHeads.map(function (label, i) { return '<th>' + esc(label) + '<span class="mx">Maximum ' + academicMax[i] + '</span></th>'; }).join("");
-        var totalRow = '<tr class="pr-component-total"><td>Component Total</td>' + componentTotals.map(function (value, i) {
-          return '<td>' + (value == null ? '&ndash;' : esc(roundHalfValue(value)) + ' / ' + esc(roundHalfValue(componentMaximums[i]))) + '</td>';
-        }).join('') + '</tr>';
-        var saResult = assessmentResult(s, subjects, d.bucket, d.class, maxPerSubject);
-        var resultDetail = saResult.failed.length
-          ? '<small>Below minimum: ' + esc(saResult.failed.join(', ')) + '</small>'
-          : (saResult.missing.length ? '<small>Marks pending: ' + esc(saResult.missing.join(', ')) + '</small>' : '');
-        var resultStrip = '<div class="pr-result-strip">' +
-          '<div class="pr-result-card"><span>Percentage</span><b>' + (s.hasAny ? esc(s.percent) + '%' : '&ndash;') + '</b></div>' +
-          '<div class="pr-result-card"><span>Rank</span><b>' + (ranks[idx] || '&ndash;') + '</b></div>' +
-          '<div class="pr-result-card"><span>Overall Result</span><b>' + esc(saResult.status) + '</b>' + resultDetail + '</div>' +
-        '</div>';
-        var chartVals = subjects.map(function (subject) { var value = subjectTotalValue(s, subject); return value == null ? 0 : value; });
-        var attendance = attendanceRowsForStudent(d, s);
-        var assessmentAbsent = studentHasAssessmentAbsence(s, subjects, academicKeys.filter(function (k) { return k !== "CTAvg" && k !== "Tot"; }));
-        var impression = intelligentImpression(s, subjects, maxPerSubject, attendance.overallPercentage, assessmentAbsent);
-        if (isSABucket && saResult.status === "NOT PASSED") {
-          impression = 'The student has not met the minimum pass mark in ' + saResult.failed.join(', ') + '. Focused teaching, revision and correction of mistakes are needed in these areas.';
-        } else if (isSABucket && saResult.status === "INCOMPLETE") {
-          impression = 'The assessment is incomplete. Marks are still required for ' + saResult.missing.join(', ') + '. The overall result should be reviewed after all subject marks are entered.';
-        }
+        var headCells = academicHeads.map(function (label, i) {
+          var isTot = i === academicHeads.length - 1;
+          return '<th class="' + (isTot ? 'pr-col-total' : '') + '">' + esc(label) + '<span class="mx">Maximum ' + academicMax[i] + '</span></th>';
+        }).join("");
+
         function attendanceTableHtml(rows) {
           var head = rows.map(function (row) { return '<th>' + esc(row.month) + '</th>'; }).join('');
           var present = rows.map(function (row) { return '<td>' + (row.present == null ? '&ndash;' : esc(roundHalfValue(row.present))) + '</td>'; }).join('');
           var working = rows.map(function (row) { return '<td>' + (row.working == null ? '&ndash;' : esc(roundHalfValue(row.working))) + '</td>'; }).join('');
           var pct = rows.map(function (row) { return '<td>' + (row.percentage == null ? '&ndash;' : esc(row.percentage) + '%') + '</td>'; }).join('');
-          return '<table class="pr-table pr-attendance-table' + (d.bucket === "SA-2" ? ' pr-attendance-sa2' : '') + '"><thead><tr><th>Metric</th>' + head + '<th>Cumulative</th></tr></thead><tbody>' +
-            '<tr><th>Present Days</th>' + present + '<td class="pr-att-cum">' + (attendance.cumulativePresent == null ? '&ndash;' : esc(roundHalfValue(attendance.cumulativePresent))) + '</td></tr>' +
-            '<tr><th>Working Days</th>' + working + '<td class="pr-att-cum">' + (attendance.cumulativeWorking == null ? '&ndash;' : esc(roundHalfValue(attendance.cumulativeWorking))) + '</td></tr>' +
-            '<tr><th>Attendance %</th>' + pct + '<td class="pr-att-cum">' + (attendance.overallPercentage == null ? '&ndash;' : esc(attendance.overallPercentage) + '%') + '</td></tr></tbody></table>';
+          return '<table class="pr-table pr-attendance-table' + (d.bucket === "SA-2" ? ' pr-attendance-sa2' : '') + '"><thead><tr><th>Metric</th>' + head + '<th class="pr-att-cum pr-col-total">Cumulative</th></tr></thead><tbody>' +
+            '<tr><th>Present Days</th>' + present + '<td class="pr-att-cum pr-col-total">' + (attendance.cumulativePresent == null ? '&ndash;' : esc(roundHalfValue(attendance.cumulativePresent))) + '</td></tr>' +
+            '<tr><th>Working Days</th>' + working + '<td class="pr-att-cum pr-col-total">' + (attendance.cumulativeWorking == null ? '&ndash;' : esc(roundHalfValue(attendance.cumulativeWorking))) + '</td></tr>' +
+            '<tr><th>Attendance %</th>' + pct + '<td class="pr-att-cum pr-col-total">' + (attendance.overallPercentage == null ? '&ndash;' : esc(attendance.overallPercentage) + '%') + '</td></tr></tbody></table>';
         }
         var attendanceHtml = attendanceTableHtml(attendance.rows);
         var height = s.heightCm || s.height || '', weight = s.weightKg || s.weight || '', bmi = height && weight ? (Number(weight) / Math.pow(Number(height) / 100, 2)).toFixed(1) : '&ndash;';
         var healthHtml = /^SA-[12]$/.test(d.bucket) ? '<div class="pr-section-title">Health Measurements</div><table class="pr-table pr-health-table"><thead><tr><th>Height</th><th>Weight</th><th>BMI</th></tr></thead><tbody><tr><td>' + (height || '&ndash;') + (height ? ' cm' : '') + '</td><td>' + (weight || '&ndash;') + (weight ? ' kg' : '') + '</td><td>' + bmi + '</td></tr></tbody></table>' : '';
 
         return '<div class="pr-page ' + (isSABucket ? 'pr-sa' : 'pr-fa') + '"><div class="pr-scale-inner">' +
-          '<div class="pr-header"><img src="receipt-header-logo.png" alt="School" onerror="this.style.display=\'none\'"></div>' +
+          '<div class="pr-header"><img src="logo-full.jpg" alt="School" onerror="this.src=\'header-logo.png\'"></div>' +
           '<div class="pr-title">' + esc(title) + '</div>' +
           '<table class="pr-student-table"><tr><th>Name of the Student</th><td>' + esc(s.name) + '</td><th>ID No.</th><td>' + esc(studentIdText(s)) + '</td></tr>' +
           '<tr><th>Class</th><td>' + esc(d.class) + '</td><th>Assessment</th><td>' + esc(d.bucket) + '</td></tr></table>' +
@@ -2008,7 +3015,7 @@
           attendanceHtml +
           healthHtml +
           '<div class="pr-impression-box"><div class="pr-impression-title">Overall Impression</div><div class="pr-impression-text">' + esc(impression) + '</div></div>' +
-          buildChartHtml(subjects, chartVals, maxPerSubject, classAverages) + '<div class="pr-signature-space"></div>' +
+          buildChartHtml(displaySubjects, chartVals, maxPerSubject, classAverages) + '<div class="pr-signature-space"></div>' +
           '<div class="pr-footer"><span>Principal\'s Signature</span><span>Parent\'s Signature</span></div></div></div>';
       }).join("");
       $("progRepPrintArea").innerHTML = pages;
@@ -2066,14 +3073,14 @@
       var headCss = cssNodes.map(function (n) { return n.outerHTML; }).join("");
       var baseHref = String(document.baseURI || location.href).replace(/"/g, "&quot;");
       var pageCss = '<style>' +
-        (id === 'progRepPrintArea' ? '@page{size:A4 portrait;margin:10mm 8mm 10mm 22mm;}' : '@page{size:A4 landscape;margin:10mm;}') +
+        (id === 'progRepPrintArea' ? '@page{size:A4 portrait;margin:8mm 10mm 8mm 12mm;}' : '@page{size:A4 landscape;margin:10mm;}') +
         'html,body{margin:0!important;padding:0!important;background:#fff!important;}' +
         'body *{visibility:visible!important;}' +
         '#repTab{display:block!important;width:277mm!important;}' +
         '#repTab .rep-tablewrap{width:277mm!important;max-height:none!important;overflow:visible!important;}' +
         '#repTab .rep-table{width:277mm!important;table-layout:fixed!important;}' +
-        '#progRepPrintArea{display:block!important;width:180mm!important;}' +
-        '#progRepPrintArea .pr-page{width:180mm!important;min-height:277mm!important;page-break-after:always;}' +
+        '#progRepPrintArea{display:block!important;width:186mm!important;margin:0!important;padding:0!important;}' +
+        '#progRepPrintArea .pr-page{width:186mm!important;height:281mm!important;min-height:281mm!important;max-height:281mm!important;box-sizing:border-box!important;margin:0!important;padding:0!important;overflow:hidden!important;page-break-after:always;}' +
         '#progRepPrintArea .pr-page:last-child{page-break-after:auto;}' +
         '</style>';
 
@@ -2133,6 +3140,45 @@
         '<div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;"><button class="btn btn-secondary" data-close="exPickModal" style="width:auto;">Cancel</button>' +
         '<button class="btn btn-success" id="exPickApply" style="width:auto;"><i class="material-icons" style="color:#fff;">done</i> Apply</button></div></div></div>';
     }
+    function lockManagerModal() {
+      return '<div class="modal-overlay" id="exSchLockModal" style="z-index:1150;">' +
+        '<div class="modal-content" style="max-width:760px;width:100%;max-height:90vh;display:flex;flex-direction:column;">' +
+          '<div class="modal-header-container">' +
+            '<div>' +
+              '<h3 style="margin:0;display:flex;align-items:center;gap:8px;">' +
+                '<i class="material-icons" style="color:var(--maroon);">admin_panel_settings</i>' +
+                'Examinations &amp; Syllabus Lock Manager' +
+              '</h3>' +
+              '<p class="ex-note" style="margin:4px 0 0 0;">Control syllabus mapping and marks entry windows for teachers across High School classes. Unlocked = Teachers can add syllabus and marks. Locked = View-only.</p>' +
+            '</div>' +
+            '<button class="modal-close-icon" data-close="exSchLockModal">&times;</button>' +
+          '</div>' +
+          '<div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              '<label style="font-size:12.5px;font-weight:700;color:var(--text-main);margin:0;">Assessment:</label>' +
+              '<select id="exSchLockModalBucketSel" class="mob-select" style="padding:6px 10px;font-size:12.5px;border-radius:6px;border:1px solid var(--border);">' +
+                BUCKET_SEQ.map(function (b) { return '<option value="' + b + '">' + (BUCKET_LABELS[b] || b) + '</option>'; }).join('') +
+              '</select>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;">' +
+              '<button type="button" class="btn btn-success" id="exSchLockModalUnlockAllBtn" style="width:auto;padding:6px 14px;font-size:12px;font-weight:700;">' +
+                '<i class="material-icons" style="font-size:16px;color:#fff;">lock_open</i> Unlock for All Classes' +
+              '</button>' +
+              '<button type="button" class="ex-abtn danger" id="exSchLockModalLockAllBtn" style="padding:6px 14px;font-size:12px;font-weight:700;">' +
+                '<i class="material-icons" style="font-size:16px;">lock</i> Lock for All Classes' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="exSchLockModalBody" style="overflow-y:auto;flex-grow:1;min-height:180px;">' +
+            '<div class="ex-loading"><i class="material-icons">sync</i>Loading lock matrix…</div>' +
+          '</div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">' +
+            '<span class="ex-note">Changes apply immediately to teacher syllabus mapping &amp; marks entry.</span>' +
+            '<button class="btn btn-secondary" data-close="exSchLockModal" style="width:auto;padding:8px 16px;">Done</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
     function setGradeFuzzy(g) { var sel = $("exfGrade"), norm = function (s) { return String(s || "").toLowerCase().replace(/\s+/g, "").replace(/^grade-?/, "").replace(/^class-?/, ""); }, t = norm(g); for (var i = 0; i < sel.options.length; i++) { if (norm(sel.options[i].value) === t) { sel.value = sel.options[i].value; return; } } var o = document.createElement("option"); o.value = g; o.text = g; sel.appendChild(o); sel.value = g; }
     function setSubjectFuzzy(s) { var sel = $("exfSubject"), norm = function (x) { return String(x || "").toLowerCase().trim(); }, t = norm(s); for (var i = 0; i < sel.options.length; i++) { if (norm(sel.options[i].value) === t) { sel.value = sel.options[i].value; return; } } var o = document.createElement("option"); o.value = s; o.text = s; sel.appendChild(o); sel.value = s; }
 
@@ -2164,6 +3210,7 @@
         '<div class="mod-head"><div><span class="eyebrow">Staff Portal</span><h2 style="margin-bottom:4px;">Examinations Tracker</h2>' +
         '<p class="view-description" style="margin:0;">Your exams, their syllabus, and marks entry once an exam is done.</p></div></div>' +
         '<div id="exUpcoming" style="margin-bottom:14px;"></div>' +
+        '<div id="exPendingBanner" style="display:none;margin-bottom:14px;"></div>' +
         '<div class="ex-tabs" id="exTabs">' +
           '<button class="active" data-t="schedule"><i class="material-icons">calendar_month</i> Schedule</button>' +
           '<button data-t="marks"><i class="material-icons">edit_note</i> Marks Entry</button>' +
@@ -2230,63 +3277,221 @@
       $("exCalGrid").innerHTML = html;
       Array.prototype.forEach.call($("exCalGrid").querySelectorAll(".ex-calcell[data-day]"), function (c) { c.addEventListener("click", function () { openDay(c.getAttribute("data-day")); }); });
     }
+    function resolveExamRowId(e, ds) {
+      if (e && e.rowId) return e.rowId;
+      if (!st.assignedList || !st.assignedList.length) return null;
+      var gn = gradeNumFromClass(e.grade);
+      var es = String(e.subject || "").trim().toLowerCase();
+      var en = String(e.examName || "").trim().toLowerCase();
+      var match = st.assignedList.find(function (x) {
+        return gradeNumFromClass(x.grade) === gn &&
+          String(x.subject || "").trim().toLowerCase() === es &&
+          String(x.examName || "").trim().toLowerCase() === en &&
+          (!x.date || x.date === ds);
+      });
+      if (match) return match.rowId;
+      var fallback = st.assignedList.find(function (x) {
+        return gradeNumFromClass(x.grade) === gn &&
+          String(x.subject || "").trim().toLowerCase() === es &&
+          x.date === ds;
+      });
+      return fallback ? fallback.rowId : null;
+    }
     function openDay(ds) {
       var list = st.events[ds] || [];
       $("exDayTitle").textContent = "Exams on " + P.prettyDate(ds);
       if (!list.length) { $("exDayBody").innerHTML = '<div class="ex-empty"><i class="material-icons">event_busy</i>No exams on this date.</div>'; P.openModal("exDayModal"); return; }
       $("exDayBody").innerHTML = list.map(function (e, i) {
-        var syl = e.syllabus ? esc(e.syllabus) : '<em style="color:var(--text-muted);">(No syllabus assigned)</em>';
-        return '<div class="ex-card ' + (e.completed ? "completed" : "sched") + '" style="grid-template-columns:1fr;">' +
+        var rowId = resolveExamRowId(e, ds);
+        var locked = isExamBucketLocked(e.grade, e.examName);
+        var hasSyl = !!e.syllabus;
+        var cta = "";
+        if (locked) {
+          cta = '<span class="ex-status sched" style="color:var(--text-muted);"><i class="material-icons" style="font-size:12px;">lock</i> Mapping Closed</span>';
+        } else if (rowId) {
+          if (!hasSyl) {
+            cta = '<button class="ex-abtn accent" data-day-addsyl="' + rowId + '" data-grade="' + esc(e.grade) + '" data-subject="' + esc(e.subject) + '"><i class="material-icons">library_books</i> Add Syllabus</button>';
+          } else {
+            cta = '<button class="ex-abtn" data-day-addsyl="' + rowId + '" data-grade="' + esc(e.grade) + '" data-subject="' + esc(e.subject) + '"><i class="material-icons">edit</i> Change</button>';
+          }
+        }
+        var syl = hasSyl
+          ? '<div class="ex-syl"><b>Syllabus:</b> ' + esc(e.syllabus) + "</div>"
+          : '<div class="ex-syl empty">Syllabus not yet added</div>';
+
+        return '<div class="ex-card ' + (!hasSyl ? "psyl" : (e.completed ? "completed" : "sched")) + '">' +
           '<div><div class="t">' + (i + 1) + ". " + esc(e.examName) + '</div><div class="meta"><span><i class="material-icons">groups</i>' + esc(e.grade) + "</span><span><i class='material-icons'>menu_book</i>" + esc(e.subject) + "</span>" + (e.dayName ? "<span><i class='material-icons'>today</i>" + esc(e.dayName) + "</span>" : "") + "</div></div>" +
-          '<div class="ex-syl">' + syl + "</div></div>";
+          '<div class="ex-cardacts">' + cta + "</div>" +
+          syl + "</div>";
       }).join("");
+
+      Array.prototype.forEach.call($("exDayBody").querySelectorAll("[data-day-addsyl]"), function (b) {
+        b.addEventListener("click", function () {
+          var examRowId = +b.getAttribute("data-day-addsyl");
+          var grade = b.getAttribute("data-grade");
+          var subject = b.getAttribute("data-subject");
+          var exam = (st.assignedList || []).find(function (x) { return x.rowId === examRowId; });
+          var examName = exam ? exam.examName : "";
+          if (examName && isExamBucketLocked(grade, examName)) {
+            toast("Syllabus mapping window is locked by management.", "err");
+            return;
+          }
+          P.closeModal("exDayModal");
+          openPicker(examRowId, grade, subject);
+        });
+      });
+
       P.openModal("exDayModal");
     }
 
     /* ---------------- pending syllabus / assigned exams ---------------- */
+    function examBucketForName(en) {
+      if (window.ExamScheduleImportParser && window.ExamScheduleImportParser.examNameToBucket) {
+        return window.ExamScheduleImportParser.examNameToBucket(en);
+      }
+      if (/(?:class\s*test|ct)[\s-]*[12]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*1\b/i.test(en)) return "FA-1";
+      if (/(?:class\s*test|ct)[\s-]*[34]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*2\b/i.test(en)) return "FA-2";
+      if (/(?:summative\s*assessment|sa)[\s-]*1\b/i.test(en)) return "SA-1";
+      if (/(?:class\s*test|ct)[\s-]*[56]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*3\b/i.test(en)) return "FA-3";
+      if (/(?:class\s*test|ct)[\s-]*[78]\b/i.test(en) || /(?:formative\s*assessment|fa)[\s-]*4\b/i.test(en)) return "FA-4";
+      if (/(?:summative\s*assessment|sa)[\s-]*2\b/i.test(en)) return "SA-2";
+      return "";
+    }
+    function isExamBucketLocked(grade, examName) {
+      if (!st.lockMatrix || !st.lockMatrix.rows) return false;
+      var bucket = examBucketForName(examName);
+      if (!bucket) return false;
+      var gn = gradeNumFromClass(grade);
+      var row = (st.lockMatrix.rows || []).find(function (r) {
+        return gradeNumFromClass(r.class) === gn;
+      });
+      return row && row.locks && !!row.locks[bucket];
+    }
     function loadPending() {
-      P.api("getTeacherAssignedExamsForSyllabus", [me], { overlay: false }).then(function (list) {
-        list = list || [];
-        var pending = list.filter(function (e) { return !e.hasSyllabus; });
-        var withSyl = list.filter(function (e) { return e.hasSyllabus; });
-        var host = $("exPending"), html = "";
-        if (!list.length) { host.innerHTML = '<div class="ex-sechead"><i class="material-icons">assignment</i> Your assigned exams</div><div class="ex-empty"><i class="material-icons">event_busy</i>No exams assigned to your classes yet.</div>'; return; }
-        if (pending.length) { html += '<div class="ex-sechead pending"><i class="material-icons">assignment_late</i> Syllabus required · ' + pending.length + "</div>" + pending.map(function (e) { return teacherCard(e, true); }).join(""); }
-        if (withSyl.length) { html += '<div class="ex-sechead"><i class="material-icons">check_circle</i> Syllabus set · ' + withSyl.length + "</div>" + withSyl.map(function (e) { return teacherCard(e, false); }).join(""); }
-        host.innerHTML = html;
-        Array.prototype.forEach.call(host.querySelectorAll("[data-addsyl]"), function (b) { b.addEventListener("click", function () { openPicker(+b.getAttribute("data-addsyl"), b.getAttribute("data-grade"), b.getAttribute("data-subject")); }); });
-      }).catch(function () {});
+      P.api("locksGetMatrix", [], { overlay: false }).then(function (m) {
+        st.lockMatrix = m;
+      }).catch(function () {}).finally(function () {
+        P.api("getTeacherAssignedExamsForSyllabus", [me], { overlay: false }).then(function (list) {
+          list = list || [];
+          st.assignedList = list;
+          var pending = list.filter(function (e) { return !e.hasSyllabus; });
+          var withSyl = list.filter(function (e) { return e.hasSyllabus; });
+          var host = $("exPending"), html = "";
+
+          var banner = $("exPendingBanner");
+          if (banner) {
+            if (pending.length) {
+              banner.style.display = "block";
+              banner.innerHTML = '<div style="padding:10px 14px;background:#fff8f8;border:1px solid #fecaca;border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;box-shadow:var(--shadow-sm);">' +
+                '<div style="display:flex;align-items:center;gap:8px;color:#b91c1c;font-weight:700;font-size:13px;">' +
+                  '<i class="material-icons" style="font-size:18px;color:#dc2626;">assignment_late</i>' +
+                  '<span><b>' + pending.length + ' exam' + (pending.length > 1 ? 's' : '') + '</b> pending syllabus mapping</span>' +
+                '</div>' +
+                '<span style="color:#b91c1c;font-size:12px;font-weight:800;display:inline-flex;align-items:center;gap:3px;">View List <i class="material-icons" style="font-size:15px;">arrow_downward</i></span>' +
+              '</div>';
+              banner.onclick = function () {
+                var p = $("exPending");
+                if (p) p.scrollIntoView({ behavior: "smooth", block: "start" });
+              };
+            } else {
+              banner.style.display = "none";
+            }
+          }
+
+          if (!list.length) { host.innerHTML = '<div class="ex-sechead"><i class="material-icons">assignment</i> Your assigned exams</div><div class="ex-empty"><i class="material-icons">event_busy</i>No exams assigned to your classes yet.</div>'; return; }
+          if (pending.length) { html += '<div class="ex-sechead pending"><i class="material-icons">assignment_late</i> Syllabus required · ' + pending.length + "</div>" + pending.map(function (e) { return teacherCard(e, true); }).join(""); }
+          if (withSyl.length) { html += '<div class="ex-sechead"><i class="material-icons">check_circle</i> Syllabus set · ' + withSyl.length + "</div>" + withSyl.map(function (e) { return teacherCard(e, false); }).join(""); }
+          host.innerHTML = html;
+          Array.prototype.forEach.call(host.querySelectorAll("[data-addsyl]"), function (b) {
+            b.addEventListener("click", function () {
+              var examRowId = +b.getAttribute("data-addsyl");
+              var grade = b.getAttribute("data-grade");
+              var subject = b.getAttribute("data-subject");
+              var exam = (st.assignedList || []).find(function (x) { return x.rowId === examRowId; });
+              if (exam && isExamBucketLocked(grade, exam.examName)) {
+                toast("Syllabus mapping window is locked by management.", "err");
+                return;
+              }
+              openPicker(examRowId, grade, subject);
+            });
+          });
+        }).catch(function () {});
+      });
     }
     function teacherCard(e, needsSyl) {
       var cls = needsSyl ? "psyl" : (e.isCompleted ? "completed" : "sched");
       var dateChip = e.date ? '<span><i class="material-icons">event</i>' + esc(e.date) + "</span>" : '<span style="color:var(--warning);"><i class="material-icons">event_busy</i>Date not set</span>';
       var mk = e.marks ? '<span><i class="material-icons">grade</i>' + esc(e.marks) + " marks</span>" : "";
-      var cta = needsSyl
-        ? '<button class="ex-abtn accent" data-addsyl="' + e.rowId + '" data-grade="' + esc(e.grade) + '" data-subject="' + esc(e.subject) + '"><i class="material-icons">library_books</i> Add Syllabus</button>'
-        : (e.isCompleted ? '<span class="ex-status completed"><i class="material-icons" style="font-size:12px;">check</i> Completed</span>' : '<span class="ex-status sched"><i class="material-icons" style="font-size:12px;">schedule</i> Upcoming</span>');
+      var locked = isExamBucketLocked(e.grade, e.examName);
+      var cta;
+      if (locked) {
+        cta = '<span class="ex-status sched" style="color:var(--text-muted);"><i class="material-icons" style="font-size:12px;">lock</i> Mapping Closed</span>';
+      } else if (needsSyl) {
+        cta = '<button class="ex-abtn accent" data-addsyl="' + e.rowId + '" data-grade="' + esc(e.grade) + '" data-subject="' + esc(e.subject) + '"><i class="material-icons">library_books</i> Add Syllabus</button>';
+      } else {
+        cta = e.isCompleted ? '<span class="ex-status completed"><i class="material-icons" style="font-size:12px;">check</i> Completed</span>' : '<span class="ex-status sched"><i class="material-icons" style="font-size:12px;">schedule</i> Upcoming</span>';
+      }
       var syl = e.hasSyllabus ? '<div class="ex-syl"><b>Syllabus:</b> ' + esc((e.lessons || []).join("; ")) + "</div>" : '<div class="ex-syl empty">Syllabus not yet added</div>';
       return '<div class="ex-card ' + cls + '"><div><div class="t">' + esc(e.examName) + '</div><div class="meta"><span><i class="material-icons">groups</i>' + esc(e.gradeLabel || e.grade) + "</span><span><i class='material-icons'>menu_book</i>" + esc(e.subject) + "</span>" + dateChip + mk + "</div></div><div class='ex-cardacts'>" + cta + "</div>" + syl + "</div>";
     }
     function openPicker(rowId, grade, subject) {
       st.pickRow = rowId; st.pickCtx = { grade: grade, subject: subject };
+
+      var currentExam = (st.assignedList || []).find(function (x) { return x.rowId === rowId; });
+      var prevLessons = (currentExam && currentExam.lessons) ? currentExam.lessons.map(function (x) { return x.toLowerCase(); }) : [];
+
       $("exPickBody").innerHTML = '<div class="ex-loading"><i class="material-icons">sync</i></div>';
       P.openModal("exPickModal");
-      P.api("getSyllabusMasterLessons", [grade, subject], { overlay: false }).then(function (list) {
+
+      var isMaths = /^(math|maths|mathematics|maths-1|maths-2)$/i.test(String(subject).trim());
+      var gn = gradeNumFromClass(grade);
+      var isHighSchool = (gn !== null && gn >= 8 && gn <= 10);
+
+      var fetchPromise;
+      if (isMaths && isHighSchool) {
+        // High School Maths Exception (Part 6): Dual-strand fetch for Maths-1 and Maths-2
+        fetchPromise = Promise.all([
+          P.api("getSyllabusMasterLessons", [grade, "Maths"], { overlay: false }).catch(function () { return []; }),
+          P.api("getSyllabusMasterLessons", [grade, "Maths-2"], { overlay: false }).catch(function () { return []; })
+        ]).then(function (results) {
+          var m1 = (results[0] || []).map(function (l) { l._strand = "Maths-1"; return l; });
+          var m2 = (results[1] || []).map(function (l) { l._strand = "Maths-2"; return l; });
+          if (!m1.length) {
+            return P.api("getSyllabusMasterLessons", [grade, "Maths-1"], { overlay: false }).catch(function () { return []; }).then(function (m1alt) {
+              m1 = (m1alt || []).map(function (l) { l._strand = "Maths-1"; return l; });
+              return m1.concat(m2);
+            });
+          }
+          return m1.concat(m2);
+        });
+      } else {
+        fetchPromise = P.api("getSyllabusMasterLessons", [grade, subject], { overlay: false });
+      }
+
+      fetchPromise.then(function (list) {
         if (!list || !list.length) { $("exPickBody").innerHTML = '<div class="ex-empty"><i class="material-icons">inbox</i>No lessons found in Syllabus Master for this class/subject.</div>'; return; }
         $("exPickBody").innerHTML = list.map(function (l, i) {
-          return '<label class="ex-pickitem" data-name="' + esc(l.name) + '"><input type="checkbox"><span class="no">' + esc(l.lessonNo || (i + 1)) + '</span><span class="nm">' + esc(l.name) + '</span><span class="mo">' + esc(l.targetMonth || "") + "</span></label>";
+          var isChecked = prevLessons.indexOf(l.name.toLowerCase()) >= 0;
+          var strand = l._strand ? ('<span class="ex-strand-badge ' + (l._strand === "Maths-1" ? "maths-1" : "maths-2") + '" style="margin-left:6px;font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;' + (l._strand === "Maths-1" ? "background:#dbeafe;color:#1e40af;" : "background:#fce7f3;color:#9d174d;") + '">' + esc(l._strand) + '</span>') : "";
+          return '<label class="ex-pickitem ' + (isChecked ? "on" : "") + '" data-name="' + esc(l.name) + '"><input type="checkbox" ' + (isChecked ? "checked" : "") + '><span class="no">' + esc(l.lessonNo || (i + 1)) + '</span><span class="nm">' + esc(l.name) + strand + '</span><span class="mo">' + esc(l.targetMonth || "") + "</span></label>";
         }).join("");
         Array.prototype.forEach.call($("exPickBody").querySelectorAll(".ex-pickitem input"), function (c) { c.addEventListener("change", function () { c.closest(".ex-pickitem").classList.toggle("on", c.checked); }); });
+      }).catch(function (e) {
+        $("exPickBody").innerHTML = '<div class="ex-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>';
       });
     }
     function commitPicker() {
       var picked = [];
       Array.prototype.forEach.call($("exPickBody").querySelectorAll(".ex-pickitem"), function (l) { var c = l.querySelector("input"); if (c && c.checked) picked.push(l.getAttribute("data-name")); });
       if (!picked.length) { toast("Select at least one lesson.", "err"); return; }
+      var btn = $("exPickApply");
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="material-icons" style="color:#fff;">sync</i> Saving…'; }
       P.api("teacherAddExamSyllabus", [st.pickRow, picked, me]).then(function (res) {
-        if (res && res.success) { P.closeModal("exPickModal"); toast("Syllabus added.", "ok"); loadPending(); loadCalendar(); }
+        if (res && res.success) { P.closeModal("exPickModal"); toast("Syllabus added successfully.", "ok"); loadPending(); loadCalendar(); }
         else toast("Save failed: " + ((res && res.error) || "unknown"), "err");
-      }).catch(function (e) { toast("Error: " + (e.message || e), "err"); });
+      }).catch(function (e) { toast("Error: " + (e.message || e), "err"); }).finally(function () {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="material-icons" style="color:#fff;">done</i> Save Syllabus'; }
+      });
     }
 
     /* ---------------- modals ---------------- */
@@ -2305,6 +3510,50 @@
     }
     $("exPickApply").addEventListener("click", commitPicker);
   }
+
+  /* =======================================================================
+     ONE-TIME MIGRATION HELPER: SA-1 Physics & Biology Marks (Divide by 2)
+     Can be invoked from browser console: await window.migrateSA1PhysicsBioMarks()
+     ======================================================================= */
+  window.migrateSA1PhysicsBioMarks = async function () {
+    var classes = ["8", "9", "10"];
+    var subjects = ["Physics", "Biology"];
+    var components = ["EX", "IN"];
+    var updatedTotal = 0;
+    for (var c = 0; c < classes.length; c++) {
+      var cls = classes[c];
+      for (var s = 0; s < subjects.length; s++) {
+        var subj = subjects[s];
+        for (var cp = 0; cp < components.length; cp++) {
+          var comp = components[cp];
+          try {
+            var grid = await P.api("marksGetGrid", [cls, subj, "SA-1", comp]);
+            if (!grid || !grid.rows || !grid.rows.length) continue;
+            var entries = [];
+            grid.rows.forEach(function (r) {
+              if (r.absent || r.scored === "" || r.scored == null) return;
+              var num = Number(r.scored);
+              if (isNaN(num)) return;
+              // Only halve if not already halved (e.g. Exam > 40 or Int > 10)
+              var maxCap = comp === "EX" ? 40 : 10;
+              if (num > maxCap) {
+                var halved = Math.round((num / 2) * 2) / 2;
+                entries.push({ id: r.id, name: r.name, bucket: "SA-1", component: comp, subject: subj, scored: halved, absent: false });
+              }
+            });
+            if (entries.length) {
+              await P.api("marksSaveBulk", [{ className: cls, entries: entries, enteredBy: "Admin Migration", isManagement: true }]);
+              updatedTotal += entries.length;
+              console.log("[Migration] Halved " + entries.length + " marks for " + cls + " · " + subj + " · " + comp);
+            }
+          } catch (e) {
+            console.error("[Migration Error]", cls, subj, comp, e);
+          }
+        }
+      }
+    }
+    return "SA-1 Physics/Biology migration completed. Total marks updated: " + updatedTotal;
+  };
 
   /* =======================================================================
      BOOT — Management vs Teacher

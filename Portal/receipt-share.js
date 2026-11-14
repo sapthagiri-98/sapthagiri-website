@@ -75,7 +75,7 @@
 <body>
   <div class="receipt-card">
     <div class="hdr-logo-container">
-      <img src="receipt-header-logo.png" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.style.display='none';"/>
+      <img src="logo-full.jpg" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.src='header-logo.png'"/>
     </div>
     <div class="rc-title-bar">FEE PAYMENT e-RECEIPT</div>
 
@@ -392,11 +392,10 @@
                   margin: 0,
                   filename: "Fee-Receipt-" + String(r.receiptId || "Receipt") + ".pdf",
                   image: {
-                    type: "jpeg",
-                    quality: 0.98
+                    type: "png"
                   },
                   html2canvas: {
-                    scale: 2,
+                    scale: 2.5,
                     useCORS: true,
                     allowTaint: false,
                     backgroundColor: "#ffffff",
@@ -611,7 +610,7 @@
 <body>
   <div class="ledger-card">
     <div class="hdr-logo-container">
-      <img src="receipt-header-logo.png" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.style.display='none';"/>
+      <img src="logo-full.jpg" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.src='header-logo.png'"/>
     </div>
     <div class="doc-title">OFFICIAL FULL STUDENT AUDIT LEDGER</div>
 
@@ -724,7 +723,7 @@
 <body>
   <div class="agreement-card">
     <div class="hdr-logo-container">
-      <img src="receipt-header-logo.png" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.style.display='none';"/>
+      <img src="logo-full.jpg" class="hdr-logo-img" alt="Sapthagiri High School" crossorigin="anonymous" onerror="this.src='header-logo.png'"/>
     </div>
 
     <div class="doc-title">FEE PAYMENT AGREEMENT &amp; UNDERTAKING</div>

@@ -106,7 +106,15 @@
     // Clean up teacher: remove titles like Mr., Mrs., Ms., Dr., Sir, Madam
     teacher = teacher
       .replace(/^(MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, '')
+      .replace(/\s+(SIR|MADAM)$/i, '')
       .trim();
+
+    // Map common timetable nicknames to canonical ERP user account names
+    if (/^satish$/i.test(teacher)) {
+      teacher = 'Sathish';
+    } else if (/^knr$/i.test(teacher)) {
+      teacher = 'Narsimha Reddy Kasireddy';
+    }
 
     // Check if activity
     var activityKeywords = [

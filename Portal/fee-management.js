@@ -1529,7 +1529,7 @@
     }
 
     var html =
-      '<div class="print-logo"><img src="receipt-header-logo.png" alt="School logo" onerror="this.style.display=none"/></div>' +
+      '<div class="print-logo"><img src="logo-full.jpg" alt="School logo" onerror="this.src=\'header-logo.png\'"/></div>' +
       '<div class="print-title">FEE TOTALS REPORT</div><div class="print-meta">' + esc(d.year) + '</div>' +
       '<h3>Total Dues</h3><table><thead><tr><th>Fee Type</th><th>Assigned</th><th>Due</th></tr></thead><tbody>' + rows + '<tr><th>TOTAL DUES</th><th class="amount">' + reportMoney(d.assigned) + '</th><th class="amount">' + reportMoney(d.outstanding) + '</th></tr></tbody></table>' +
       '<h3 style="margin-top:18px">Total Collection</h3><table><thead><tr><th>Fee Type</th><th>Received</th></tr></thead><tbody>' + collectionRowsHtml + '<tr><th>TOTAL RECEIVED AMOUNT</th><th class="amount">' + reportMoney(d.collected) + '</th></tr></tbody></table>' +
@@ -1720,7 +1720,7 @@
     var totalPaid = rows.reduce(function (s, r) { return s + Number(r.totalPaid || 0); }, 0);
     var totalRemaining = rows.reduce(function (s, r) { return s + Number(r.remaining || 0); }, 0);
     var html =
-      '<div class="print-logo"><img src="receipt-header-logo.png" alt="School logo" onerror="this.style.display=none"/></div>' +
+      '<div class="print-logo"><img src="logo-full.jpg" alt="School logo" onerror="this.src=\'header-logo.png\'"/></div>' +
       '<div class="print-title">CLASS-WISE FEE REPORT</div><div class="print-meta">' + esc(d.className) + ' · ' + esc(d.year) + ' · ' + esc(reportFeeLabel(d.feeType)) + '</div>' +
       '<table><thead><tr><th>Roll</th><th>Student</th><th>Contact</th><th>Total Due</th><th>Total Paid</th><th>Remaining Due</th><th>Payment History</th></tr></thead><tbody>' +
       htmlRows + '<tr><th colspan="3">TOTAL</th><th class="amount">' + reportMoney(totalDue) + '</th><th class="amount">' +
@@ -1922,7 +1922,7 @@
   function printCallSheet() {
     var rows = window._feeMessageRows || []; if (!rows.length) return toast("Generate the pending list first.", "err");
     var feeLabel = $("msgFeeType").selectedOptions[0] ? $("msgFeeType").selectedOptions[0].text : "Pending Dues";
-    var html = '<div class="print-logo"><img src="receipt-header-logo.png" alt="School logo" onerror="this.style.display=none"/></div><div class="print-title">PARENT CALL SHEET</div><div class="print-meta">' + esc(YEAR) + ' · ' + esc($("msgClass").selectedOptions[0].text) + ' · ' + esc(feeLabel) + '</div><table><thead><tr><th>Class</th><th>Student</th><th>Contact</th><th>Last Paid</th><th>Pending</th><th>Call Notes</th></tr></thead><tbody>' +
+    var html = '<div class="print-logo"><img src="logo-full.jpg" alt="School logo" onerror="this.src=\'header-logo.png\'"/></div><div class="print-title">PARENT CALL SHEET</div><div class="print-meta">' + esc(YEAR) + ' · ' + esc($("msgClass").selectedOptions[0].text) + ' · ' + esc(feeLabel) + '</div><table><thead><tr><th>Class</th><th>Student</th><th>Contact</th><th>Last Paid</th><th>Pending</th><th>Call Notes</th></tr></thead><tbody>' +
       rows.map(function (x) { return '<tr><td>' + esc(x.className || "") + '</td><td>' + (!studentIsInactive(x) && studentRoll(x) !== null ? '<b>' + esc(String(studentRoll(x))) + '. </b>' : '') + '<b>' + esc(x.name) + '</b><br><small>' + esc(studentStatus(x)) + '</small></td><td>' + esc(x.phone || "—") + '</td><td>' + esc(x.lastPaidDate ? pretty(x.lastPaidDate) + " · " + money(x.lastPaidAmount) : "No payment") + '</td><td class="amount">' + money(x.outstanding) + '</td><td></td></tr>'; }).join("") +
       '</tbody></table><div class="print-foot">Printed on ' + esc(new Date().toLocaleString("en-IN")) + '</div>';
     printHtml("Parent Call Sheet", html);

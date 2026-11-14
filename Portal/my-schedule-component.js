@@ -67,6 +67,92 @@
     return !!ACTIVITY_SET[s];
   }
 
+  function normalizeTeacherName(name) {
+    if (!name) return "";
+    return String(name)
+      .replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "")
+      .replace(/\s+(?:SIR|MADAM)$/i, "")
+      .trim();
+  }
+
+  function getTeacherVariants(name) {
+    if (!name) return [];
+    var clean = normalizeTeacherName(name);
+    var list = [];
+    function add(n) {
+      if (!n) return;
+      var s = String(n).trim();
+      if (s && list.indexOf(s) < 0) list.push(s);
+    }
+    add(clean);
+    add(name);
+
+    var lower = clean.toLowerCase();
+    // Sathish <-> Satish (ERP/Timetable spelling differences)
+    if (lower === "sathish" || lower === "satish") {
+      add("Sathish");
+      add("Satish");
+      add("Mr. Sathish");
+      add("Mr. Satish");
+      add("Sathish Sir");
+      add("Satish Sir");
+    }
+    // KNR <-> Narsimha Reddy Kasireddy
+    if (lower === "knr" || lower.indexOf("narsimha") >= 0) {
+      add("KNR");
+      add("Narsimha Reddy Kasireddy");
+      add("Narsimha Reddy");
+      add("K. Narsimha Reddy");
+    }
+    // Santosh <-> Santhosh
+    if (lower === "santosh" || lower === "santhosh") {
+      add("Santosh");
+      add("Santhosh");
+      add("Mr. Santosh");
+      add("Santosh Sir");
+    }
+    // Srinivas
+    if (lower.indexOf("srinivas") >= 0) {
+      add("Srinivas");
+      add("Srinivas Kodipunjula");
+      add("Srinivas Pulloori");
+      add("Srinivas Vallakati");
+    }
+    // Ramana Prasad <-> Ramana
+    if (lower.indexOf("ramana") >= 0) {
+      add("Ramana Prasad");
+      add("Ramana");
+    }
+    return list;
+  }
+
+  function teacherMatches(cellTeacher, variants) {
+    if (!cellTeacher) return false;
+    var ctClean = normalizeTeacherName(cellTeacher).toLowerCase();
+    if (!ctClean) return false;
+
+    // Direct check against whole cell
+    for (var i = 0; i < variants.length; i++) {
+      var vClean = normalizeTeacherName(variants[i]).toLowerCase();
+      if (!vClean) continue;
+      if (ctClean === vClean || ctClean.indexOf(vClean) >= 0 || vClean.indexOf(ctClean) >= 0) return true;
+    }
+
+    // Split compound / multi-teacher cells e.g. "Satish, Santosh" or "Satish / Rajesh" or "Social\nSatish"
+    var tokens = String(cellTeacher).split(/[\r\n,/\&|]+/).map(function (s) {
+      return normalizeTeacherName(s).toLowerCase();
+    }).filter(Boolean);
+
+    for (var j = 0; j < tokens.length; j++) {
+      var tok = tokens[j];
+      for (var k = 0; k < variants.length; k++) {
+        var vk = normalizeTeacherName(variants[k]).toLowerCase();
+        if (vk && (tok === vk || tok.indexOf(vk) >= 0 || vk.indexOf(tok) >= 0)) return true;
+      }
+    }
+    return false;
+  }
+
   function gradeWeight(n) {
     var k = String(n || "").toUpperCase().replace(/\s+/g, "");
     if (k === "NURSERY") return 1;
@@ -214,6 +300,8 @@
     this.session = session || (P.Session && P.Session.get()) || {};
     this.options = options || {};
     this.teacherName = this.session.name || "Teacher";
+    this.cleanTeacherName = normalizeTeacherName(this.teacherName);
+    this.teacherVariants = getTeacherVariants(this.teacherName);
     this.weekCache = {}; // weekday -> periods array
     this.shift = {
       s1In: this.session.s1In || "08:45",
@@ -240,19 +328,29 @@
   TeacherSchedule.prototype.fetchBiometricShift = function () {
     var self = this;
     if (!P.api) return;
-    // Query biometric shift profile from staff attendance db (getTimesheetData)
     var curMonth = P.thisMonth ? P.thisMonth() : (new Date().toISOString().slice(0, 7));
-    P.api("getTimesheetData", [self.teacherName, curMonth], { overlay: false })
-      .then(function (data) {
-        if (data && data.userShiftProfile) {
-          var sp = data.userShiftProfile;
-          if (sp.s1In) self.shift.s1In = String(sp.s1In).slice(0, 5);
-          if (sp.s1Out) self.shift.s1Out = String(sp.s1Out).slice(0, 5);
-          if (sp.shiftType) self.shift.shiftType = sp.shiftType;
-          self.updateTimingBanner();
-        }
-      })
-      .catch(function () {});
+    var variants = self.teacherVariants || getTeacherVariants(self.teacherName);
+
+    function tryShift(idx) {
+      if (idx >= variants.length) return;
+      var name = variants[idx];
+      P.api("getTimesheetData", [name, curMonth], { overlay: false })
+        .then(function (data) {
+          if (data && data.userShiftProfile) {
+            var sp = data.userShiftProfile;
+            if (sp.s1In) self.shift.s1In = String(sp.s1In).slice(0, 5);
+            if (sp.s1Out) self.shift.s1Out = String(sp.s1Out).slice(0, 5);
+            if (sp.shiftType) self.shift.shiftType = sp.shiftType;
+            self.updateTimingBanner();
+          } else {
+            tryShift(idx + 1);
+          }
+        })
+        .catch(function () {
+          tryShift(idx + 1);
+        });
+    }
+    tryShift(0);
   };
 
   TeacherSchedule.prototype.updateTimingBanner = function () {
@@ -354,9 +452,15 @@
 
     host.innerHTML = '<div class="tsch-loading"><i class="material-icons">sync</i> Loading timetable for ' + esc(DAYS[weekday - 1].name) + '…</div>';
 
-    // Layer 1: Call Supabase timetable-api ttGetTeacherSchedule
-    if (P.api) {
-      P.api("ttGetTeacherSchedule", [self.teacherName, weekday], { overlay: false })
+    var variants = self.teacherVariants || getTeacherVariants(self.teacherName);
+
+    // Strategy 1: Call ttGetTeacherSchedule with variants
+    function tryTtGetTeacherSchedule(variantIdx) {
+      if (!P.api || variantIdx >= variants.length) {
+        return Promise.reject(new Error("ttGetTeacherSchedule not available or no matches"));
+      }
+      var targetName = variants[variantIdx];
+      return P.api("ttGetTeacherSchedule", [targetName, weekday], { overlay: false })
         .then(function (res) {
           if (res && res.shift) {
             self.shift.s1In = res.shift.s1In ? String(res.shift.s1In).slice(0, 5) : self.shift.s1In;
@@ -364,42 +468,103 @@
             self.updateTimingBanner();
           }
           var periods = (res && res.periods) ? res.periods : [];
-          self.weekCache[weekday] = periods;
-          self.renderDay(weekday, periods);
+          if (periods.length > 0) return periods;
+          return tryTtGetTeacherSchedule(variantIdx + 1);
         })
-        .catch(function (_err1) {
-          // Layer 2: Fallback to homework-api getAssignmentsByDate
-          var dateStr = getDateForWeekday(weekday);
-          P.api("getAssignmentsByDate", [dateStr, self.teacherName], { overlay: false })
-            .then(function (list) {
-              var adapted = (list || []).map(function (a) {
-                var pNo = a.period_no;
-                if (!pNo && a.periodLabel) {
-                  var m = String(a.periodLabel).match(/\d+/);
-                  pNo = m ? parseInt(m[0], 10) : 1;
-                }
-                return {
-                  class: a.className,
-                  weekday: weekday,
-                  period_no: pNo || 1,
-                  period_label: a.periodLabel || ("Period " + (pNo || 1)),
-                  subject: a.subject,
-                  teacher_name: self.teacherName,
-                  is_activity: isActivitySubject(a.subject)
-                };
-              });
-              self.weekCache[weekday] = adapted;
-              self.renderDay(weekday, adapted);
-            })
-            .catch(function (_err2) {
-              // Layer 3: Render empty day with friendly message
-              self.weekCache[weekday] = [];
-              self.renderDay(weekday, []);
-            });
+        .catch(function (err) {
+          if (err && String(err.message || err).indexOf("Unknown function") >= 0) {
+            throw err; // Skip trying further variants if function doesn't exist on server
+          }
+          return tryTtGetTeacherSchedule(variantIdx + 1);
         });
-    } else {
-      self.renderDay(weekday, []);
     }
+
+    // Strategy 2: Call ttGetGrid for High & Primary campuses (active in production)
+    function tryTtGetGrid() {
+      if (!P.api) return Promise.reject(new Error("No API"));
+      return Promise.all([
+        P.api("ttGetGrid", ["High", weekday], { overlay: false }).catch(function () { return null; }),
+        P.api("ttGetGrid", ["Primary", weekday], { overlay: false }).catch(function () { return null; })
+      ]).then(function (results) {
+        var found = [];
+        (results || []).forEach(function (gridRes) {
+          if (!gridRes || !gridRes.rows) return;
+          gridRes.rows.forEach(function (row) {
+            var clsName = row.class;
+            (row.cells || []).forEach(function (cell) {
+              if (!cell || !cell.subject) return;
+              if (teacherMatches(cell.teacher, variants)) {
+                found.push({
+                  class: clsName,
+                  weekday: weekday,
+                  period_no: cell.period_no,
+                  period_label: "Period " + cell.period_no,
+                  subject: cell.subject,
+                  teacher_name: cell.teacher || self.teacherName,
+                  is_activity: !!cell.isActivity || isActivitySubject(cell.subject)
+                });
+              }
+            });
+          });
+        });
+
+        if (found.length > 0) {
+          found.sort(function (a, b) { return a.period_no - b.period_no; });
+          return found;
+        }
+        return Promise.reject(new Error("No periods found in grid"));
+      });
+    }
+
+    // Strategy 3: Fallback to getAssignmentsByDate with variants
+    function tryAssignmentsByDate(variantIdx) {
+      if (!P.api || variantIdx >= variants.length) {
+        return Promise.reject(new Error("No assignments found"));
+      }
+      var dateStr = getDateForWeekday(weekday);
+      var targetName = variants[variantIdx];
+      return P.api("getAssignmentsByDate", [dateStr, targetName], { overlay: false })
+        .then(function (list) {
+          if (list && list.length > 0) {
+            return list.map(function (a) {
+              var pNo = a.period_no;
+              if (!pNo && a.periodLabel) {
+                var m = String(a.periodLabel).match(/\d+/);
+                pNo = m ? parseInt(m[0], 10) : 1;
+              }
+              return {
+                class: a.className,
+                weekday: weekday,
+                period_no: pNo || 1,
+                period_label: a.periodLabel || ("Period " + (pNo || 1)),
+                subject: a.subject,
+                teacher_name: a.teacherName || self.teacherName,
+                is_activity: isActivitySubject(a.subject)
+              };
+            });
+          }
+          return tryAssignmentsByDate(variantIdx + 1);
+        })
+        .catch(function () {
+          return tryAssignmentsByDate(variantIdx + 1);
+        });
+    }
+
+    tryTtGetTeacherSchedule(0)
+      .catch(function () {
+        return tryTtGetGrid();
+      })
+      .catch(function () {
+        return tryAssignmentsByDate(0);
+      })
+      .then(function (periods) {
+        self.weekCache[weekday] = periods || [];
+        self.renderDay(weekday, periods || []);
+      })
+      .catch(function () {
+        self.weekCache[weekday] = [];
+        self.renderDay(weekday, []);
+      });
   };
 
   TeacherSchedule.prototype.consolidatePeriods = function (periodsList, maxPeriods) {
@@ -579,6 +744,9 @@
   TeacherSchedule.mount = function (container, session, options) {
     return new TeacherSchedule(container, session, options);
   };
+  TeacherSchedule.normalizeTeacherName = normalizeTeacherName;
+  TeacherSchedule.getTeacherVariants = getTeacherVariants;
+  TeacherSchedule.teacherMatches = teacherMatches;
 
   window.TeacherSchedule = TeacherSchedule;
 })();
