@@ -292,4 +292,40 @@ describe("Spoken English & Spoken Skills Day-wise Syllabus Integration", () => {
     expect(getSpokenPdfUrl("Nursery", 1)).toBe("spoken_pdf/Nursery_Day_1.pdf");
     expect(getSpokenPdfUrl("Class 10", 6)).toBe("spoken_pdf/Class_10_Day_6.pdf");
   });
+
+  describe("Problem Solving & Telugu Subject/Class Bridges", () => {
+    function normSubjKey(v: any): string {
+      return String(v || "").toLowerCase().replace(/\s+/g, "");
+    }
+
+    function matchesSyllabusRow(teacherSubject: string, _grade: any, rowSubject: string, rowStrand: string): boolean {
+      const ts = normSubjKey(teacherSubject);
+      const b = normSubjKey(rowSubject);
+
+      if (ts === "spokenenglish" || ts === "spokenskills") {
+        return b === "spokenenglish" || b === "spokenskills";
+      }
+      if (ts === "ps" || ts === "problemsolving" || ts === "problemsolving(ps)" || ts === "problemskills") {
+        if (b === "ps" || b === "problemsolving" || b === "problemsolving(ps)" || b === "problemskills") return true;
+      }
+      if (ts === "telugu" || ts === "1sttelugu" || ts.includes("telugu")) {
+        if (b === "telugu" || b === "1sttelugu" || b.includes("telugu")) return true;
+      }
+      return b === ts;
+    }
+
+    it("matches 'PS' from timetable to 'Problem Solving' in syllabus", () => {
+      expect(matchesSyllabusRow("PS", "1", "Problem Solving", "")).toBe(true);
+      expect(matchesSyllabusRow("Problem Solving", "1", "PS", "")).toBe(true);
+      expect(matchesSyllabusRow("Problem Solving (PS)", "6", "Problem Solving", "")).toBe(true);
+    });
+
+    it("matches '1st Telugu' or 'Telugu (SL)' to 'Telugu'", () => {
+      expect(matchesSyllabusRow("1st Telugu", "1", "Telugu", "")).toBe(true);
+      expect(matchesSyllabusRow("Telugu", "1", "1st Telugu", "")).toBe(true);
+      expect(matchesSyllabusRow("Telugu", "1", "Telugu (SL)", "")).toBe(true);
+      expect(matchesSyllabusRow("Telugu", "1", "Telugu (FL)", "")).toBe(true);
+      expect(matchesSyllabusRow("Telugu (SL)", "1", "Telugu", "")).toBe(true);
+    });
+  });
 });

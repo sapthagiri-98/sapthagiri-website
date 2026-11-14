@@ -58,25 +58,44 @@ function normalizeManualState(value: any): "TRUE" | "IN_PROGRESS" | "FALSE" {
 // of which convention produced the value. Used for ALL class filters below.
 function classVariants(grade: any): string[] {
   const raw = S(grade);
-  const set = new Set<string>([raw, numText(raw)]);
+  const set = new Set<string>([raw, numText(raw), raw.toUpperCase(), raw.toLowerCase()]);
   const n = gradeToNumber(grade);
   if (n !== null) {
-    set.add(String(n));
+    const sN = String(n);
+    set.add(sN);
+    set.add(("0" + n).slice(-2));           // "01", "07"
+    set.add(sN + ".0");
+
+    // Grade forms with all casings
     set.add("Grade " + n); set.add("Grade-" + n); set.add("Grade" + n);
-    set.add("Class " + n); set.add("Class-" + n);
-    set.add(("0" + n).slice(-2));           // "07"
-    set.add(String(n) + ".0");
-    // Some syllabus imports use ordinal class labels (7th, 8th, 9th).
-    // Include those spellings so teacher catalogue queries do not omit rows
-    // that the management editor can already see through grade normalization.
+    set.add("GRADE " + n); set.add("GRADE-" + n); set.add("GRADE" + n);
+    set.add("grade " + n); set.add("grade-" + n); set.add("grade" + n);
+
+    // Class forms with all casings
+    set.add("Class " + n); set.add("Class-" + n); set.add("Class" + n);
+    set.add("CLASS " + n); set.add("CLASS-" + n); set.add("CLASS" + n);
+    set.add("class " + n); set.add("class-" + n); set.add("class" + n);
+
+    // Ordinal forms (1st, 2nd, etc.)
     const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as any)[n % 10] || "th";
     const ordinal = String(n) + suffix;
-    set.add(ordinal); set.add("Grade " + ordinal); set.add("Grade-" + ordinal); set.add("Grade" + ordinal);
-    set.add("Class " + ordinal); set.add("Class-" + ordinal); set.add("Class" + ordinal);
+    const ordinalU = ordinal.toUpperCase();
+    set.add(ordinal); set.add(ordinalU); set.add(ordinal.toLowerCase());
+
+    // Ordinal + Class / Grade (e.g. "1st Class", "1ST CLASS", "1st Grade")
+    set.add(ordinal + " Class"); set.add(ordinalU + " CLASS"); set.add(ordinal.toLowerCase() + " class");
+    set.add(ordinal + "-Class"); set.add(ordinalU + "-CLASS"); set.add(ordinal.toLowerCase() + "-class");
+    set.add(ordinal + " Grade"); set.add(ordinalU + " GRADE"); set.add(ordinal.toLowerCase() + " grade");
+    set.add(ordinal + "-Grade"); set.add(ordinalU + "-GRADE"); set.add(ordinal.toLowerCase() + "-grade");
+
+    // Class / Grade + Ordinal (e.g. "Class 1st", "Grade 1st")
+    set.add("Class " + ordinal); set.add("CLASS " + ordinalU); set.add("Class-" + ordinal); set.add("CLASS-" + ordinalU);
+    set.add("Grade " + ordinal); set.add("GRADE " + ordinalU); set.add("Grade-" + ordinal); set.add("GRADE-" + ordinalU);
   } else {
     // pre-primary: cover common casings of Nursery/LKG/UKG
     const u = raw.toUpperCase();
     set.add(u); set.add(raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase());
+    set.add(raw.toLowerCase());
   }
   return [...set].filter(Boolean);
 }
@@ -90,7 +109,7 @@ function normSubjKey(v: any): string {
 }
 function gradeToNumber(v: any): number | null {
   const s = S(v).toLowerCase().replace(/\s+/g, "");
-  const cleaned = s.replace(/^grade-?/, "").replace(/^class-?/, "");
+  const cleaned = s.replace(/^grade-?/, "").replace(/^class-?/, "").replace(/class$/, "").replace(/grade$/, "");
   const num = parseFloat(cleaned);
   if (!isNaN(num) && isFinite(num)) return Math.floor(num);
   return null;
@@ -111,6 +130,21 @@ function matchesSyllabusRow(teacherSubject: string, grade: any, rowSubject: stri
   // Spoken English and Spoken Skills are treated as the same subject
   if (ts === "spokenenglish" || ts === "spokenskills") {
     return b === "spokenenglish" || b === "spokenskills";
+  }
+
+  // Problem Solving synonyms (PS, Problem Solving, Problem Skills)
+  if (ts === "ps" || ts === "problemsolving" || ts === "problemsolving(ps)" || ts === "problemskills") {
+    if (b === "ps" || b === "problemsolving" || b === "problemsolving(ps)" || b === "problemskills") {
+      return true;
+    }
+  }
+
+  // Telugu language matching:
+  // Handles "1st Telugu", "Telugu", "Telugu (SL)", "Telugu (FL)", "Telugu SL", "Telugu FL", etc.
+  if (ts === "telugu" || ts === "1sttelugu" || ts.includes("telugu")) {
+    if (b === "telugu" || b === "1sttelugu" || b.includes("telugu")) {
+      return true;
+    }
   }
 
   const gNum = gradeToNumber(grade);
