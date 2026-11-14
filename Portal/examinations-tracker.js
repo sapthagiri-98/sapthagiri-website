@@ -15,7 +15,13 @@
   var session = P.bootPage("examstrack");
   if (!session) return;
   var esc = P.esc, $ = function (id) { return document.getElementById(id); };
-  var me = session.name, toast = EM.toast;
+  function cleanTeacherName(n) {
+    return String(n || "")
+      .replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "")
+      .replace(/\s+(?:SIR|MADAM)$/i, "")
+      .trim();
+  }
+  var me = cleanTeacherName(session.name) || session.name, toast = EM.toast;
   var st = { tab: "schedule", events: {}, marksMounted: false, pickRow: null, pickCtx: null };
 
   $("view").innerHTML = shell();

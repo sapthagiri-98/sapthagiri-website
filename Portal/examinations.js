@@ -26,7 +26,13 @@
   var isAdmin = session0.role === "Management";
   var session = P.bootPage(isAdmin ? "exams" : "examstrack");
   if (!session) return;
-  var me = session.name;
+  function cleanTeacherName(n) {
+    return String(n || "")
+      .replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "")
+      .replace(/\s+(?:SIR|MADAM)$/i, "")
+      .trim();
+  }
+  var me = cleanTeacherName(session.name) || session.name;
 
   var GRADES = ["Nursery", "LKG", "UKG", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10"];
   var BUCKET_SEQ = ["FA-1", "FA-2", "SA-1", "FA-3", "FA-4", "SA-2"];
