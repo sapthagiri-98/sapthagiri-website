@@ -1726,12 +1726,12 @@
     rows.forEach(function (l) {
       var isDraft = !!l._draftKey;
       var id = isDraft ? l._draftKey : String(l.id);
-      html += '<tr data-editor-row="' + esc(id) + '" data-editor-draft="' + (isDraft ? "1" : "0") + '" data-class="' + esc(l.class || "") + '" data-subject="' + esc(l.subject || "") + '" data-strand="' + esc(l.strand_subject || "") + '">' +
+      html += '<tr data-editor-row="' + esc(id) + '" data-editor-draft="' + (isDraft ? "1" : "0") + '" data-class="' + esc(l.class || "") + '" data-subject="' + esc(l.subject || "") + '" data-strand="' + esc(l.strand_subject || "") + '" data-item-type="' + esc(l.item_type || "Manual") + '">' +
         '<td class="syl-col-drag"><button type="button" class="syl-ed-drag-handle" draggable="true" aria-label="Drag to reorder" title="Drag to reorder"><i class="material-icons">drag_indicator</i></button></td>' +
         '<td><input class="syl-cell-input syl-cell-number" data-field="lesson_no" value="' + esc(editorManualValue(pair, l, "lesson_no")) + '" placeholder="1" inputmode="text"></td>' +
         '<td><input class="syl-cell-input syl-cell-title" data-field="name" value="' + esc(editorManualValue(pair, l, "name")) + '" placeholder="Enter chapter name"></td>' +
         '<td><select class="syl-cell-input" data-field="target_month">' + editorMonthOptions(editorManualValue(pair, l, "target_month")) + '</select></td>' +
-        '<td><input class="syl-cell-input" data-field="drive_link" type="url" value="' + esc(editorManualValue(pair, l, "drive_link")) + '" placeholder="https://…"></td>' +
+        '<td><input class="syl-cell-input" data-field="drive_link" type="text" value="' + esc(editorManualValue(pair, l, "drive_link")) + '" placeholder="https://… or spoken_pdf/…"></td>' +
         '<td><div class="syl-row-actions">' + (isDraft ? '<span class="syl-ed-tag manual">New</span>' : '') + '<button type="button" class="btn btn-secondary syl-row-remove" data-editor-delete="' + esc(id) + '"><i class="material-icons">delete_outline</i> Remove</button></div></td></tr>';
     });
     html += '</tbody></table></div>';
@@ -1865,14 +1865,18 @@
       }
       if (!changed) return;
       if (!lessonNo || !name) { validationError = "Enter both the lesson number and lesson name for every changed or new row."; return; }
-      if (url && !/^https?:\/\//i.test(url)) { validationError = "A resource link must start with http:// or https://."; return; }
+      if (url && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^https?:\/\//i.test(url)) {
+        validationError = "A resource link must start with http:// or https://, or be a valid relative path (e.g. spoken_pdf/…).";
+        return;
+      }
       var no = lessonNumberValue(lessonNo);
       var rowIndex = tableRows.indexOf(tr);
       var sortOrder = rowIndex >= 0 ? (rowIndex + 1) * 10 : (isFinite(no) ? Math.round(no * 10) : 0);
       changes.push({ tr: tr, oldId: id, isDraft: isDraft, payload: {
         id: isDraft ? null : id,
         class: tr.getAttribute("data-class"), subject: tr.getAttribute("data-subject"),
-        strand_subject: tr.getAttribute("data-strand") || "", item_type: "Manual",
+        strand_subject: tr.getAttribute("data-strand") || "",
+        item_type: tr.getAttribute("data-item-type") || "Manual",
         lesson_no: lessonNo, name: name, target_month: month, drive_link: url,
         sort_order: sortOrder
       }});
@@ -1979,7 +1983,7 @@
       '<label>Lesson number <input id="sylEditLessonNo" value="' + esc(row ? row.lesson_no : nextNo) + '" required placeholder="e.g. 1"></label>' +
       '<label class="syl-ed-wide">Lesson plan title <input id="sylEditName" value="' + esc(row ? row.name : "") + '" required placeholder="Enter the PDF lesson-plan title"></label>' +
       '<label>Target month <select id="sylEditMonth">' + editorMonthOptions(row ? row.target_month : "") + '</select></label>' +
-      '<label class="syl-ed-wide">PDF / Drive link <input id="sylEditDrive" type="url" value="' + esc(row ? row.drive_link || "" : "") + '" placeholder="https://…"></label></div>' +
+      '<label class="syl-ed-wide">PDF / Drive link <input id="sylEditDrive" type="text" value="' + esc(row ? row.drive_link || "" : "") + '" placeholder="https://… or spoken_pdf/…"></label></div>' +
       '<div class="syl-ed-formnote">AstraGen PDF analysis and Gemini session extraction continue through the existing workflow. This editor changes the catalog mapping only; saved session tasks and explanations are retained.</div>' +
       '<div class="syl-editor-formactions"><button type="button" class="btn btn-secondary" id="sylEditorCancel">Cancel</button><button type="button" class="btn btn-primary" id="sylEditorSave"><i class="material-icons">save</i>' + (editing ? " Save changes" : " Add plan") + '</button></div></div>';
     $("sylEditorFormHost").innerHTML = html;
@@ -1990,7 +1994,7 @@
       var name = $("sylEditName").value.trim(), lessonNo = $("sylEditLessonNo").value.trim();
       var url = $("sylEditDrive").value.trim(), no = lessonNumberValue(lessonNo);
       if (!className || !subject || !name || !lessonNo) return editorStatus("Class, subject, lesson number and title are required.", true);
-      if (url && !/^https?:\/\//i.test(url)) return editorStatus("The PDF / Drive link must start with http:// or https://.", true);
+      if (url && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^https?:\/\//i.test(url)) return editorStatus("The PDF / Drive link must start with http:// or https://, or be a valid relative path.", true);
       var payload = {
         id: $("sylEditId").value || null, class: className, subject: subject,
         strand_subject: $("sylEditStrand").value.trim(), lesson_no: lessonNo,

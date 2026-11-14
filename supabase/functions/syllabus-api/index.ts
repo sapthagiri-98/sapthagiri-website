@@ -690,7 +690,9 @@ async function saveSyllabusLesson(payload: any) {
     drive_link: S(p.drive_link),
     name
   };
-  if (row.drive_link && !/^https?:\/\//i.test(row.drive_link)) throw new Error("The PDF / Drive link must start with http:// or https://.");
+  if (row.drive_link && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(row.drive_link) && !/^https?:\/\//i.test(row.drive_link)) {
+    throw new Error("The PDF / Drive link must start with http:// or https://, or be a valid relative path.");
+  }
 
   if (id === null) {
     const { data, error } = await db.from("syllabus_lessons").insert(row)
