@@ -326,35 +326,23 @@
     }
     html += '</div>';
 
-    // 2. Interactive Tables (if parsed)
-    if (lessonData && lessonData.tables && lessonData.tables.length) {
-      html += '<div style="margin-bottom:16px;">';
-      html += '<h4 style="margin:0 0 8px;font-size:14px;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:var(--maroon,#7a151a);font-size:18px;">table_chart</i> Sentence Models &amp; Classroom Practice</h4>';
-      lessonData.tables.forEach(function (tbl, tIdx) {
-        if (!tbl || !tbl.length) return;
-        html += '<div style="overflow-x:auto;margin-bottom:12px;border:1px solid #e2e8f0;border-radius:8px;">';
-        html += '<table class="ex-table" style="width:100%;border-collapse:collapse;font-size:12.5px;">';
-        tbl.forEach(function (row, rIdx) {
-          var isHeader = (rIdx === 0);
-          html += '<tr style="' + (isHeader ? 'background:#f8fafc;font-weight:800;color:#0f172a;' : 'background:#fff;border-top:1px solid #f1f5f9;') + '">';
-          row.forEach(function (cell) {
-            var tag = isHeader ? 'th' : 'td';
-            html += '<' + tag + ' style="padding:8px 10px;text-align:left;vertical-align:top;white-space:normal;line-height:1.4;">' + esc(cell) + '</' + tag + '>';
-          });
-          html += '</tr>';
-        });
-        html += '</table></div>';
-      });
-      html += '</div>';
-    }
+    // 2. Teaching Instructions & Classroom Plan (High-Fidelity Day PDF Viewer)
+    var cleanCls = cls.replace(/\s+/g, "_");
+    var pdfUrl = (lessonData && lessonData.pdf_url) || ("spoken_pdf/" + cleanCls + "_Day_" + dayNum + ".pdf");
 
-    // 3. Full Lesson Text Sections
-    if (lessonData && lessonData.full_content) {
-      html += '<div style="margin-bottom:18px;">';
-      html += '<h4 style="margin:0 0 8px;font-size:14px;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:var(--maroon,#7a151a);font-size:18px;">library_books</i> Teaching Instructions &amp; Classroom Plan</h4>';
-      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;max-height:260px;overflow-y:auto;font-size:12.5px;line-height:1.6;color:#334155;white-space:pre-wrap;font-family:Inter,system-ui,sans-serif;">' + esc(lessonData.full_content) + '</div>';
-      html += '</div>';
-    }
+    html += '<div class="syl-spoken-card" style="margin-bottom:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">';
+    html += '<h4 style="margin:0;font-size:14px;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:var(--maroon,#7a151a);font-size:18px;">picture_as_pdf</i> Teaching Instructions &amp; Classroom Plan (PDF)</h4>';
+    html += '<a href="' + esc(pdfUrl) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:5px;background:#334155;color:#fff;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;text-decoration:none;"><i class="material-icons" style="font-size:15px;color:#fff;">open_in_new</i> Open PDF Fullscreen</a>';
+    html += '</div>';
+    html += '<div style="position:relative;width:100%;height:540px;border-radius:8px;overflow:hidden;border:1px solid #cbd5e1;background:#525659;">';
+    html += '<iframe src="' + esc(pdfUrl) + '#toolbar=0" style="width:100%;height:100%;border:none;" title="Spoken English Lesson Plan"></iframe>';
+    html += '</div>';
+    html += '<div style="margin-top:8px;font-size:11.5px;color:#64748b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">';
+    html += '<span><i class="material-icons" style="font-size:13px;vertical-align:middle;">visibility</i> Complete day lesson plan with sentence models, dialogue drills &amp; phonetic guides.</span>';
+    html += '<a href="' + esc(pdfUrl) + '" target="_blank" rel="noopener" style="color:var(--maroon,#7a151a);font-weight:700;text-decoration:none;">Having trouble viewing? Tap to open directly &rarr;</a>';
+    html += '</div>';
+    html += '</div>';
 
     // 4. Daily Teacher Checklist (Section 10)
     html += '<div class="syl-spoken-checklist-box" style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px;margin-top:14px;">';

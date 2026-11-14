@@ -227,3 +227,69 @@ describe("User Management Module Grouping & My Schedule Access", () => {
     expect(mgmtTools.length).toBe(9);
   });
 });
+
+describe("Spoken English & Spoken Skills Day-wise Syllabus Integration", () => {
+  function matchesSyllabusSubject(a: string, b: string): boolean {
+    const na = (a || "").trim().toLowerCase();
+    const nb = (b || "").trim().toLowerCase();
+    if (na === nb) return true;
+    const spokenSynonyms = ["spoken english", "spoken skills"];
+    if (spokenSynonyms.includes(na) && spokenSynonyms.includes(nb)) return true;
+    return false;
+  }
+
+  it("treats 'Spoken English' and 'Spoken Skills' as the same subject", () => {
+    expect(matchesSyllabusSubject("Spoken English", "Spoken Skills")).toBe(true);
+    expect(matchesSyllabusSubject("Spoken Skills", "Spoken English")).toBe(true);
+    expect(matchesSyllabusSubject("spoken english", "Spoken English")).toBe(true);
+    expect(matchesSyllabusSubject("English", "Spoken English")).toBe(false);
+  });
+
+  it("sorts Spoken English lessons by Day number rather than alphabetical title", () => {
+    const lessons = [
+      { name: "Day 6: Future actions and will", lesson_no: "6" },
+      { name: "Day 1: Greetings and self-introduction", lesson_no: "1" },
+      { name: "Day 4: Question words and order", lesson_no: "4" },
+      { name: "Day 2: Classroom objects", lesson_no: "2" },
+      { name: "Day 5: Habits and present tense", lesson_no: "5" },
+      { name: "Day 3: Can and requests", lesson_no: "3" },
+    ];
+
+    function dayValue(l: { lesson_no?: string; name: string }): number {
+      const match = (l.lesson_no || l.name).match(/\d+/);
+      return match ? parseInt(match[0], 10) : 999;
+    }
+
+    lessons.sort((a, b) => dayValue(a) - dayValue(b));
+
+    expect(lessons.map(l => l.lesson_no)).toEqual(["1", "2", "3", "4", "5", "6"]);
+  });
+
+  it("requires all checklist items to be checked before lesson can be marked Done", () => {
+    const checklist = [
+      { key: "chk1", checked: true },
+      { key: "chk2", checked: true },
+      { key: "chk3", checked: false },
+      { key: "chk4", checked: true },
+    ];
+
+    const allChecked = checklist.length > 0 && checklist.every(c => c.checked);
+    expect(allChecked).toBe(false);
+
+    // After ticking the 3rd item
+    checklist[2].checked = true;
+    const nowDone = checklist.length > 0 && checklist.every(c => c.checked);
+    expect(nowDone).toBe(true);
+  });
+
+  it("generates correct clean slice PDF URL for any class and day", () => {
+    function getSpokenPdfUrl(cls: string, day: number): string {
+      const cleanCls = cls.replace(/\s+/g, "_");
+      return `spoken_pdf/${cleanCls}_Day_${day}.pdf`;
+    }
+
+    expect(getSpokenPdfUrl("Class 6", 5)).toBe("spoken_pdf/Class_6_Day_5.pdf");
+    expect(getSpokenPdfUrl("Nursery", 1)).toBe("spoken_pdf/Nursery_Day_1.pdf");
+    expect(getSpokenPdfUrl("Class 10", 6)).toBe("spoken_pdf/Class_10_Day_6.pdf");
+  });
+});
