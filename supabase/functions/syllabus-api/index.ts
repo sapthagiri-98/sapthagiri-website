@@ -743,11 +743,12 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
       .select("id")
       .eq("class", cls)
       .eq("subject", subj)
-      .eq("name", name)
+      .eq("lesson_no", String(dayNum))
       .maybeSingle();
 
     if (existing?.id) {
       await db.from("syllabus_lessons").update({
+        name: name,
         sort_order: sortOrder,
         lesson_no: String(dayNum),
         target_month: "Daily",
