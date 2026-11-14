@@ -441,6 +441,7 @@
 
   TeacherSchedule.prototype.loadDay = function (weekday) {
     var self = this;
+    this.selectedDay = weekday;
     var host = this.container.querySelector("#tschTimelineContainer");
     if (!host) return;
 
@@ -559,11 +560,15 @@
       })
       .then(function (periods) {
         self.weekCache[weekday] = periods || [];
-        self.renderDay(weekday, periods || []);
+        if (self.selectedDay === weekday) {
+          self.renderDay(weekday, periods || []);
+        }
       })
       .catch(function () {
         self.weekCache[weekday] = [];
-        self.renderDay(weekday, []);
+        if (self.selectedDay === weekday) {
+          self.renderDay(weekday, []);
+        }
       });
   };
 

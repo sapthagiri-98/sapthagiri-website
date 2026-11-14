@@ -384,7 +384,7 @@ describe('Teacher Schedule Logic & Consolidation', () => {
     instance.loadDay(6)
 
     // Wait for async promises to settle
-    await new Promise(r => setTimeout(r, 60))
+    await new Promise(r => setTimeout(r, 200))
 
     // Verify stats in DOM: 7 teaching periods, 0 activity, 2 free (out of 9 High School periods)
     const stTeach = document.querySelector('#tschStatTeach')

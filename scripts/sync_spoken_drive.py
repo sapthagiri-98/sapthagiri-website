@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import json
 import urllib.request
@@ -11,6 +12,7 @@ SYNC_SECRET = os.environ.get("SPOKEN_SYNC_SECRET", "sapthagiri-spoken-sync-2026"
 
 os.makedirs('Portal/spoken_pdf', exist_ok=True)
 os.makedirs('downloads_cache', exist_ok=True)
+os.makedirs('source_pdfs', exist_ok=True)
 
 def download_drive_folder():
     """Download any new PDFs from Google Drive folder using gdown if available."""
@@ -19,7 +21,14 @@ def download_drive_folder():
         print(f"Checking Google Drive folder: {DRIVE_FOLDER_ID}...")
         gdown.download_folder(id=DRIVE_FOLDER_ID, output='downloads_cache', quiet=False, use_cookies=False)
     except Exception as e:
-        print(f"Note on Google Drive download: {e}")
+        err_msg = str(e)
+        print(f"\n[Drive Notice] Google Drive folder download could not complete: {err_msg}")
+        if "401" in err_msg or "permission" in err_msg.lower():
+            print("==> ACTION REQUIRED IN GOOGLE DRIVE <==")
+            print("The Google Drive folder is currently Restricted.")
+            print("Please open: https://drive.google.com/drive/folders/1mmwlX_D5VDN_F2VdJAu25UxR3r61BDuP")
+            print("Click 'Share' -> Under 'General access', change from 'Restricted' to 'Anyone with the link' (Viewer).")
+            print("=========================================\n")
 
 def parse_and_slice_pdf(file_path):
     print(f"Parsing and slicing: {file_path}...")
@@ -143,7 +152,7 @@ def push_to_supabase(all_lessons):
             'lesson_no': str(day_num),
             'day': day_num,
             'drive_link': drive_link,
-            'target_month': 'Daily'
+            'target_month': 'November'
         })
         
         for idx, chk in enumerate(item['checklist']):
@@ -183,8 +192,13 @@ def push_to_supabase(all_lessons):
 def run():
     download_drive_folder()
     
-    # Check both downloads_cache and local Downloads
-    candidate_dirs = ['downloads_cache', os.path.expanduser('~/Downloads')]
+    # Check source_pdfs, downloads_cache, user Downloads, and Windows Downloads path
+    candidate_dirs = [
+        'source_pdfs',
+        'downloads_cache',
+        os.path.expanduser('~/Downloads'),
+        'C:/Users/vipul/Downloads'
+    ]
     all_files = []
     for d in candidate_dirs:
         if os.path.exists(d):
@@ -206,8 +220,13 @@ def run():
         all_lessons.extend(parse_and_slice_pdf(fp))
         
     if not all_lessons:
-        print("No lessons found to process.")
-        return
+        print("\n[ERROR] No Spoken English source PDFs found to process.")
+        print("To fix this:")
+        print("1. Set Google Drive folder permissions to 'Anyone with the link can view' (currently restricted).")
+        print("   URL: https://drive.google.com/drive/folders/1mmwlX_D5VDN_F2VdJAu25UxR3r61BDuP")
+        print("2. OR upload your PDF directly to the 'source_pdfs/' folder in this repo.")
+        print("3. OR run 'Sync_Spoken_English.bat' locally on your PC where Downloads folder has the PDFs.\n")
+        sys.exit(1)
         
     print(f"Total processed lessons across all classes: {len(all_lessons)}")
     

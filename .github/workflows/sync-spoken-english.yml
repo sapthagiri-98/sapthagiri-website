@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '0 */6 * * *'  # Runs automatically every 6 hours
   workflow_dispatch:        # Allows manual 1-click trigger in GitHub Actions tab
+  push:
+    paths:
+      - 'source_pdfs/**.pdf' # Automatically triggers whenever a PDF is uploaded to source_pdfs/
   repository_dispatch:      # Allows Google Apps Script / Drive webhook triggers
     types: [new_spoken_pdf, sync_spoken]
 
