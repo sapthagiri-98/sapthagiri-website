@@ -39,9 +39,11 @@
         '<button data-m="holistic"><i class="material-icons">emoji_people</i> Holistic</button>' +
       '</div>' +
       '<div id="mkAcad">' +
-        '<div class="ex-toolbar">' +
+        '<div class="ex-toolbar ex-teacher-mk-toolbar">' +
           '<div class="ex-field"><label>Class</label><select id="mkTClass"><option value="">Loading…</option></select></div>' +
-          '<div class="ex-field"><label>Exam &amp; Subject</label><select id="mkTExam" disabled><option value="">Pick a class first…</option></select></div>' +
+          '<div class="ex-field"><label>Assessment</label><select id="mkTBucket" disabled><option value="">Pick class first…</option></select></div>' +
+          '<div class="ex-field"><label>Subject</label><select id="mkTSubject" disabled><option value="">Pick assessment first…</option></select></div>' +
+          '<div class="ex-field"><label>Component / Exam</label><select id="mkTComponent" disabled><option value="">Pick subject first…</option></select></div>' +
         '</div><div id="mkTHost"><div class="ex-empty"><i class="material-icons">fact_check</i>Pick a completed exam to enter marks.</div></div>' +
       '</div>' +
       '<div id="mkHol" style="display:none;">' +
@@ -73,21 +75,97 @@
     }).catch(function (e) { empty("mkTHost", esc(e.message || e), "error_outline"); });
 
     $("mkTClass").addEventListener("change", function () {
-      var cls = this.value, ex = $("mkTExam");
-      empty("mkTHost", "Pick a completed exam to enter marks.", "fact_check");
-      if (!cls) { ex.disabled = true; ex.innerHTML = '<option value="">Pick a class first…</option>'; return; }
+      var cls = this.value;
+      var bSel = $("mkTBucket"), sSel = $("mkTSubject"), cSel = $("mkTComponent");
+      empty("mkTHost", "Pick an assessment and subject to enter marks.", "fact_check");
+      sSel.disabled = true; sSel.innerHTML = '<option value="">Pick assessment first…</option>';
+      cSel.disabled = true; cSel.innerHTML = '<option value="">Pick subject first…</option>';
+      if (!cls) {
+        bSel.disabled = true; bSel.innerHTML = '<option value="">Pick class first…</option>';
+        return;
+      }
       var opts = (st.opts.options || {})[cls] || [];
-      ex.disabled = false;
-      ex.innerHTML = '<option value="">Select exam &amp; subject…</option>' + opts.map(function (o, i) { return '<option value="' + i + '">' + esc(o.label) + (o.locked ? " 🔒" : "") + (o.gated ? " (locked)" : "") + "</option>"; }).join("");
+      if (!opts.length) {
+        bSel.disabled = true; bSel.innerHTML = '<option value="">No completed exams for this class</option>';
+        return;
+      }
+      var buckets = [];
+      opts.forEach(function (o) {
+        var b = o.bucket;
+        var existing = buckets.find(function (x) { return x.name === b; });
+        if (!existing) {
+          buckets.push({ name: b, locked: !!o.locked, gated: !!o.gated });
+        }
+      });
+      bSel.disabled = false;
+      bSel.innerHTML = '<option value="">Select assessment…</option>' + buckets.map(function (b) {
+        return '<option value="' + esc(b.name) + '">' + esc(b.name) + (b.locked ? " 🔒 (Locked)" : " 🔓 (Open)") + (b.gated ? " [gated]" : "") + "</option>";
+      }).join("");
     });
-    $("mkTExam").addEventListener("change", function () {
-      var cls = $("mkTClass").value, idx = this.value; if (cls === "" || idx === "") return;
-      var o = ((st.opts.options || {})[cls] || [])[+idx]; if (!o) return;
+
+    $("mkTBucket").addEventListener("change", function () {
+      var cls = $("mkTClass").value, bucket = this.value;
+      var sSel = $("mkTSubject"), cSel = $("mkTComponent");
+      empty("mkTHost", "Pick a subject to enter marks.", "fact_check");
+      cSel.disabled = true; cSel.innerHTML = '<option value="">Pick subject first…</option>';
+      if (!cls || !bucket) {
+        sSel.disabled = true; sSel.innerHTML = '<option value="">Pick assessment first…</option>';
+        return;
+      }
+      var opts = ((st.opts.options || {})[cls] || []).filter(function (o) { return o.bucket === bucket; });
+      var subjects = [];
+      opts.forEach(function (o) {
+        if (subjects.indexOf(o.subject) === -1) subjects.push(o.subject);
+      });
+      sSel.disabled = false;
+      sSel.innerHTML = '<option value="">Select subject…</option>' + subjects.map(function (s) {
+        return '<option value="' + esc(s) + '">' + esc(s) + "</option>";
+      }).join("");
+      if (subjects.length === 1) {
+        sSel.value = subjects[0];
+        sSel.dispatchEvent(new Event("change"));
+      }
+    });
+
+    $("mkTSubject").addEventListener("change", function () {
+      var cls = $("mkTClass").value, bucket = $("mkTBucket").value, subj = this.value;
+      var cSel = $("mkTComponent");
+      empty("mkTHost", "Pick a component to enter marks.", "fact_check");
+      if (!cls || !bucket || !subj) {
+        cSel.disabled = true; cSel.innerHTML = '<option value="">Pick subject first…</option>';
+        return;
+      }
+      var opts = ((st.opts.options || {})[cls] || []).filter(function (o) {
+        return o.bucket === bucket && o.subject === subj;
+      });
+      cSel.disabled = false;
+      cSel.innerHTML = '<option value="">Select component…</option>' + opts.map(function (o) {
+        var cleanComp = o.label.replace(/^.*?·\s*.*?·\s*/, "") || o.component;
+        return '<option value="' + esc(o.component) + '">' + esc(cleanComp) + (o.locked ? " 🔒" : "") + "</option>";
+      }).join("");
+      if (opts.length === 1) {
+        cSel.value = opts[0].component;
+        cSel.dispatchEvent(new Event("change"));
+      }
+    });
+
+    $("mkTComponent").addEventListener("change", function () {
+      var cls = $("mkTClass").value, bucket = $("mkTBucket").value, subj = $("mkTSubject").value, comp = this.value;
+      if (!cls || !bucket || !subj || !comp) return;
+      var o = (((st.opts.options || {})[cls] || [])).find(function (x) {
+        return x.bucket === bucket && x.subject === subj && x.component === comp;
+      });
+      if (!o) return;
       if (o.gated) { empty("mkTHost", esc(o.gateMsg || "Locked"), "block"); return; }
       loading("mkTHost", "Loading students…");
-      P.api("marksGetGrid", [o.className, o.subject, o.bucket, o.component]).then(function (g) { st.cur = g; renderSingle(g, "mkTHost", false, st, refreshT); }).catch(function (e) { empty("mkTHost", esc(e.message || e), "error_outline"); });
+      P.api("marksGetGrid", [o.className, o.subject, o.bucket, o.component]).then(function (g) {
+        st.cur = g;
+        renderSingle(g, "mkTHost", false, st, refreshT);
+      }).catch(function (e) {
+        empty("mkTHost", esc(e.message || e), "error_outline");
+      });
     });
-    function refreshT() { $("mkTExam").dispatchEvent(new Event("change")); }
+    function refreshT() { $("mkTComponent").dispatchEvent(new Event("change")); }
 
     // ---- holistic ----
     function holInit() {

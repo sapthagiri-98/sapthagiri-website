@@ -1391,8 +1391,29 @@
   .ex-mob-rep-subjs-box{background:#fff;border:1px solid #f1f5f9;border-radius:10px;padding:10px;margin-bottom:12px;}
   .ex-mob-rep-remark-box{background:#fff9f5;border:1px solid #ffedd5;border-radius:10px;padding:10px 12px;}
   .ex-mob-rep-remark-text{font-size:12px;line-height:1.5;color:#9a3412;font-style:italic;margin-top:4px;}
+
+  /* Teacher Marks Cascading Toolbar Mobile Optimization */
+  .ex-teacher-mk-toolbar{
+    display:grid!important;
+    grid-template-columns:1fr 1fr!important;
+    gap:10px!important;
+  }
+  .ex-teacher-mk-toolbar .ex-field select{
+    min-width:0!important;
+    width:100%!important;
+    height:42px!important;
+    font-size:13px!important;
+  }
 }
 @media(min-width:901px){
   .ex-mob-mode-seg, .ex-mob-tab-wrap, .ex-cal-toggle, #exMobProgressWrap{display:none!important;}
   .ex-cal-grid-wrap{display:block!important;}
+  .ex-teacher-mk-toolbar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .ex-teacher-mk-toolbar .ex-field select{
+    min-width:180px;
+  }
 }
