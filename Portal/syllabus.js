@@ -28,7 +28,13 @@
   var esc = P.esc, prettyDate = P.prettyDate;
   var $ = function (id) { return document.getElementById(id); };
   var isMgmt = (session.role === "Management");
-  var me = session.name;
+  function cleanTeacherName(n) {
+    return String(n || "")
+      .replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "")
+      .replace(/\s+(?:SIR|MADAM)$/i, "")
+      .trim();
+  }
+  var me = cleanTeacherName(session.name) || session.name;
 
   // -------- month helpers (academic year June -> May) --------
   var MONTH_ORDER = ["june", "july", "august", "september", "october", "november", "december", "january", "february", "march", "april", "may"];

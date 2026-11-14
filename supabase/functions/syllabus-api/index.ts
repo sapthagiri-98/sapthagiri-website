@@ -150,21 +150,56 @@ async function fetchAll(table: string, columns: string, build?: (q: any) => any)
 
 // ---- resolve a teacher's raw name via alias ----
 async function resolveTeacherNames(rawOrReal: string): Promise<string[]> {
-  const name = S(rawOrReal);
-  const names = new Set<string>([name]);
-  const { data: u } = await db.from("users").select("id,name").ilike("name", name).maybeSingle();
-  if (u) {
-    const { data: aliases } = await db.from("teacher_aliases").select("alias_name").eq("user_id", u.id);
-    for (const a of aliases || []) names.add(S(a.alias_name));
-  } else {
-    const { data: alias } = await db.from("teacher_aliases").select("user_id").ilike("alias_name", name).maybeSingle();
-    if (alias?.user_id) {
-      const { data: u2 } = await db.from("users").select("name").eq("id", alias.user_id).maybeSingle();
-      if (u2) names.add(S(u2.name));
-      const { data: aliases2 } = await db.from("teacher_aliases").select("alias_name").eq("user_id", alias.user_id);
-      for (const a of aliases2 || []) names.add(S(a.alias_name));
-    }
+  const clean = S(rawOrReal)
+    .replace(/^(?:MR\.|MRS\.|MS\.|DR\.|SIR|MADAM)\s+/i, "")
+    .replace(/\s+(?:SIR|MADAM)$/i, "")
+    .trim();
+
+  const names = new Set<string>([clean, S(rawOrReal)]);
+  const lower = clean.toLowerCase();
+
+  // Known phonetic and ERP spelling variants
+  if (lower === "sathish" || lower === "satish") {
+    names.add("Sathish");
+    names.add("Satish");
   }
+  if (lower === "knr" || lower.includes("narsimha")) {
+    names.add("KNR");
+    names.add("Narsimha Reddy Kasireddy");
+    names.add("Narsimha Reddy");
+  }
+  if (lower === "santosh" || lower === "santhosh") {
+    names.add("Santosh");
+    names.add("Santhosh");
+  }
+  if (lower.startsWith("srinivas")) {
+    names.add("Srinivas");
+    names.add("Srinivas Kodipunjula");
+    names.add("Srinivas Pulloori");
+    names.add("Srinivas Vallakati");
+  }
+  if (lower.startsWith("ramana")) {
+    names.add("Ramana Prasad");
+    names.add("Ramana");
+  }
+
+  try {
+    const { data: u } = await db.from("users").select("id,name").ilike("name", clean).maybeSingle();
+    if (u) {
+      names.add(S(u.name));
+      const { data: aliases } = await db.from("teacher_aliases").select("alias_name").eq("user_id", u.id);
+      for (const a of aliases || []) if (S(a.alias_name)) names.add(S(a.alias_name));
+    } else {
+      const { data: alias } = await db.from("teacher_aliases").select("user_id").ilike("alias_name", clean).maybeSingle();
+      if (alias?.user_id) {
+        const { data: u2 } = await db.from("users").select("name").eq("id", alias.user_id).maybeSingle();
+        if (u2) names.add(S(u2.name));
+        const { data: aliases2 } = await db.from("teacher_aliases").select("alias_name").eq("user_id", alias.user_id);
+        for (const a of aliases2 || []) if (S(a.alias_name)) names.add(S(a.alias_name));
+      }
+    }
+  } catch (_) {}
+
   return [...names].filter(Boolean);
 }
 
@@ -174,8 +209,16 @@ async function resolveTeacherNames(rawOrReal: string): Promise<string[]> {
 async function getTeacherClassSubjects(teacher: string) {
   const names = await resolveTeacherNames(teacher);
   if (!names.length) return [];
-  const { data, error } = await db.from("hw_timetable")
-    .select("class, subject").in("teacher_name", names).eq("is_activity", false);
+
+  let q = db.from("hw_timetable").select("class, subject").eq("is_activity", false);
+  if (names.length === 1) {
+    q = q.ilike("teacher_name", `%${names[0]}%`);
+  } else {
+    const orFilter = names.map((v) => `teacher_name.ilike.%${v}%`).join(",");
+    q = q.or(orFilter);
+  }
+
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   const seen = new Set<string>(); const out: any[] = [];
   for (const r of data || []) {
