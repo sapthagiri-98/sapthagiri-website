@@ -139,12 +139,13 @@ def run():
     if os.path.exists(downloads):
         for fname in os.listdir(downloads):
             if fname.lower().endswith('.pdf') and 'spoken_english' in fname.lower() and 'day' in fname.lower():
-                if fname.lower() in ignore_files:
-                    continue
-                full_p = os.path.normpath(os.path.join(downloads, fname))
-                if full_p.lower() not in known_paths:
-                    files.append((full_p, fname))
-                    known_paths.add(full_p.lower())
+                m = re.search(r'day\s*(\d+)', fname, re.I)
+                # Auto-add only future days (Day 9+)
+                if m and int(m.group(1)) > 8:
+                    full_p = os.path.normpath(os.path.join(downloads, fname))
+                    if full_p.lower() not in known_paths:
+                        files.append((full_p, fname))
+                        known_paths.add(full_p.lower())
     
     all_lessons = []
     for fpath, label in files:
@@ -193,7 +194,7 @@ BEGIN
         drive_link = item['pdf_url']
 
         sql += f"""  INSERT INTO app.syllabus_lessons (class, subject, name, item_type, sort_order, lesson_no, target_month, drive_link)
-  VALUES ('{cls}', '{subject}', '{name}', '{item_type}', {sort_order}, '{lesson_no}', 'Daily', '{drive_link}');\n"""
+  VALUES ('{cls}', '{subject}', '{name}', '{item_type}', {sort_order}, '{lesson_no}', 'November', '{drive_link}');\n"""
 
     sql += "\n  -- Checklist Tasks\n"
     for item in all_lessons:
