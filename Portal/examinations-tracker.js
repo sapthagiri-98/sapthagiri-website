@@ -22,7 +22,70 @@
       .trim();
   }
   var me = cleanTeacherName(session.name) || session.name, toast = EM.toast;
-  var st = { tab: "schedule", events: {}, marksMounted: false, pickRow: null, pickCtx: null };
+  var st = { tab: "schedule", events: {}, marksMounted: false, pickRow: null, pickCtx: null, assignedList: [] };
+
+  function shortExamName(n) {
+    var s = String(n || "").trim();
+    var m;
+    if ((m = s.match(/(?:class\s*test|ct)[\s-]*([0-9]+)/i))) return "CT-" + m[1];
+    if ((m = s.match(/(?:formative\s*assessment|fa)[\s-]*([0-9]+)/i))) return "FA-" + m[1];
+    if ((m = s.match(/(?:summative\s*assessment|sa)[\s-]*([0-9]+)/i))) return "SA-" + m[1];
+    if ((m = s.match(/(?:unit\s*test|ut)[\s-]*([0-9]+)/i))) return "UT-" + m[1];
+    return s;
+  }
+
+  function gradeNumFromClass(cls) {
+    var s = String(cls || "").replace(/^(?:class|grade)\s*/i, "").trim();
+    var m = s.match(/^(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function normSubject(s) {
+    var sub = String(s || "").trim();
+    if (/^(math|maths|mathematics)$/i.test(sub)) return "Maths";
+    return sub;
+  }
+
+  function findExamsForLesson(lessonName, examList, currentExamId, grade, subject) {
+    var target = String(lessonName || "").trim().toLowerCase();
+    if (!target) return [];
+    var gn = gradeNumFromClass(grade);
+    var ns = normSubject(subject).toLowerCase();
+
+    var found = [];
+    (examList || []).forEach(function (e) {
+      if (currentExamId && (e.rowId === currentExamId || e.id === currentExamId)) return;
+      if (gn !== null && gradeNumFromClass(e.grade || e.class) !== gn) return;
+      if (normSubject(e.subject).toLowerCase() !== ns) return;
+
+      var lessons = e.lessons;
+      if (!lessons && (e.syllabus || e.lessonsRaw)) {
+        lessons = String(e.syllabus || e.lessonsRaw).split(";").map(function (s) { return s.trim(); }).filter(Boolean);
+      }
+      if (!lessons || !lessons.length) return;
+
+      var hasMatch = lessons.some(function (x) {
+        return String(x).trim().toLowerCase() === target;
+      });
+      if (hasMatch) {
+        var sName = shortExamName(e.examName || e.exam_name);
+        if (sName && found.indexOf(sName) === -1) {
+          found.push(sName);
+        }
+      }
+    });
+    found.sort(function (a, b) {
+      var score = function (x) {
+        var m;
+        if ((m = x.match(/^CT-(\d+)/))) return +m[1] * 10;
+        if ((m = x.match(/^FA-(\d+)/))) return +m[1] * 20 + 5;
+        if ((m = x.match(/^SA-(\d+)/))) return +m[1] * 40 + 8;
+        return 999;
+      };
+      return score(a) - score(b);
+    });
+    return found;
+  }
 
   $("view").innerHTML = shell();
   bindTabs();
@@ -153,6 +216,7 @@
   function loadPending() {
     P.api("getTeacherAssignedExamsForSyllabus", [me], { overlay: false }).then(function (list) {
       list = list || [];
+      st.assignedList = list;
       var pending = list.filter(function (e) { return !e.hasSyllabus; });
       var withSyl = list.filter(function (e) { return e.hasSyllabus; });
       var host = $("exPending"), html = "";
@@ -177,12 +241,24 @@
     st.pickRow = rowId; st.pickCtx = { grade: grade, subject: subject };
     $("exPickBody").innerHTML = '<div class="ex-loading"><i class="material-icons">sync</i></div>';
     P.openModal("exPickModal");
-    P.api("getSyllabusMasterLessons", [grade, subject], { overlay: false }).then(function (list) {
+
+    var fetchLessons = P.api("getSyllabusMasterLessons", [grade, subject], { overlay: false });
+    var fetchAssigned = (st.assignedList && st.assignedList.length)
+      ? Promise.resolve(st.assignedList)
+      : P.api("getTeacherAssignedExamsForSyllabus", [me], { overlay: false }).then(function (l) { st.assignedList = l || []; return st.assignedList; }).catch(function () { return []; });
+
+    Promise.all([fetchLessons, fetchAssigned]).then(function (res) {
+      var list = res[0] || [];
+      var assignedList = res[1] || [];
       if (!list || !list.length) { $("exPickBody").innerHTML = '<div class="ex-empty"><i class="material-icons">inbox</i>No lessons found in Syllabus Master for this class/subject.</div>'; return; }
       $("exPickBody").innerHTML = list.map(function (l, i) {
-        return '<label class="ex-pickitem" data-name="' + esc(l.name) + '"><input type="checkbox"><span class="no">' + esc(l.lessonNo || (i + 1)) + '</span><span class="nm">' + esc(l.name) + '</span><span class="mo">' + esc(l.targetMonth || "") + "</span></label>";
+        var mappedExams = findExamsForLesson(l.name, assignedList, rowId, grade, subject);
+        var mappedTag = mappedExams.length ? ('<span class="ex-mapped-tag" title="Already mapped in: ' + esc(mappedExams.join(', ')) + '"><i class="material-icons">history_edu</i>' + esc(mappedExams.join(', ')) + '</span>') : '';
+        return '<label class="ex-pickitem" data-name="' + esc(l.name) + '"><input type="checkbox"><span class="no">' + esc(l.lessonNo || (i + 1)) + '</span><span class="nm">' + esc(l.name) + mappedTag + '</span><span class="mo">' + esc(l.targetMonth || "") + "</span></label>";
       }).join("");
       Array.prototype.forEach.call($("exPickBody").querySelectorAll(".ex-pickitem input"), function (c) { c.addEventListener("change", function () { c.closest(".ex-pickitem").classList.toggle("on", c.checked); }); });
+    }).catch(function (e) {
+      $("exPickBody").innerHTML = '<div class="ex-empty"><i class="material-icons">error_outline</i>' + esc(e.message || e) + '</div>';
     });
   }
   function commitPicker() {
