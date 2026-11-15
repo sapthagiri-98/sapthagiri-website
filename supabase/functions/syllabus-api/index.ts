@@ -820,51 +820,45 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
 
   if (Array.isArray(tasks) && tasks.length) {
     for (const t of tasks) {
-      const taskKey = S(t.task_key || t.taskKey);
+      const cls = S(t.class);
+      const subj = "Spoken English";
+      const lessonName = S(t.lesson_name || t.lessonName);
+      const taskNum = Number(t.task_num || t.taskNum) || 1;
+      const taskKey = S(t.task_key || t.taskKey) || `SPOKEN::${cls}::${taskNum}`;
+      const content = S(t.content);
       if (!taskKey) continue;
-      const { data: existingTasks } = await db.from("syllabus_session_tasks")
-        .select("id")
+
+      // Check existing checked state before purge
+      const { data: existing } = await db.from("syllabus_session_tasks")
+        .select("task_key, checked")
         .eq("task_key", taskKey);
 
-      if (existingTasks && existingTasks.length > 0) {
-        const keepTaskId = existingTasks[0].id;
-        if (existingTasks.length > 1) {
-          const extraTaskIds = existingTasks.slice(1).map(x => x.id);
-          await db.from("syllabus_session_tasks").delete().in("id", extraTaskIds);
-        }
-        await db.from("syllabus_session_tasks").update({
-          content: S(t.content),
-          lesson_name: S(t.lesson_name || t.lessonName)
-        }).eq("id", keepTaskId);
+      const wasChecked = (existing || []).some((x: any) => !!x.checked);
 
-        // Delete any other duplicate task with same (class, lesson_name, task_num)
-        await db.from("syllabus_session_tasks")
-          .delete()
-          .eq("class", S(t.class))
-          .eq("subject", "Spoken English")
-          .eq("lesson_name", S(t.lesson_name || t.lessonName))
-          .eq("task_num", Number(t.task_num || t.taskNum) || 1)
-          .neq("id", keepTaskId);
-      } else {
-        // Also ensure no old task exists with same (class, lesson_name, task_num) before inserting
-        await db.from("syllabus_session_tasks")
-          .delete()
-          .eq("class", S(t.class))
-          .eq("subject", "Spoken English")
-          .eq("lesson_name", S(t.lesson_name || t.lessonName))
-          .eq("task_num", Number(t.task_num || t.taskNum) || 1);
+      // Cleanly delete any existing duplicate rows for this task_key
+      await db.from("syllabus_session_tasks")
+        .delete()
+        .eq("task_key", taskKey);
 
-        await db.from("syllabus_session_tasks").insert({
-          class: S(t.class),
-          subject: "Spoken English",
-          lesson_name: S(t.lesson_name || t.lessonName),
-          session_name: "Daily Checklist",
-          task_num: Number(t.task_num || t.taskNum) || 1,
-          task_key: taskKey,
-          content: S(t.content),
-          checked: false
-        });
-      }
+      // Also cleanly delete any old/duplicate rows with same (class, subject, lesson_name, task_num)
+      await db.from("syllabus_session_tasks")
+        .delete()
+        .eq("class", cls)
+        .eq("subject", subj)
+        .eq("lesson_name", lessonName)
+        .eq("task_num", taskNum);
+
+      // Insert clean single authoritative row
+      await db.from("syllabus_session_tasks").insert({
+        class: cls,
+        subject: subj,
+        lesson_name: lessonName,
+        session_name: "Daily Checklist",
+        task_num: taskNum,
+        task_key: taskKey,
+        content: content,
+        checked: wasChecked
+      });
     }
   }
 
