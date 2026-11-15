@@ -1006,7 +1006,7 @@ async function getSessionDetailedExplanation(grade: string, subject: string, les
 // No schema changes are required. All writes use existing syllabus tables.
 // =========================================================================
 function requireSyllabusManagement(who: any) {
-  if (!who || who.role !== "Management") throw new Error("Management only.");
+  if (!who || (who.role !== "Management" && who.role !== "SyncAgent")) throw new Error("Management only.");
 }
 function editorGradeLabel(value: any): string {
   const raw = numText(value);
