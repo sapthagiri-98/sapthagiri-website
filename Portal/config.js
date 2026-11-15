@@ -169,7 +169,10 @@ window.PORTAL_CONFIG = {
      "saveSyllabusLesson",
      "deleteSyllabusLesson",
      "reorderSyllabusLessons",
-    "getManagementTimelineAuditReport"
+    "getManagementTimelineAuditReport",
+    "triggerSpokenEnglishSync",
+    "getSpokenEnglishSyncStatus",
+    "syncSpokenEnglishCatalog"
   ],
 
   SUPABASE_EXAM_BASE:

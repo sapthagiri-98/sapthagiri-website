@@ -1631,7 +1631,29 @@
     return i >= 0 && syllabusEditorPairs[i] ? syllabusEditorPairs[i] : null;
   }
   function getEditorPairRows(pair) {
-    return (syllabusEditorData && syllabusEditorData.lessons || []).filter(function (l) { return editorRowMatches(l, pair); }).sort(editorLessonSort);
+    var rows = (syllabusEditorData && syllabusEditorData.lessons || []).filter(function (l) { return editorRowMatches(l, pair); }).sort(editorLessonSort);
+    if (pair && (editorNormSubject(pair.subject) === "spokenenglish" || editorNormSubject(pair.subject) === "spoken")) {
+      var seenDays = Object.create(null), clean = [];
+      rows.forEach(function (l) {
+        var key = String(l.lesson_no || "").trim();
+        if (!key) { clean.push(l); return; }
+        if (!seenDays[key]) {
+          seenDays[key] = l;
+          clean.push(l);
+        } else {
+          var prev = seenDays[key];
+          var hasTelugu = /[\u0C00-\u0C7F]/.test(l.name || "");
+          var prevTelugu = /[\u0C00-\u0C7F]/.test(prev.name || "");
+          if ((hasTelugu && !prevTelugu) || (!prev.drive_link && l.drive_link)) {
+            var idx = clean.indexOf(prev);
+            if (idx >= 0) clean[idx] = l;
+            seenDays[key] = l;
+          }
+        }
+      });
+      return clean;
+    }
+    return rows;
   }
   function editorMonthOptions(value) {
     var months = ["", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March", "April", "May"];
@@ -1888,7 +1910,8 @@
       }
       if (!changed) return;
       if (!lessonNo || !name) { validationError = "Enter both the lesson number and lesson name for every changed or new row."; return; }
-      if (url && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^https?:\/\//i.test(url)) {
+      var trimmedUrl = String(url || "").trim();
+      if (trimmedUrl && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmedUrl) && !/^https?:\/\//i.test(trimmedUrl)) {
         validationError = "A resource link must start with http:// or https://, or be a valid relative path (e.g. spoken_pdf/…).";
         return;
       }
@@ -2175,21 +2198,60 @@
   }
 
   function runSpokenEnglishAutoSync() {
-    if (_spokenSyncRunning) return;
+    if (_spokenSyncRunning) {
+      P.openModal("sylSpokenSyncModal");
+      return;
+    }
     _spokenSyncRunning = true;
 
     var allBtns = document.querySelectorAll("#sylEditorSyncSpoken, #sylSyncSpokenToolbar, .syl-open-spoken-sync-btn");
     allBtns.forEach(function (b) {
       b.disabled = true;
       b.dataset.origHtml = b.dataset.origHtml || b.innerHTML;
-      b.innerHTML = '<i class="material-icons syl-spin">sync</i> Syncing Spoken English…';
+      b.innerHTML = '<i class="material-icons syl-spin">sync</i> Syncing…';
     });
 
-    editorStatus("Checking Google Drive for new or revised day PDFs, slicing lessons, and updating database…", "loading");
+    // Open dedicated fullscreen takeover progress modal immediately
+    P.openModal("sylSpokenSyncModal");
+    renderSpokenSyncLoading(0, "Connecting to GitHub Actions & Google Drive…");
 
     var token = getSpokenSyncToken();
 
-    P.api("triggerSpokenEnglishSync", [token], { overlay: false }).then(function (res) {
+    function triggerAction() {
+      return fetch("https://api.github.com/repos/sapthagiri-98/sapthagiri-website/actions/workflows/sync-spoken-english.yml/dispatches", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Accept": "application/vnd.github+json"
+        },
+        body: JSON.stringify({ ref: "main" })
+      }).then(function (res) {
+        if (res.status === 204 || res.ok) return { dispatched: true };
+        return res.json().then(function (j) { throw new Error(j.message || ("GitHub HTTP " + res.status)); });
+      }).catch(function (fetchErr) {
+        console.warn("Direct GitHub dispatch notice, using syllabus-api fallback:", fetchErr);
+        return P.api("triggerSpokenEnglishSync", [token], { overlay: false });
+      });
+    }
+
+    function checkActionStatus() {
+      return fetch("https://api.github.com/repos/sapthagiri-98/sapthagiri-website/actions/workflows/sync-spoken-english.yml/runs?per_page=1", {
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Accept": "application/vnd.github+json"
+        }
+      }).then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      }).then(function (data) {
+        var run = data && data.workflow_runs && data.workflow_runs[0];
+        return { success: true, run: run };
+      }).catch(function () {
+        return P.api("getSpokenEnglishSyncStatus", [token], { overlay: false });
+      });
+    }
+
+    triggerAction().then(function (res) {
       if (!res || !res.dispatched) {
         throw new Error((res && res.message) || "Could not start Spoken English sync.");
       }
@@ -2197,14 +2259,17 @@
       var startTime = Date.now();
       var pollTimer = setInterval(function () {
         var elapsed = Math.round((Date.now() - startTime) / 1000);
-        var stepText = "Connecting to Google Drive folder… (" + elapsed + "s)";
-        if (elapsed > 15) stepText = "Slicing multi-day PDFs into individual class lessons… (" + elapsed + "s)";
-        if (elapsed > 45) stepText = "Extracting Telugu self-checklists & updating database… (" + elapsed + "s)";
-        editorStatus(stepText, "loading");
+        var stepText = "Connecting to Google Drive folder…";
+        if (elapsed > 12) stepText = "Checking multi-day PDFs and slicing into individual class lessons…";
+        if (elapsed > 35) stepText = "Extracting Telugu self-checklists & updating database catalog…";
 
-        P.api("getSpokenEnglishSyncStatus", [token], { overlay: false }).then(function (statRes) {
-          if (!statRes || !statRes.success || !statRes.run) return;
+        checkActionStatus().then(function (statRes) {
+          if (!statRes || !statRes.success || !statRes.run) {
+            renderSpokenSyncLoading(elapsed, stepText);
+            return;
+          }
           var run = statRes.run;
+          renderSpokenSyncLoading(elapsed, stepText, run.run_number, run.status);
 
           if (run.status === "completed") {
             clearInterval(pollTimer);
@@ -2212,6 +2277,7 @@
 
             if (run.conclusion === "success") {
               reloadEditorData(true);
+              loadReport(true);
 
               var allSpoken = (syllabusEditorData.lessons || []).filter(function (l) {
                 return matchesSyllabusRow("Spoken English", l.class, l.subject, l.strand_subject);
@@ -2242,29 +2308,31 @@
                 }, 6000);
               });
             } else {
-              editorStatus("Sync encountered an issue on GitHub Actions (" + (run.conclusion || "failed") + "). Please retry.", true);
+              renderSpokenSyncError("Sync encountered an issue on GitHub Actions (" + (run.conclusion || "failed") + ").");
               allBtns.forEach(function (b) {
                 b.disabled = false;
                 b.innerHTML = b.dataset.origHtml || '<i class="material-icons">sync</i> Sync Spoken English';
               });
             }
           }
-        }).catch(function () {});
+        }).catch(function () {
+          renderSpokenSyncLoading(elapsed, stepText);
+        });
 
         if (elapsed > 240) {
           clearInterval(pollTimer);
           _spokenSyncRunning = false;
           reloadEditorData(true);
-          editorStatus("Sync is finishing in background. All updates will appear shortly.", false);
+          renderSpokenSyncError("Sync is still processing in background. Check back in a moment.");
           allBtns.forEach(function (b) {
             b.disabled = false;
             b.innerHTML = b.dataset.origHtml || '<i class="material-icons">sync</i> Sync Spoken English';
           });
         }
-      }, 3500);
+      }, 3000);
     }).catch(function (err) {
       _spokenSyncRunning = false;
-      editorStatus(err.message || String(err), true);
+      renderSpokenSyncError(err.message || String(err));
       allBtns.forEach(function (b) {
         b.disabled = false;
         b.innerHTML = b.dataset.origHtml || '<i class="material-icons">sync</i> Sync Spoken English';
@@ -2272,72 +2340,176 @@
     });
   }
 
+  function renderSpokenSyncLoading(elapsed, stepText, runNumber, runStatus) {
+    var body = $("sylSpokenSyncBody");
+    var footer = $("sylSpokenSyncFooter");
+    var closeBtn = $("sylSpokenSyncCloseBtn");
+    if (!body) return;
+    if (closeBtn) closeBtn.style.display = "none";
+
+    var s1 = "done", s2 = "wait", s3 = "wait", s4 = "wait";
+    if (elapsed < 12) {
+      s1 = "active";
+    } else if (elapsed < 28) {
+      s1 = "done"; s2 = "active";
+    } else if (elapsed < 50) {
+      s1 = "done"; s2 = "done"; s3 = "active";
+    } else {
+      s1 = "done"; s2 = "done"; s3 = "done"; s4 = "active";
+    }
+
+    function stepHtml(num, label, state) {
+      var icon = state === "done" ? '<i class="material-icons" style="font-size:16px;color:#16a34a;">check_circle</i>' :
+                 (state === "active" ? '<i class="material-icons syl-spin" style="font-size:16px;color:var(--maroon,#800000);">sync</i>' :
+                 '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#cbd5e1;"></span>');
+      var color = state === "done" ? "#166534" : (state === "active" ? "var(--maroon,#800000);font-weight:700;" : "#94a3b8");
+      return '<div style="display:flex;align-items:center;gap:10px;font-size:13px;color:' + color + ';">' +
+        '<div style="width:24px;display:flex;justify-content:center;">' + icon + '</div>' +
+        '<div>' + esc(label) + '</div>' +
+      '</div>';
+    }
+
+    body.innerHTML =
+      '<div style="text-align:center;padding:8px 0 16px;">' +
+        '<div class="syl-sync-loader-wrap" style="position:relative;width:72px;height:72px;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;">' +
+          '<div style="position:absolute;inset:0;border-radius:50%;border:3.5px solid transparent;border-top-color:var(--maroon,#800000);border-right-color:#c2410c;animation:syl-spin 1s linear infinite;"></div>' +
+          '<div style="position:absolute;inset:6px;border-radius:50%;border:2px dashed #cbd5e1;animation:syl-spin 3s linear infinite reverse;"></div>' +
+          '<i class="material-icons" style="font-size:28px;color:var(--maroon,#800000);">record_voice_over</i>' +
+        '</div>' +
+        '<h4 style="margin:0 0 6px;font-size:17px;font-weight:800;color:#0f172a;">Syncing Spoken English Curriculum</h4>' +
+        '<div style="font-size:12.5px;color:#64748b;max-width:420px;margin:0 auto;">' + esc(stepText || "Processing curriculum and slicing lessons…") + '</div>' +
+      '</div>' +
+      '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">' +
+        stepHtml(1, "Scan Google Drive for new/revised day PDFs", s1) +
+        stepHtml(2, "Download & verify master multi-day PDFs", s2) +
+        stepHtml(3, "Slice 104 individual class PDFs in Portal/spoken_pdf/", s3) +
+        stepHtml(4, "Extract authentic Telugu checklists & update database", s4) +
+      '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 2px;font-size:12px;color:#64748b;">' +
+        '<span><i class="material-icons" style="font-size:14px;vertical-align:middle;color:#059669;">bolt</i> ' + (runNumber ? ('GitHub Run #' + esc(runNumber) + ' • ' + esc(runStatus || 'in_progress')) : 'GitHub Actions Runner Active') + '</span>' +
+        '<span style="font-weight:700;color:var(--maroon,#800000);">⏱️ ' + elapsed + 's elapsed</span>' +
+      '</div>';
+
+    if (footer) {
+      footer.innerHTML =
+        '<div style="font-size:11.5px;color:#64748b;display:flex;align-items:center;gap:5px;">' +
+          '<i class="material-icons" style="font-size:14px;color:#059669;">lock</i> Background sync runs automatically on cloud' +
+        '</div>' +
+        '<button type="button" class="syl-btn-secondary syl-btn-sm" data-close="sylSpokenSyncModal" style="font-size:11.5px;color:#64748b;">Run in background</button>';
+      var bgBtn = footer.querySelector("button");
+      if (bgBtn) bgBtn.onclick = function () { P.closeModal("sylSpokenSyncModal"); };
+    }
+  }
+
+  function renderSpokenSyncError(msg) {
+    var body = $("sylSpokenSyncBody");
+    var footer = $("sylSpokenSyncFooter");
+    var closeBtn = $("sylSpokenSyncCloseBtn");
+    if (!body) return;
+    if (closeBtn) closeBtn.style.display = "";
+
+    body.innerHTML =
+      '<div style="text-align:center;padding:10px 0;">' +
+        '<div style="width:52px;height:52px;border-radius:50%;background:#fef2f2;color:#dc2626;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px;">' +
+          '<i class="material-icons" style="font-size:32px;">error_outline</i>' +
+        '</div>' +
+        '<h4 style="margin:0 0 6px;font-size:17px;font-weight:800;color:#0f172a;">Sync Could Not Complete</h4>' +
+        '<div style="font-size:12.5px;color:#991b1b;background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin:10px 0;line-height:1.5;">' +
+          esc(msg) +
+        '</div>' +
+      '</div>';
+
+    if (footer) {
+      footer.innerHTML =
+        '<button type="button" class="syl-btn-secondary syl-btn-sm" data-close="sylSpokenSyncModal">Close</button>' +
+        '<button type="button" class="syl-btn-primary syl-btn-sm" id="sylSpokenSyncRetryBtn" style="background:var(--maroon,#800000);"><i class="material-icons" style="font-size:14px;">sync</i> Retry Sync</button>';
+      var retry = $("sylSpokenSyncRetryBtn");
+      if (retry) retry.onclick = runSpokenEnglishAutoSync;
+    }
+    P.openModal("sylSpokenSyncModal");
+  }
+
   function showSpokenSyncDetailsModal(info) {
     info = info || {};
     var body = $("sylSpokenSyncBody");
+    var footer = $("sylSpokenSyncFooter");
+    var closeBtn = $("sylSpokenSyncCloseBtn");
     if (!body) return;
+    if (closeBtn) closeBtn.style.display = "";
 
     var daysBadges = (info.daysList && info.daysList.length)
       ? info.daysList.map(function (d) { return '<span class="syl-pill month">Day ' + esc(d) + '</span>'; }).join(" ")
       : '<span class="syl-pill month">' + esc(info.dayRange || "Day 1 to Day 8") + '</span>';
 
     body.innerHTML =
-      '<div style="text-align:center;padding:10px 0 6px;">' +
-        '<div style="width:52px;height:52px;border-radius:50%;background:#ecfdf5;color:#16a34a;display:inline-flex;align-items:center;justify-content:center;margin-bottom:8px;box-shadow:0 2px 8px rgba(22,163,74,0.15);">' +
-          '<i class="material-icons" style="font-size:32px;">check_circle</i>' +
+      '<div style="text-align:center;padding:4px 0 10px;">' +
+        '<div style="width:56px;height:56px;border-radius:50%;background:#ecfdf5;color:#16a34a;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px;box-shadow:0 4px 14px rgba(22,163,74,0.2);">' +
+          '<i class="material-icons" style="font-size:34px;">check_circle</i>' +
         '</div>' +
         '<h4 style="margin:0 0 4px;font-size:18px;font-weight:800;color:#0f172a;">Spoken English Ready &amp; Up to Date</h4>' +
-        '<div style="font-size:12.5px;color:#64748b;">Checked Google Drive folder, sliced high-fidelity PDFs, and updated database in ' + (info.elapsed || 45) + 's.</div>' +
+        '<div style="font-size:12.5px;color:#64748b;">Synced Google Drive PDFs, sliced high-fidelity lessons, and updated database in ' + (info.elapsed || 45) + 's.</div>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0;">' +
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 8px;text-align:center;">' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0;">' +
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 6px;text-align:center;">' +
           '<div style="font-size:18px;font-weight:800;color:#0f172a;">' + (info.totalLessons || 104) + '</div>' +
-          '<div style="font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Total Lessons</div>' +
+          '<div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Total Lessons</div>' +
         '</div>' +
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 8px;text-align:center;">' +
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 6px;text-align:center;">' +
           '<div style="font-size:18px;font-weight:800;color:#0f172a;">' + (info.daysCount || 8) + ' Days</div>' +
-          '<div style="font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Curriculum</div>' +
+          '<div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Curriculum</div>' +
         '</div>' +
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 8px;text-align:center;">' +
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 6px;text-align:center;">' +
           '<div style="font-size:18px;font-weight:800;color:#0f172a;">' + (info.classesCount || 13) + '</div>' +
-          '<div style="font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Classes</div>' +
+          '<div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Classes</div>' +
         '</div>' +
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 8px;text-align:center;">' +
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 6px;text-align:center;">' +
           '<div style="font-size:18px;font-weight:800;color:#0f172a;">' + (info.checklistsCount || 416) + '</div>' +
-          '<div style="font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Checklists</div>' +
+          '<div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-top:2px;">Checklists</div>' +
         '</div>' +
       '</div>' +
-      '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:10px;">' +
-        '<div style="font-size:12.5px;font-weight:700;color:#166534;margin-bottom:8px;display:flex;align-items:center;gap:6px;">' +
-          '<i class="material-icons" style="font-size:17px;">playlist_add_check</i> Active Day Breakdown' +
+      '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;">' +
+        '<div style="font-size:12.5px;font-weight:700;color:#166534;margin-bottom:6px;display:flex;align-items:center;gap:6px;">' +
+          '<i class="material-icons" style="font-size:16px;">playlist_add_check</i> Active Day Curriculum' +
         '</div>' +
-        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">' + daysBadges + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">' + daysBadges + '</div>' +
         '<div style="font-size:11.5px;color:#15803d;line-height:1.5;">' +
           '• <b>PDFs:</b> 104 individual class PDFs ready directly in <code>Portal/spoken_pdf/</code>.<br>' +
-          '• <b>Checklists:</b> Authentic Telugu Section 10 items loaded for all teachers in teacher dashboard.<br>' +
-          '• <b>Updates:</b> Any revised day version was overwritten cleanly without creating duplicate rows.' +
+          '• <b>Target Month:</b> Marked as November across all classes.<br>' +
+          '• <b>Checklists:</b> Authentic Telugu Section 10 items loaded for all teachers in dashboard.<br>' +
+          '• <b>Updates:</b> Any revised day version was overwritten cleanly without duplicate rows.' +
         '</div>' +
       '</div>';
+
+    if (footer) {
+      footer.innerHTML =
+        '<div style="font-size:11.5px;color:#64748b;display:flex;align-items:center;gap:5px;">' +
+          '<i class="material-icons" style="font-size:15px;color:#16a34a;">check</i> Updated database &amp; lessons' +
+        '</div>' +
+        '<button type="button" class="syl-btn-primary syl-btn-sm" id="sylSpokenSyncDoneBtn" style="padding:0 22px;">Done &amp; View Syllabus</button>';
+      var doneBtn = $("sylSpokenSyncDoneBtn");
+      if (doneBtn) {
+        doneBtn.onclick = function () {
+          P.closeModal("sylSpokenSyncModal");
+          reloadEditorData(true);
+          loadReport(true);
+        };
+      }
+    }
 
     P.openModal("sylSpokenSyncModal");
   }
 
   function spokenSyncModal() {
-    return '<div class="modal-overlay" id="sylSpokenSyncModal" style="z-index:1250;">' +
-      '<div class="modal-content syl-spoken-sync-dialog" style="max-width:580px;width:100%;max-height:88vh;display:flex;flex-direction:column;">' +
-        '<div class="syl-ed-header">' +
-          '<div class="syl-ed-title-group">' +
-            '<h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text-main,#0f172a);display:flex;align-items:center;gap:8px;">' +
-              '<i class="material-icons" style="color:var(--maroon,#800000);">auto_mode</i> Spoken English Sync Details' +
-            '</h3>' +
-          '</div>' +
-          '<button class="modal-close-icon" data-close="sylSpokenSyncModal" title="Close">&times;</button>' +
+    return '<div class="modal-overlay" id="sylSpokenSyncModal" style="z-index:2500;background:rgba(15,23,42,0.85);backdrop-filter:blur(8px);">' +
+      '<div class="modal-content syl-spoken-sync-dialog" style="max-width:540px;width:100%;max-height:90vh;border-radius:18px;box-shadow:0 25px 60px -15px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.15);background:#fff;display:flex;flex-direction:column;overflow:hidden;">' +
+        '<div id="sylSpokenSyncHeader" style="padding:16px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;justify-content:space-between;">' +
+          '<h3 style="margin:0;font-size:17px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:8px;">' +
+            '<i class="material-icons" style="color:var(--maroon,#800000);">auto_mode</i> Spoken English Auto-Sync' +
+          '</h3>' +
+          '<button class="modal-close-icon" data-close="sylSpokenSyncModal" id="sylSpokenSyncCloseBtn" style="display:none;" title="Close">&times;</button>' +
         '</div>' +
-        '<div id="sylSpokenSyncBody" style="padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;"></div>' +
-        '<div class="syl-ed-footer" style="padding:12px 16px;">' +
-          '<div class="syl-ed-footer-hint"><i class="material-icons">info_outline</i> All classes and teachers can immediately see and use these lessons.</div>' +
-          '<button type="button" class="syl-btn-primary syl-btn-sm" data-close="sylSpokenSyncModal" style="padding:0 20px;">Got it</button>' +
-        '</div>' +
+        '<div id="sylSpokenSyncBody" style="padding:24px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;"></div>' +
+        '<div id="sylSpokenSyncFooter" style="padding:12px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;justify-content:space-between;"></div>' +
       '</div></div>';
   }
   function sessionsModal() {

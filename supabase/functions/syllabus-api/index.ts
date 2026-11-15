@@ -775,22 +775,28 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
     const sortOrder = Number.isFinite(dayNum) ? Math.round(dayNum * 10) : 0;
     const driveLink = S(l.drive_link || l.pdf_url);
     
-    const { data: existing } = await db.from("syllabus_lessons")
+    const { data: existingList } = await db.from("syllabus_lessons")
       .select("id")
       .eq("class", cls)
       .eq("subject", subj)
-      .eq("lesson_no", String(dayNum))
-      .maybeSingle();
+      .eq("lesson_no", String(dayNum));
 
-    if (existing?.id) {
+    const targetMonth = S(l.target_month) || "November";
+
+    if (existingList && existingList.length > 0) {
+      const keepId = existingList[0].id;
+      if (existingList.length > 1) {
+        const extraIds = existingList.slice(1).map(x => x.id);
+        await db.from("syllabus_lessons").delete().in("id", extraIds);
+      }
       await db.from("syllabus_lessons").update({
         name: name,
         sort_order: sortOrder,
         lesson_no: String(dayNum),
-        target_month: "Daily",
+        target_month: targetMonth,
         drive_link: driveLink,
         item_type: "SpokenEnglish"
-      }).eq("id", existing.id);
+      }).eq("id", keepId);
     } else {
       await db.from("syllabus_lessons").insert({
         class: cls,
@@ -799,7 +805,7 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
         item_type: "SpokenEnglish",
         sort_order: sortOrder,
         lesson_no: String(dayNum),
-        target_month: "Daily",
+        target_month: targetMonth,
         drive_link: driveLink
       });
     }
@@ -809,16 +815,20 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
     for (const t of tasks) {
       const taskKey = S(t.task_key || t.taskKey);
       if (!taskKey) continue;
-      const { data: existingTask } = await db.from("syllabus_session_tasks")
+      const { data: existingTasks } = await db.from("syllabus_session_tasks")
         .select("id")
-        .eq("task_key", taskKey)
-        .maybeSingle();
+        .eq("task_key", taskKey);
 
-      if (existingTask?.id) {
+      if (existingTasks && existingTasks.length > 0) {
+        const keepTaskId = existingTasks[0].id;
+        if (existingTasks.length > 1) {
+          const extraTaskIds = existingTasks.slice(1).map(x => x.id);
+          await db.from("syllabus_session_tasks").delete().in("id", extraTaskIds);
+        }
         await db.from("syllabus_session_tasks").update({
           content: S(t.content),
           lesson_name: S(t.lesson_name || t.lessonName)
-        }).eq("id", existingTask.id);
+        }).eq("id", keepTaskId);
       } else {
         await db.from("syllabus_session_tasks").insert({
           class: S(t.class),
