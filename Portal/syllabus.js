@@ -178,6 +178,9 @@
     var stateCls = pct === 100 ? "done" : (pct > 0 ? "active" : "pending");
 
     var pdf = (item.driveLink && String(item.driveLink).trim()) ? '<a class="syl-pill pdf" href="' + esc(item.driveLink) + '" target="_blank" rel="noopener"><i class="material-icons">picture_as_pdf</i>PDF</a>' : "";
+    var isSpokenCard = item.type === "SpokenEnglish" || /spoken\s*(english|skills)/i.test(String(subject).trim());
+    var cardVideoUrl = isSpokenCard ? getSpokenVideoUrl(cls, item.lessonNo || (idx + 1), (window.SpokenEnglishData && window.SpokenEnglishData[cls + "||" + (item.lessonNo || (idx + 1))])) : "";
+    var videoPill = cardVideoUrl ? '<a class="syl-pill video" href="' + esc(cardVideoUrl) + '" target="_blank" rel="noopener" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="material-icons" style="color:#dc2626;font-size:13px;">smart_display</i>Video</a>' : "";
     var monthPill = '<span class="syl-pill month"><i class="material-icons">event</i>' + esc(item.targetMonth || "—") + '</span>';
 
     var actions;
@@ -207,7 +210,7 @@
     return '<div class="syl-card ' + stateCls + '" id="sylcard-' + idx + '">' +
       '<div class="syl-card-head"><span class="syl-no">' + esc(item.lessonNo || "-") + '</span>' +
       '<div class="syl-card-title-block"><div class="syl-card-title">' + esc(item.name || "Untitled lesson") + '</div>' +
-      '<div class="syl-pillrow">' + monthPill + pdf + '</div></div></div>' +
+      '<div class="syl-pillrow">' + monthPill + pdf + videoPill + '</div></div></div>' +
       '<div class="syl-prog"><div class="syl-prog-track"><div class="syl-prog-fill" style="width:' + pct + '%;background:' + pcolor + ';"></div></div><span class="syl-prog-lbl" style="color:' + pcolor + ';">' + pct + '%</span></div>' +
       '<div class="syl-actions">' + actions + '</div></div>';
   }
@@ -282,6 +285,27 @@
   }
 
   /* ---------------- Spoken English Lesson Viewer & Checklist ---------------- */
+  var CANONICAL_SPOKEN_VIDEOS = {
+    1: "https://youtu.be/quFHfZQykPM",
+    2: "https://youtu.be/I3HlLh6quiI",
+    3: "https://youtu.be/QXEoK1xSy-g",
+    4: "https://youtu.be/h1dnnkAaXOM",
+    5: function (c) { return /^(nursery|lkg|ukg)/i.test(String(c).trim()) ? "https://youtu.be/eDRPyixzp1s" : "https://youtu.be/qnlpvTyuOmU"; },
+    6: "https://youtu.be/bglFgPtuAyk",
+    7: "https://youtu.be/gzVRGpLBYuQ",
+    8: "https://youtu.be/rQILYS9_FGc"
+  };
+
+  function getSpokenVideoUrl(cls, dayNum, lessonData) {
+    if (lessonData && lessonData.video_url && String(lessonData.video_url).trim().length > 10) {
+      return String(lessonData.video_url).trim();
+    }
+    var dayInt = parseInt(String(dayNum).replace(/\D/g, ""), 10);
+    var target = CANONICAL_SPOKEN_VIDEOS[dayInt];
+    if (typeof target === "function") return target(cls);
+    return target || "";
+  }
+
   function openSpokenModal(cls, subject, lessonName, dayNum) {
     var titleEl = $("sylSpokenTitle"), bodyEl = $("sylSpokenBody");
     if (!titleEl || !bodyEl) return;
@@ -311,13 +335,14 @@
   function renderSpokenLessonView(cls, subject, lessonName, dayNum, lessonData, checklistTasks) {
     var bodyEl = $("sylSpokenBody");
     var html = "";
+    var videoUrl = getSpokenVideoUrl(cls, dayNum, lessonData);
 
     // 1. Lesson Header Card
     html += '<div class="syl-spoken-card" style="margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">';
     html += '<span style="font-size:12px;font-weight:800;color:var(--maroon,#7a151a);background:#fff5f5;padding:4px 8px;border-radius:6px;border:1px solid #fed7d7;">' + esc(cls) + ' · Day ' + esc(dayNum) + '</span>';
-    if (lessonData && lessonData.video_url) {
-      html += '<a href="' + esc(lessonData.video_url) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:5px;background:#dc2626;color:#fff;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;text-decoration:none;"><i class="material-icons" style="font-size:15px;color:#fff;">smart_display</i> Watch Preparation Video</a>';
+    if (videoUrl) {
+      html += '<a href="' + esc(videoUrl) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:6px;background:#dc2626;color:#fff;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;text-decoration:none;box-shadow:0 2px 6px rgba(220,38,38,0.25);"><i class="material-icons" style="font-size:16px;color:#fff;">smart_display</i> Watch Preparation Video ↗</a>';
     }
     html += '</div>';
 
@@ -333,7 +358,12 @@
     html += '<div class="syl-spoken-card" style="margin-bottom:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">';
     html += '<h4 style="margin:0;font-size:14px;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:var(--maroon,#7a151a);font-size:18px;">picture_as_pdf</i> Teaching Instructions &amp; Classroom Plan (PDF)</h4>';
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+    if (videoUrl) {
+      html += '<a href="' + esc(videoUrl) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:5px;background:#dc2626;color:#fff;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;text-decoration:none;"><i class="material-icons" style="font-size:15px;color:#fff;">smart_display</i> Watch Video ↗</a>';
+    }
     html += '<a href="' + esc(pdfUrl) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:5px;background:#334155;color:#fff;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;text-decoration:none;"><i class="material-icons" style="font-size:15px;color:#fff;">open_in_new</i> Open PDF Fullscreen</a>';
+    html += '</div>';
     html += '</div>';
     html += '<div style="position:relative;width:100%;height:540px;border-radius:8px;overflow:hidden;border:1px solid #cbd5e1;background:#525659;">';
     html += '<iframe src="' + esc(pdfUrl) + '#toolbar=0" style="width:100%;height:100%;border:none;" title="Spoken English Lesson Plan"></iframe>';

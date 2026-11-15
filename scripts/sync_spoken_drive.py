@@ -14,6 +14,49 @@ os.makedirs('Portal/spoken_pdf', exist_ok=True)
 os.makedirs('downloads_cache', exist_ok=True)
 os.makedirs('source_pdfs', exist_ok=True)
 
+CANONICAL_DAY_VIDEOS = {
+    1: "https://youtu.be/quFHfZQykPM",
+    2: "https://youtu.be/I3HlLh6quiI",
+    3: "https://youtu.be/QXEoK1xSy-g",
+    4: "https://youtu.be/h1dnnkAaXOM",
+    5: {
+        "pre": "https://youtu.be/eDRPyixzp1s",
+        "default": "https://youtu.be/qnlpvTyuOmU"
+    },
+    6: "https://youtu.be/bglFgPtuAyk",
+    7: "https://youtu.be/gzVRGpLBYuQ",
+    8: "https://youtu.be/rQILYS9_FGc"
+}
+
+def resolve_video_url(combined_txt, pdf_full_path, cls_name, day_num):
+    # 1. Check extracted printable text
+    m_vid = re.search(r'(https?://(?:www\.)?youtu[^\s\n\r"\'<>]+)', combined_txt)
+    if m_vid:
+        candidate = m_vid.group(1).rstrip('.,;:"\')')
+        if len(candidate) > 12:
+            return candidate
+
+    # 2. Check raw PDF bytes (embedded link annotations, URIs)
+    if os.path.exists(pdf_full_path):
+        try:
+            with open(pdf_full_path, 'rb') as f:
+                raw_bytes = f.read()
+                raw_matches = re.findall(rb'https?://(?:www\.)?youtu[^\s()<>\x00-\x1f\x7f-\xff]+', raw_bytes)
+                if raw_matches:
+                    for rm in raw_matches:
+                        clean_u = rm.decode('utf-8', errors='ignore').rstrip('.,;:"\')')
+                        if len(clean_u) > 12:
+                            return clean_u
+        except Exception:
+            pass
+
+    # 3. Canonical day-wise curriculum video mapping fallback
+    v = CANONICAL_DAY_VIDEOS.get(int(day_num))
+    if isinstance(v, dict):
+        is_pre = any(k in str(cls_name).lower() for k in ['nursery', 'lkg', 'ukg'])
+        return v["pre"] if is_pre else v["default"]
+    return v or ""
+
 def download_drive_folder():
     """Download any new PDFs from Google Drive folder using gdown if available."""
     try:
@@ -87,8 +130,7 @@ def parse_and_slice_pdf(file_path):
         m_obj = re.search(r'లక్ష్యం[^:]*:\s*([^\n]+)', first_txt)
         obj = m_obj.group(1).strip() if m_obj else ""
         
-        m_video = re.search(r'(https?://(?:www\.)?youtu[^\s\n\r]+)', combined_txt)
-        video_url = m_video.group(1) if m_video else ""
+        video_url = resolve_video_url(combined_txt, pdf_full_path, cls_name, day_num)
         
         # Checklist
         checklists = []
