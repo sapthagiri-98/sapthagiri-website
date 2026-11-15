@@ -45,5 +45,7 @@ jobs:
             echo "No new Spoken English lessons to commit."
           else
             git commit -m "chore(spoken-english): auto-sync new day lessons from Google Drive"
+            # Pull with rebase first in case concurrent commits landed on remote
+            git pull --rebase origin main || true
             git push origin main
           fi
