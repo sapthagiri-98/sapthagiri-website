@@ -686,6 +686,21 @@ async function saveSyllabusLesson(payload: any) {
   const sortOrder = Number.isFinite(lessonNoValue)
     ? Math.round(lessonNoValue * 10)
     : (Number.isFinite(suppliedSortOrder) ? Math.trunc(suppliedSortOrder) : 0);
+  // Clean and normalize drive / PDF resource links.
+  // Auto-prefix drive.google.com or raw web links with https:// so users don't have to type it.
+  // Allow relative resource links like spoken_pdf/... or clean URLs.
+  let cleanLink = S(p.drive_link);
+  if (cleanLink) {
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(cleanLink) && !cleanLink.startsWith("/")) {
+      if (cleanLink.toLowerCase().startsWith("drive.google.com") || cleanLink.toLowerCase().startsWith("docs.google.com") || cleanLink.includes(".com/") || cleanLink.includes(".org/") || cleanLink.includes(".net/")) {
+        cleanLink = "https://" + cleanLink;
+      }
+    }
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(cleanLink) && !/^https?:\/\//i.test(cleanLink)) {
+      throw new Error("The PDF / Drive link must start with http:// or https://, or be a valid relative path.");
+    }
+  }
+
   const row: any = {
     class: className,
     subject,
@@ -694,12 +709,9 @@ async function saveSyllabusLesson(payload: any) {
     sort_order: sortOrder,
     lesson_no: lessonNo,
     target_month: S(p.target_month),
-    drive_link: S(p.drive_link),
+    drive_link: cleanLink,
     name
   };
-  if (row.drive_link && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(row.drive_link) && !/^https?:\/\//i.test(row.drive_link)) {
-    throw new Error("The PDF / Drive link must start with http:// or https://, or be a valid relative path.");
-  }
 
   if (id === null) {
     const { data, error } = await db.from("syllabus_lessons").insert(row)

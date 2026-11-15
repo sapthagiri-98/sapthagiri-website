@@ -1954,9 +1954,16 @@
       if (!changed) return;
       if (!lessonNo || !name) { validationError = "Enter both the lesson number and lesson name for every changed or new row."; return; }
       var trimmedUrl = String(url || "").trim();
-      if (trimmedUrl && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmedUrl) && !/^https?:\/\//i.test(trimmedUrl)) {
-        validationError = "A resource link must start with http:// or https://, or be a valid relative path (e.g. spoken_pdf/…).";
-        return;
+      if (trimmedUrl) {
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmedUrl) && !trimmedUrl.startsWith("/")) {
+          if (trimmedUrl.toLowerCase().startsWith("drive.google.com") || trimmedUrl.toLowerCase().startsWith("docs.google.com") || trimmedUrl.indexOf(".com/") >= 0 || trimmedUrl.indexOf(".org/") >= 0 || trimmedUrl.indexOf(".net/") >= 0) {
+            trimmedUrl = "https://" + trimmedUrl;
+          }
+        }
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmedUrl) && !/^https?:\/\//i.test(trimmedUrl)) {
+          validationError = "A resource link must start with http:// or https://, or be a valid relative path (e.g. spoken_pdf/…).";
+          return;
+        }
       }
       var no = lessonNumberValue(lessonNo);
       var rowIndex = tableRows.indexOf(tr);
@@ -1966,7 +1973,7 @@
         class: tr.getAttribute("data-class"), subject: tr.getAttribute("data-subject"),
         strand_subject: tr.getAttribute("data-strand") || "",
         item_type: tr.getAttribute("data-item-type") || "Manual",
-        lesson_no: lessonNo, name: name, target_month: month, drive_link: url,
+        lesson_no: lessonNo, name: name, target_month: month, drive_link: trimmedUrl,
         sort_order: sortOrder
       }});
     });
@@ -2083,7 +2090,16 @@
       var name = $("sylEditName").value.trim(), lessonNo = $("sylEditLessonNo").value.trim();
       var url = $("sylEditDrive").value.trim(), no = lessonNumberValue(lessonNo);
       if (!className || !subject || !name || !lessonNo) return editorStatus("Class, subject, lesson number and title are required.", true);
-      if (url && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^https?:\/\//i.test(url)) return editorStatus("The PDF / Drive link must start with http:// or https://, or be a valid relative path.", true);
+      if (url) {
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !url.startsWith("/")) {
+          if (url.toLowerCase().startsWith("drive.google.com") || url.toLowerCase().startsWith("docs.google.com") || url.indexOf(".com/") >= 0 || url.indexOf(".org/") >= 0 || url.indexOf(".net/") >= 0) {
+            url = "https://" + url;
+          }
+        }
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^https?:\/\//i.test(url)) {
+          return editorStatus("The PDF / Drive link must start with http:// or https://, or be a valid relative path.", true);
+        }
+      }
       var payload = {
         id: $("sylEditId").value || null, class: className, subject: subject,
         strand_subject: $("sylEditStrand").value.trim(), lesson_no: lessonNo,
@@ -2384,7 +2400,7 @@
               reloadEditorData(true);
               loadReport(true);
 
-              var allSpoken = (syllabusEditorData.lessons || []).filter(function (l) {
+              var allSpoken = (syllabusEditorData && syllabusEditorData.lessons || []).filter(function (l) {
                 return matchesSyllabusRow("Spoken English", l.class, l.subject, l.strand_subject);
               });
               var daysSet = {};
