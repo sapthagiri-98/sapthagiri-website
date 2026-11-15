@@ -848,7 +848,7 @@ async function triggerSpokenEnglishSync(customPat?: string) {
       success: true,
       dispatched: false,
       needToken: true,
-      message: "No GitHub token configured on server. Open GitHub Actions to run the workflow in 1-click.",
+      message: "No GitHub token configured on server.",
       actionsUrl
     };
   }
@@ -868,7 +868,7 @@ async function triggerSpokenEnglishSync(customPat?: string) {
       return {
         success: true,
         dispatched: true,
-        message: "Workflow dispatched! GitHub Action is downloading Google Drive PDFs, slicing per-class lessons, and syncing the database.",
+        message: "Workflow dispatched! Slicing and syncing are in progress.",
         actionsUrl
       };
     } else {
@@ -887,6 +887,36 @@ async function triggerSpokenEnglishSync(customPat?: string) {
       message: String(e?.message || e),
       actionsUrl
     };
+  }
+}
+
+async function getSpokenEnglishSyncStatus(customPat?: string) {
+  const token = S(customPat) || Deno.env.get("GITHUB_TOKEN") || Deno.env.get("GH_PAT");
+  const repo = "sapthagiri-98/sapthagiri-website";
+  const workflow = "sync-spoken-english.yml";
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1`, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Sapthagiri-Portal"
+      }
+    });
+    if (!res.ok) return { success: false, error: `GitHub HTTP ${res.status}` };
+    const data = await res.json();
+    const latest = data.workflow_runs && data.workflow_runs[0];
+    return {
+      success: true,
+      run: latest ? {
+        id: latest.id,
+        status: latest.status,
+        conclusion: latest.conclusion,
+        created_at: latest.created_at,
+        updated_at: latest.updated_at
+      } : null
+    };
+  } catch (e: any) {
+    return { success: false, error: String(e?.message || e) };
   }
 }
 
@@ -1006,6 +1036,10 @@ const HANDLERS: Record<string, (a: any[], who: any) => Promise<any>> = {
   triggerSpokenEnglishSync: async (a, w) => {
     requireSyllabusManagement(w);
     return triggerSpokenEnglishSync(a[0]);
+  },
+  getSpokenEnglishSyncStatus: async (a, w) => {
+    requireSyllabusManagement(w);
+    return getSpokenEnglishSyncStatus(a[0]);
   },
 };
 

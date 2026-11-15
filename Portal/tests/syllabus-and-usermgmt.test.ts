@@ -340,6 +340,8 @@ describe("Spoken English & Spoken Skills Day-wise Syllabus Integration", () => {
       expect(syllabusCode).toContain('id="sylEditorSyncSpoken"');
       expect(syllabusCode).toContain('id="sylSpokenSyncModal"');
       expect(syllabusCode).toContain('syl-open-spoken-sync-btn');
+      expect(syllabusCode).toContain('runSpokenEnglishAutoSync');
+      expect(syllabusCode).toContain('showSpokenSyncDetailsModal');
       expect(syllabusCode).toContain('triggerSpokenEnglishSync');
     });
   });
