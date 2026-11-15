@@ -132,34 +132,21 @@ def parse_and_slice_pdf(file_path):
         
         video_url = resolve_video_url(combined_txt, pdf_full_path, cls_name, day_num)
         
-        # Checklist
-        checklists = []
-        for p_txt in pages_txt:
-            if re.search(r'self[\s\-]check', p_txt, re.I):
-                capture = False
-                for line in p_txt.split('\n'):
-                    ls = line.strip()
-                    if re.search(r'self[\s\-]check', ls, re.I):
-                        capture = True
-                        continue
-                    if capture:
-                        if re.match(r'^(?:\[\s*\]|[☐•\-])\s*(.*)', ls):
-                            item = re.sub(r'^[\[\]☐•\-\s]+', '', ls).strip()
-                            if len(item) > 5:
-                                checklists.append(item)
-                        elif ls.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', 'SPOKEN')):
-                            if checklists:
-                                break
-            if checklists:
-                break
-                
-        if not checklists:
-            checklists = [
-                f"Explained the {raw_title} topic with target sentence models.",
-                "Practised target sentences and pronunciations with all students.",
-                "Conducted pair/group speaking activities and encouraged student participation.",
-                "Identified and gently corrected common pronunciation and grammar errors."
-            ]
+        # Generation of authentic, teacher-friendly, natural Telugu checklists (skipping generic section 10 PDF extracts)
+        try:
+            from generate_spoken_telugu_checklists import get_telugu_checks
+            checklists = get_telugu_checks(cls_name, day_num, raw_title, obj)
+        except Exception:
+            try:
+                from scripts.generate_spoken_telugu_checklists import get_telugu_checks
+                checklists = get_telugu_checks(cls_name, day_num, raw_title, obj)
+            except Exception:
+                checklists = [
+                    f"తరగతిలో {raw_title} అంశాన్ని బోర్డుపై మోడల్ వాక్యాలతో స్పష్టంగా వివరించాను.",
+                    "విద్యార్థులందరూ వాక్యాలను పలికేలా Pair Work మరియు Speaking Practice నిర్వహించాను.",
+                    "సొంతంగా మాట్లాడేటప్పుడు వచ్చిన ఉచ్చారణ మరియు వ్యాకరణ దోషాలను సున్నితంగా సరిదిద్దాను.",
+                    "సహాయం అవసరమైన విద్యార్థులను గుర్తించి మాట్లాడేందుకు తగిన ప్రోత్సాహం అందించాను."
+                ]
             
         lessons.append({
             'class': cls_name,

@@ -407,6 +407,88 @@ async function saveTaskProgress(taskKey: string, checked: any, teacher: string, 
       );
     }
 
+    // Auto-update syllabus_lesson_progress for Spoken English when checklist tasks are updated.
+    // If all tasks for that day's lesson are checked -> mark lesson "TRUE" (completed_on = today()).
+    // If some are checked -> mark "IN_PROGRESS".
+    // If none are checked -> mark "FALSE".
+    if (key.startsWith("SPOKEN::")) {
+      try {
+        const { data: currentTask } = await db
+          .from("syllabus_session_tasks")
+          .select("class, subject, lesson_name")
+          .eq("task_key", key)
+          .maybeSingle();
+
+        if (currentTask && currentTask.lesson_name) {
+          const { data: siblingTasks } = await db
+            .from("syllabus_session_tasks")
+            .select("task_key, checked")
+            .eq("class", currentTask.class)
+            .eq("subject", currentTask.subject)
+            .eq("lesson_name", currentTask.lesson_name);
+
+          const totalSiblings = siblingTasks ? siblingTasks.length : 0;
+          const checkedSiblings = siblingTasks ? siblingTasks.filter((s: any) => !!s.checked).length : 0;
+
+          let targetState = "FALSE";
+          if (totalSiblings > 0 && checkedSiblings === totalSiblings) {
+            targetState = "TRUE";
+          } else if (checkedSiblings > 0) {
+            targetState = "IN_PROGRESS";
+          }
+
+          // Find the corresponding lesson in syllabus_lessons
+          const { data: matchedLesson } = await db
+            .from("syllabus_lessons")
+            .select("id, class, subject, name")
+            .eq("class", currentTask.class)
+            .eq("subject", currentTask.subject)
+            .eq("name", currentTask.lesson_name)
+            .maybeSingle();
+
+          if (matchedLesson && matchedLesson.id) {
+            const lessonTaskKey = "LESSON::" + matchedLesson.id;
+            const progressRow = {
+              task_key: lessonTaskKey,
+              class: matchedLesson.class,
+              subject: matchedLesson.subject,
+              lesson_name: matchedLesson.name,
+              state: targetState,
+              notes: S(notes) || "Spoken English Daily Checklist",
+              completed_on: targetState === "TRUE" ? today() : null,
+              updated_by: teacher || "Teacher",
+              updated_at: new Date().toISOString()
+            };
+
+            const { data: existingProg } = await db
+              .from("syllabus_lesson_progress")
+              .select("task_key")
+              .eq("task_key", lessonTaskKey)
+              .limit(1);
+
+            if (existingProg && existingProg.length) {
+              await db
+                .from("syllabus_lesson_progress")
+                .update({
+                  state: progressRow.state,
+                  notes: progressRow.notes,
+                  completed_on: progressRow.completed_on,
+                  updated_by: progressRow.updated_by,
+                  updated_at: progressRow.updated_at
+                })
+                .eq("task_key", lessonTaskKey);
+            } else {
+              await db
+                .from("syllabus_lesson_progress")
+                .upsert(progressRow, { onConflict: "class,subject,lesson_name" });
+            }
+          }
+        }
+      } catch (spokenErr) {
+        console.warn("Spoken lesson progress auto-sync error:", spokenErr);
+      }
+    }
+
     return "Saved";
   }
 
@@ -503,7 +585,7 @@ async function saveTaskProgress(taskKey: string, checked: any, teacher: string, 
   return "Saved";
 }
 
-// ---- OPTIONAL AI via Google Gemini (Telugu translation / explanation) -----
+// ---- OPTIONAL AI via Google Gemini (Telugu translation / explanation / checklist generation) -----
 async function callAI(system: string, user: string): Promise<string | null> {
   const key = Deno.env.get("SYLLABUS_GEMINI_KEY") || Deno.env.get("GEMINI_API_KEY") || "";
   if (!key) return null;
@@ -530,6 +612,326 @@ async function callAI(system: string, user: string): Promise<string | null> {
     } catch (_e) { continue; }
   }
   return null;
+}
+
+/**
+ * Generates exactly 4 actionable, teacher-friendly, natural Telugu checklist items
+ * for a Spoken English lesson using Gemini API with intelligent pedagogical fallback.
+ */
+async function generateSpokenChecklistWithGemini(
+  className: string,
+  dayNum: number,
+  lessonTitle: string,
+  objective: string,
+  activity?: string
+): Promise<string[]> {
+  const sys =
+    "You are an expert bilingual English-Telugu pedagogy consultant for school teachers in Andhra Pradesh and Telangana. " +
+    "Generate exactly 4 concise, teacher-friendly, actionable checklist items in clear, natural Telugu for a teacher during a Spoken English period. " +
+    "Each item should describe a specific instructional action the teacher did during class (e.g. modelling sentences on board, conducting pair work, gentle error correction, encouraging shy students). " +
+    "Keep key English terms (like sentence frames, question words, Pair Work, Role reversal) in Latin script for pedagogical clarity. " +
+    "Return ONLY a strict JSON array of exactly 4 strings. No markdown, no preface, no extra commentary.";
+
+  const userPrompt =
+    `Class: ${className}\n` +
+    `Day: ${dayNum}\n` +
+    `Lesson Title: ${lessonTitle}\n` +
+    `Lesson Objective: ${objective || "Daily Spoken English Practice"}\n` +
+    `Speaking Activity: ${activity || "Interactive classroom speaking drills and partner practice"}\n\n` +
+    `Generate the 4 Telugu checklist strings in JSON format. Example:\n` +
+    `[\n` +
+    `  "విద్యార్థులు What, Who, Where ప్రశ్నలను అడిగేలా బోర్డుపై sentence models చూపించాను.",\n` +
+    `  "ప్రతి జంట కనీసం 2 ప్రశ్నలు అడిగి పాత్రలు మార్చుకునేలా Pair Work నిర్వహించాను.",\n` +
+    `  "సొంత సమాధానాలు చెప్పేటప్పుడు వచ్చిన తప్పులను సున్నితంగా సరిదిద్దాను.",\n` +
+    `  "సహాయం అవసరమైన విద్యార్థులను గుర్తించి ప్రోత్సహించాను."\n` +
+    `]`;
+
+  try {
+    const raw = await callAI(sys, userPrompt);
+    if (raw) {
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed) && parsed.length >= 3) {
+        return parsed.slice(0, 4).map((s: any) => String(s || "").trim()).filter(Boolean);
+      }
+    }
+  } catch (aiErr) {
+    console.warn("generateSpokenChecklistWithGemini AI generation error:", aiErr);
+  }
+
+  // High-fidelity pedagogical fallback ensuring natural, meaningful Telugu when API key is unconfigured
+  return getCuratedTeluguChecklist(className, dayNum, lessonTitle);
+}
+
+function getCuratedTeluguChecklist(clsName: string, dayNum: number, _lessonTitle: string): string[] {
+  const cls = String(clsName || "").toLowerCase();
+  const day = Number(dayNum) || 1;
+  const isPre = cls.includes("nursery") || cls.includes("lkg") || cls.includes("ukg");
+  const isP12 = cls === "1" || cls === "2" || cls.includes("class 1") || cls.includes("class 2");
+  const isM35 = cls === "3" || cls === "4" || cls === "5" || cls.includes("class 3") || cls.includes("class 4") || cls.includes("class 5");
+
+  if (day === 1) {
+    if (isPre) {
+      return [
+        "పిల్లలకు Hello, Good morning, Bye-bye పదాలను సరైన gestures తో పలకడం నేర్పించాను.",
+        "ప్రతి చిన్నారి తన పేరును స్పష్టంగా చెప్పేలా ప్రోత్సహిస్తూ Warm-up activity నిర్వహించాను.",
+        "పిల్లలు ఒకరికొకరు నవ్వుతూ Greetings చెప్పుకునేలా సరదా ఆట ఆడించాను.",
+        "సిగ్గుపడుతూ మాట్లాడని పిల్లలను ప్రేమతో దగ్గరకు తీసుకుని మాట్లాడించాను."
+      ];
+    }
+    if (isP12) {
+      return [
+        "\"Hello! My name is... / I am studying in...\" వాక్యాలను బోర్డుపై రాసి మోడలింగ్ చేశాను.",
+        "పిల్లలందరినీ నిలబెట్టి ఒకరికొకరు self-introduction ఇచ్చుకునేలా Whole-class drill నిర్వహించాను.",
+        "ప్రతి విద్యార్థి పూర్తి వాక్యంలో తన పేరు మరియు క్లాస్ చెప్పేలా చూశాను.",
+        "తప్పుగా పలికిన పదాలను సున్నితంగా సరిదిద్ది సరైన ఉచ్చారణ నేర్పించాను."
+      ];
+    }
+    if (isM35) {
+      return [
+        "Greeting మరియు 4-5 వాక్యాల Self-introduction మోడల్ వాక్యాలను బోర్డుపై వివరించాను.",
+        "విద్యార్థులు జంటలుగా మారి (Pair Work) ఒకరికొకరు పరిచయం చేసుకునేలా ప్రాక్టీస్ చేయించాను.",
+        "కనీసం 6-8 మంది విద్యార్థులను తరగతి ముందు నిలబెట్టి ధైర్యంగా మాట్లాడించాను.",
+        "భయం లేదా తడబాటు ఉన్న విద్యార్థులను గుర్తించి వెన్నుతట్టి ప్రోత్సహించాను."
+      ];
+    }
+    return [
+      "Self-introduction లో formal greetings, background, hobbies చెప్పే క్రమాన్ని స్పష్టంగా వివరించాను.",
+      "విద్యార్థులు స్పష్టమైన voice modulation మరియు body language తో మాట్లాడేలా Pair Practice నిర్వహించాను.",
+      "విద్యార్థులు సొంతంగా వాక్యాలు రూపొందించి క్లాస్ ముందు ప్రెసెంట్ చేసేలా అవకాశం ఇచ్చాను.",
+      "Grammar మరియు pronunciation లో వచ్చిన లోపాలను సున్నితంగా సరిదిద్దాను."
+    ];
+  }
+
+  if (day === 2) {
+    if (isPre) {
+      return [
+        "Book, bag, pen, pencil, chair వంటి తరగతి వస్తువులను ప్రత్యక్షంగా చూపిస్తూ ఇంగ్లీష్ పేర్లు పలికించాను.",
+        "\"What is this? This is a...\" ఫ్రేమ్ ను సరదాగా పునరావృతం చేస్తూ పిల్లలతో పలికించాను.",
+        "వస్తువులను తాకుతూ వాటి పేర్లు చెప్పే Classroom Object Game నిర్వహించాను.",
+        "ఇంకా ఇంగ్లీష్ పేర్లు చెప్పడానికి తటపటాయిస్తున్న పిల్లలకు వ్యక్తిగతంగా సహాయం చేశాను."
+      ];
+    }
+    if (isP12) {
+      return [
+        "\"This is a... / It is a...\" వాక్య నిర్మాణాన్ని తరగతి గది వస్తువులతో బోర్డుపై చూపించాను.",
+        "విద్యార్థులు తమ స్నేహితుడిని (\"This is my friend...\") మరియు వస్తువులను పరిచయం చేసేలా ప్రాక్టీస్ చేయించాను.",
+        "బెంచ్ జంటలు ఒకరికొకరు ప్రశ్నలు అడుగుతూ వస్తువులను వివరించేలా చూశాను.",
+        "\"This\" మరియు \"It\" ల సరైన వినియోగాన్ని గమనించి అవసరమైన చోట సరిదిద్దాను."
+      ];
+    }
+    if (isM35) {
+      return [
+        "\"This is my classmate... He/She has a...\" వాక్య నమూనాలను బోర్డుపై రాసి డ్రిల్ చేశాను.",
+        "విద్యార్థులు తమ తోటి విద్యార్థిని తరగతికి పరిచయం చేసే Classmate Introduction Activity నిర్వహించాను.",
+        "తరగతిలోని వివిధ వస్తువుల లక్షణాలను (colour, use) చిన్న వాక్యాల్లో వివరించేలా చేసాను.",
+        "విద్యార్థుల వాక్య నిర్మాణంలో Pronoun లోపాలను (He/She/It) సున్నితంగా సరిదిద్దాను."
+      ];
+    }
+    return [
+      "Classmate profile మరియు classroom object description కోసం advanced sentence patterns నేర్పించాను.",
+      "విద్యార్థులు తమ భాగస్వామి గురించి 4-5 నిర్దిష్ట వాక్యాలను సభాప్రాంగణంలో లాగా క్లాస్ కు వివరించేలా చేశాను.",
+      "డెస్క్, బోర్డ్, కిటికీ, పుస్తకాల గురించి descriptive adjectives ఉపయోగించి మాట్లాడేలా పర్యవేక్షించాను.",
+      "Passive listening కాకుండా తరగతిలోని ప్రతి విద్యార్థి active గా మాట్లాడేలా చూశాను."
+    ];
+  }
+
+  if (day === 3) {
+    if (isPre) {
+      return [
+        "What, Who, Where ప్రశ్నలను సరళమైన సంజ్ఞలు మరియు చిత్రాల ద్వారా పిల్లలకు అర్థమయ్యేలా చెప్పాను.",
+        "\"What is this?\" అని అడుగుతూ పిల్లలు వస్తువులను గుర్తించి ఇంగ్లీష్ లో చెప్పేలా చేశాను.",
+        "\"Who is this?\" అని స్నేహితులను చూపుతూ సమాధానం చెప్పే సరదా ఆట ఆడించాను.",
+        "స్పందించడానికి ఇబ్బంది పడుతున్న చిన్నారులకు సులభమైన పదాలతో సహాయం అందించాను."
+      ];
+    }
+    if (isP12) {
+      return [
+        "What, Who, Where ప్రశ్న పదాల తేడాలను బోర్డుపై ఉదాహరణ వాక్యాలతో నేర్పించాను.",
+        "\"What is your name? Who is your friend? Where is your book?\" ప్రశ్నలను విద్యార్థులతో అడిగించాను.",
+        "విద్యార్థులు జంటలుగా మారి ఒకరినొకరు ఈ మూడు ప్రశ్నలు అడిగి సమాధానాలు ఇచ్చేలా Pair Work నిర్వహించాను.",
+        "సొంత సమాధానాలు చెప్పేటప్పుడు వచ్చే grammatical mistakes ను సున్నితంగా సరిదిద్దాను."
+      ];
+    }
+    if (isM35) {
+      return [
+        "What, Who, Where, When ప్రశ్నల సరైన Sentence Order ను బోర్డుపై నమూనా వాక్యాలతో వివరించాను.",
+        "విద్యార్థులు తరగతి స్నేహితులను ఇంటర్వ్యూ చేసేలా 4 ప్రశ్నల Interview Frame ప్రాక్టీస్ చేయించాను.",
+        "ప్రతి జంట పాత్రలు మార్చుకుని (Role reversal) ప్రశ్నలు అడగడం మరియు సమాధానాలు చెప్పడం పర్యవేక్షించాను.",
+        "సహాయం అవసరమైన విద్యార్థులను గుర్తించి వారు సొంతంగా ప్రశ్నలు అడిగేలా ప్రోత్సహించాను."
+      ];
+    }
+    return [
+      "Question words (What, Who, Where, When, Why, How) మరియు Auxiliaries అమరికను క్లియర్ గా వివరించాను.",
+      "విద్యార్థులు తోటి వారిని 2 నిమిషాల పాటు formal గా ఇంటర్వ్యూ చేసే Short Interview Activity నిర్వహించాను.",
+      "సహజమైన ప్రశ్నల తీరు మరియు తక్షణ సమాధానాలు ఇచ్చే Fluency ను పరిశీలించి ఫీడ్‌బ్యాక్ ఇచ్చాను.",
+      "ప్రశ్నల క్రమంలో (Inversion of Subject-Verb) వచ్చే లోపాలను బ్లాక్‌బోర్డ్‌పై స్పష్టంగా సరిదిద్దాను."
+    ];
+  }
+
+  if (day === 4) {
+    if (isPre) {
+      return [
+        "Clap, jump, sit, stand వంటి Action verbs ను నేరుగా చేసి చూపిస్తూ పిల్లలతో చేయించాను.",
+        "\"I can clap / I can jump\" వాక్యాలను పిల్లలు ఉత్సాహంగా అభినయిస్తూ పలికేలా చేశాను.",
+        "\"Can you jump? Yes, I can!\" అనే సరదా ప్రశ్న-జవాబు డ్రిల్ నిర్వహించాను.",
+        "చర్యలలో చురుగ్గా పాల్గొనని పిల్లలను దగ్గరకు పిలిచి ప్రోత్సహించాను."
+      ];
+    }
+    if (isP12) {
+      return [
+        "\"I can... / I cannot...\" మరియు \"Can I...?\" అనుమతి వాక్యాలను బోర్డుపై రాసి నేర్పించాను.",
+        "విద్యార్థులు తాము చేయగల పనులను గర్వంగా తరగతిలో ఇంగ్లీష్ లో చెప్పేలా చేశాను.",
+        "తరగతి గదిలో అనుమతి కోరే విధానాన్ని (Can I drink water? Can I come in?) రోల్-ప్లే ద్వారా ప్రాక్టీస్ చేయించాను.",
+        "Can పక్కన వచ్చే verb మొదటి రూపంలోనే ఉండేలా (V1) తప్పులను సరిదిద్దాను."
+      ];
+    }
+    if (isM35) {
+      return [
+        "Abilities, permission మరియు polite requests కోసం \"Can / Cannot / Can you please...?\" నమూనాలను వివరించాను.",
+        "విద్యార్థులు ఒకరికొకరు సహాయం కోరే మరియు అందించే సంభాషణలను Pair Work లో చేయించాను.",
+        "ప్రతి విద్యార్థి కనీసం 3 సామర్థ్యాలు మరియు 2 అభ్యర్థన వాక్యాలను సొంతంగా మాట్లాడేలా చేశాను.",
+        "నైపుణ్యంగా మాట్లాడేందుకు అవసరమైన Polite tone మరియు ఉచ్చారణను పరిశీలించి సరిదిద్దాను."
+      ];
+    }
+    return [
+      "Modal verb \"Can\" తో ability, permission, possibility మరియు polite requests మధ్య వ్యత్యాసాలను వివరించాను.",
+      "నిజజీవిత సందర్భాలకు తగినట్లుగా (Office/School requests) సంభాషణలు రాసి మాట్లాడే Pair Drill నడిపాను.",
+      "విద్యార్థులు తడబాటు లేకుండా స్పష్టమైన ఉచ్చారణతో requests అడిగేలా పర్యవేక్షించాను.",
+      "సందేహాలు ఉన్న విద్యార్థులను గుర్తించి వ్యక్తిగతంగా అదనపు మార్గదర్శకత్వం అందించాను."
+    ];
+  }
+
+  if (day === 5) {
+    if (isPre) {
+      return [
+        "Eat, drink, play, sleep వంటి రోజువారీ పనుల చిత్రాలను చూపిస్తూ ఇంగ్లీష్ పదాలు నేర్పించాను.",
+        "\"I eat, I drink, I play\" అంటూ పిల్లలతో gestures తో కూడిన Action Rhyme ప్రాక్టీస్ చేయించాను.",
+        "రోజూ చేసే పనులను అభినయిస్తూ పదాలను స్పష్టంగా పలికేలా తరగతిని నడిపించాను.",
+        "పదాల ఉచ్చారణ సరిగ్గా రాని పిల్లలకు నెమ్మదిగా పలుకుతూ నేర్పించాను."
+      ];
+    }
+    if (isP12) {
+      return [
+        "\"Do you...? Yes, I do / No, I do not\" ప్రశ్న-జవాబు ఫార్మాట్‌ను బోర్డుపై రాసి చూపించాను.",
+        "విద్యార్థులు తమ రోజువారీ అలవాట్ల గురించి స్నేహితులను అడిగేలా Pair Questioning నిర్వహించాను.",
+        "\"Do you brush daily? Do you drink milk?\" వంటి నిత్యజీవిత ప్రశ్నలను విద్యార్థులతో మాట్లాడించాను.",
+        "సమాధానాలు చెప్పేటప్పుడు Yes/No తో పాటు పూర్తి వాక్యం పలికేలా చూశాను."
+      ];
+    }
+    if (isM35) {
+      return [
+        "Simple Present లో \"Do you...?\" మరియు \"Does he/she...?\" వాక్య తేడాలను బోర్డుపై వివరించాను.",
+        "విద్యార్థులు తమ స్నేహితుల రోజువారీ దినచర్యలను విచారించే Daily Routine Survey Activity నిర్వహించాను.",
+        "He/She వచ్చినప్పుడు verb కు 's/es' చేర్చే నియమాన్ని మరియు Does వాడకాన్ని స్పష్టం చేశాను.",
+        "తరగతిలో వెనుకబడిన విద్యార్థులను ఎంపిక చేసుకుని సులభమైన ప్రశ్నలతో ప్రాక్టీస్ చేయించాను."
+      ];
+    }
+    return [
+      "Habitual actions, daily routines మరియు Do/Does/Do not/Does not patterns ను స్పష్టంగా వివరించాను.",
+      "విద్యార్థులు వారి daily routines, study habits గురించి detailed గా ఒకరికొకరు ఇంటర్వ్యూ చేసుకునేలా చేశాను.",
+      "Third person singular (he/she/it) లో సాధారణంగా జరిగే subject-verb agreement తప్పులను సరిదిద్దాను.",
+      "ప్రతి విద్యార్థి active గా పాల్గొనేలా గ్రూప్ లీడర్ల ద్వారా పర్యవేక్షణ నిర్వహించాను."
+    ];
+  }
+
+  if (day === 6) {
+    if (isPre) {
+      return [
+        "Today (ఈరోజు) మరియు Tomorrow (రేపు) భావనలను సరళమైన సంభాషణ ద్వారా పిల్లలకు పరిచయం చేశాను.",
+        "\"Tomorrow I will play / Tomorrow I will sing\" వాక్యాలను పిల్లలతో సరదాగా పలికించాను.",
+        "రేపు ఏం చేద్దామో చెప్పే రేపటి ఆటల గురించి పిల్లలను ఇంగ్లీష్ లో మాట్లాడించాను.",
+        "Tomorrow పదం సరిగ్గా పలకడానికి ఇబ్బంది పడుతున్న చిన్నారులకు దగ్గరుండి నేర్పించాను."
+      ];
+    }
+    if (isP12) {
+      return [
+        "\"Tomorrow I will... / Will you...?\" భవిష్యత్ వాక్య నమూనాలను బోర్డుపై రాసి డ్రిల్ చేశాను.",
+        "రేపు చేయబోయే పనులను (ఆటలు, హోంవర్క్, ప్రయాణం) ప్రతి విద్యార్థి ఒక వాక్యంలో చెప్పేలా చేశాను.",
+        "విద్యార్థులు జంటలుగా మారి \"Will you come tomorrow? Yes, I will\" అని మాట్లాడేలా నిర్వహించాను.",
+        "Will ఉపయోగించేటప్పుడు భవిష్యత్తును సూచించే సమయాన్ని (tomorrow) జోడించేలా మార్గదర్శకం చేశాను."
+      ];
+    }
+    if (isM35) {
+      return [
+        "భవిష్యత్ ప్రణాళికల కోసం \"will\", నిరాకరణల కోసం \"won't\", ప్రశ్నల కోసం \"Will you...?\" వాక్యాలను వివరించాను.",
+        "రేపటి సెలవు దినం లేదా వారాంతపు పనుల గురించి ప్లాన్ చేసుకునే Future Plans Pair Work నిర్వహించాను.",
+        "విద్యార్థులు సొంతంగా 3 పాజిటివ్ వాక్యాలు, 2 ప్రశ్నలు తయారు చేసి మాట్లాడేలా అవకాశం ఇచ్చాను.",
+        "Won't ఉచ్చారణ మరియు sentence structure లో వచ్చిన తప్పులను సున్నితంగా సరిదిద్దాను."
+      ];
+    }
+    return [
+      "Future decisions, promises, offers and suggestions కోసం \"Will / Won't / Shall we...?\" నమూనాలను విశ్లేషించాను.",
+      "రాబోయే స్కూల్ ఈవెంట్ లేదా ప్రాజెక్ట్ ప్లానింగ్ గురించి విద్యార్థులతో Group Discussion నిర్వహించాను.",
+      "విద్యార్థులు ఖచ్చితమైన సమయాలతో తమ భవిష్యత్ లక్ష్యాలను ఇంగ్లీష్ లో ప్రెసెంట్ చేసేలా చూశాను.",
+      "Shall మరియు Will మధ్య తేడాలను నివృత్తి చేసి సంభాషణలో సహజత్వం తెచ్చేలా గైడ్ చేశాను."
+    ];
+  }
+
+  if (day === 7) {
+    if (isPre) {
+      return [
+        "Clapping, eating, reading, running వంటి ప్రస్తుత చర్యలను చూపిస్తూ \"I am clapping\" అని పలికించాను.",
+        "పిల్లలు తాము చేస్తున్న పనిని \"I am...\" తో చెప్పేలా Action Mimicry Game నిర్వహించాను.",
+        "పిల్లలు పాడుతూ, ఆడుతూ వాక్యాలను ఉత్సాహంగా పలికేలా చూశాను.",
+        "స్పందించడానికి సమయం తీసుకునే పిల్లలను ప్రత్యేకంగా గమనించి మాట్లాడించాను."
+      ];
+    }
+    if (isP12) {
+      return [
+        "\"What are you doing? I am reading / He is writing\" వాక్యాలను బోర్డుపై రాసి వివరించాను.",
+        "తరగతిలో జరుగుతున్న ప్రత్యక్ష చర్యలను విద్యార్థులు గమనించి ఇంగ్లీష్ లో వర్ణించేలా చేశాను.",
+        "ఒక విద్యార్థి అభినయిస్తుంటే మిగిలిన వారు \"He/She is...\" అని చెప్పే Pair Activity నిర్వహించాను.",
+        "'am / is / are' మరియు verb కు '-ing' చేర్చే నియమాన్ని సులభంగా అర్థమయ్యేలా చెప్పాను."
+      ];
+    }
+    if (isM35) {
+      return [
+        "Present Continuous లో Ongoing Actions కోసం \"Subject + am/is/are + V-ing\" వాక్య అమరికను వివరించాను.",
+        "తరగతి గదిలో గ్రూప్ టాస్క్ జరుగుతున్నప్పుడు పనుల పురోగతిని వివరించే Progress Update డ్రిల్ నిర్వహించాను.",
+        "ప్రశ్నలు అడగడం (\"What are you drawing?\") మరియు సమాధానాలు చెప్పడం జంటలుగా ప్రాక్టీస్ చేయించాను.",
+        "Subject-Verb agreement లో (You are, He is, We are) వచ్చే తప్పులను బోర్డుపై సరిదిద్దాను."
+      ];
+    }
+    return [
+      "Present Continuous యొక్క తాత్కాలిక పరిస్థితులు, current project updates మరియు ప్రశ్నల ఫ్రేమింగ్ వివరించాను.",
+      "విద్యార్థులు కొనసాగుతున్న ప్రాజెక్ట్ లేదా సైన్స్ ప్రయోగం గురించి live commentary ఇచ్చేలా ప్రాక్టీస్ చేయించాను.",
+      "Simple Present మరియు Present Continuous మధ్య ఉన్న సూక్ష్మ వ్యత్యాసాలను ఉదాహరణలతో స్పష్టం చేశాను.",
+      "ప్రతి విద్యార్థి మాట్లాడేటప్పుడు Fluency, Accuracy పాటించేలా తగిన సూచనలు అందించాను."
+    ];
+  }
+
+  // day === 8
+  if (isPre) {
+    return [
+      "\"Tomorrow we will be playing!\" అనే సరదా వాక్యాన్ని పిల్లలతో కలిసి ఉల్లాసంగా పలికించాను.",
+      "రేపు ఒక నిర్దిష్ట సమయంలో ఏం చేస్తామో ఊహించుకుంటూ పిల్లలు మాట్లాడేలా కథనం చెప్పాను.",
+      "పిల్లలందరూ కలిసి సమష్టిగా రేపటి ఆటల గురించి ఇంగ్లీష్ లో మాట్లాడే వాతావరణం కల్పించాను.",
+      "ప్రతి చిన్నారి ముఖంలో చిరునవ్వుతో ఇంగ్లీష్ మాట్లాడే ఆత్మవిశ్వాసం నింపాను."
+    ];
+  }
+  if (isP12) {
+    return [
+      "\"Tomorrow at 10 AM, I will be studying / playing\" వాక్య నమూనాలను బోర్డుపై రాసి నేర్పించాను.",
+      "రేపటి నిర్దిష్ట సమయంలో జరిగే పనులను విద్యార్థులు ఊహించి చెప్పేలా గైడ్ చేశాను.",
+      "విద్యార్థులు జంటలుగా మారి రేపటి సమయ పట్టిక గురించి చిన్న సంభాషణలు చేసేలా చూశాను.",
+      "\"will be + ing\" సరైన క్రమంలో పలికేలా శ్రద్ధ వహించి తప్పులను సరిదిద్దాను."
+    ];
+  }
+  if (isM35) {
+    return [
+      "Future Continuous లో \"will be + V-ing\" వాక్యాలు నిర్దిష్ట భవిష్యత్ సమయాన్ని ఎలా సూచిస్తాయో వివరించాను.",
+      "రేపటి పాఠశాల సమయ పట్టిక ఆధారంగా \"At 2 PM tomorrow, we will be...\" అని చెప్పే Pair Work నడిపాను.",
+      "ప్రశ్నలు అడగడం (\"What will you be doing tomorrow evening?\") విద్యార్థులతో ప్రాక్టీస్ చేయించాను.",
+      "భవిష్యత్ ప్రణాళికలను స్పష్టంగా వ్యక్తపరిచే విద్యార్థులను ప్రశంసించి, మిగిలిన వారిని ప్రోత్సహించాను."
+    ];
+  }
+  return [
+    "Future Continuous యొక్క అధునాతన వినియోగం, overlapping future activities మరియు polite enquiries వివరించాను.",
+    "రేపటి ప్రాజెక్ట్ లేదా ఎగ్జామ్ షెడ్యూల్ పై విద్యార్థులు ప్రొఫెషనల్ గా షెడ్యూల్ రిపోర్ట్ సమర్పించేలా చేశాను.",
+    "Will + V1 కు మరియు Will be + V-ing కు మధ్య గల కాల వ్యత్యాసాన్ని విశ్లేషించి నేర్పించాను.",
+    "తరగతిలోని ప్రతి విద్యార్థి 8 రోజుల స్పోకెన్ ఇంగ్లీష్ లక్ష్యాలను పూర్తి చేశారో లేదో సమీక్షించాను."
+  ];
 }
 
 async function regenerateTeluguForTask(taskKey: string, _grade: string, _subject: string, _lesson: string) {
@@ -785,7 +1187,7 @@ async function reorderSyllabusLessons(idsValue: any) {
   return { success: true, count: ids.length };
 }
 
-async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
+async function syncSpokenEnglishCatalog(lessons: any[], tasks?: any[]) {
   if (!Array.isArray(lessons) || !lessons.length) return { success: false, message: "No lessons provided" };
   
   for (const l of lessons) {
@@ -830,8 +1232,28 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
     }
   }
 
-  if (Array.isArray(tasks) && tasks.length) {
-    for (const t of tasks) {
+  // If tasks were provided, use them; otherwise automatically generate tailored Telugu checklists with Gemini!
+  const tasksToProcess = (Array.isArray(tasks) && tasks.length) ? tasks : [];
+  if (!tasksToProcess.length) {
+    for (const l of lessons) {
+      const cls = S(l.class);
+      const dayNum = syllabusLessonNoValue(l.lesson_no || l.day);
+      const name = S(l.name);
+      const checks = await generateSpokenChecklistWithGemini(cls, dayNum, name, S(l.objective), S(l.activity));
+      checks.forEach((chk, idx) => {
+        tasksToProcess.push({
+          class: cls,
+          lesson_name: name,
+          task_num: idx + 1,
+          task_key: `SPOKEN::${cls}::${dayNum}::CHK::${idx + 1}`,
+          content: chk
+        });
+      });
+    }
+  }
+
+  if (tasksToProcess.length) {
+    for (const t of tasksToProcess) {
       const cls = S(t.class);
       const subj = "Spoken English";
       const lessonName = S(t.lesson_name || t.lessonName);
@@ -874,7 +1296,7 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
     }
   }
 
-  return { success: true, lessonsCount: lessons.length, tasksCount: (tasks || []).length };
+  return { success: true, lessonsCount: lessons.length, tasksCount: tasksToProcess.length };
 }
 
 async function triggerSpokenEnglishSync(customPat?: string) {
@@ -1072,6 +1494,9 @@ const HANDLERS: Record<string, (a: any[], who: any) => Promise<any>> = {
   },
   syncSpokenEnglishCatalog: async (a) => {
     return syncSpokenEnglishCatalog(a[0], a[1]);
+  },
+  generateSpokenChecklist: async (a) => {
+    return generateSpokenChecklistWithGemini(S(a[0]), Number(a[1]), S(a[2]), S(a[3]), S(a[4]));
   },
   triggerSpokenEnglishSync: async (a, w) => {
     requireSyllabusManagement(w);
