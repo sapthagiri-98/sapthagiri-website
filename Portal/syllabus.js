@@ -571,17 +571,19 @@
           '<button class="active" data-view="class"><i class="material-icons">grid_view</i> By Class</button>' +
           '<button data-view="date"><i class="material-icons">event</i> By Day</button>' +
         '</div>' +
-        '<div class="mod-toolbar syl-admin-toolbar" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;"><button class="refresh-btn" id="sylRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh</button><button class="refresh-btn syl-edit-catalog-btn" id="sylEditCatalog"><i class="material-icons" style="font-size:16px;">edit_note</i> Edit Syllabus</button></div>' +
+        '<div class="mod-toolbar syl-admin-toolbar" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;"><button class="refresh-btn" id="sylRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh</button><button class="refresh-btn syl-edit-catalog-btn" id="sylEditCatalog"><i class="material-icons" style="font-size:16px;">edit_note</i> Edit Syllabus</button><button class="refresh-btn syl-sync-spoken-btn" id="sylSyncSpokenToolbar" title="Check Google Drive &amp; Redo Slicing for Spoken English"><i class="material-icons" style="font-size:16px;">sync</i> Sync Spoken English</button></div>' +
         '<div class="timing-line" id="sylTiming"></div>' +
         '<div id="sylClassView"></div>' +
         '<div id="sylDateView" style="display:none;"></div>' +
       '</div>' +
-      drillModal() + managementTaskModal() + dateDrillModal() + syllabusEditorModal();
+      drillModal() + managementTaskModal() + dateDrillModal() + syllabusEditorModal() + spokenSyncModal();
 
     bindModals();
     Array.prototype.forEach.call($("sylViewSeg").querySelectorAll("button"), function (b) { b.addEventListener("click", function () { switchView(b.getAttribute("data-view")); }); });
     $("sylRefresh").addEventListener("click", function () { if (curView === "class") loadReport(true); else initDateView(true); });
     $("sylEditCatalog").addEventListener("click", openSyllabusEditor);
+    var syncSpokenTb = $("sylSyncSpokenToolbar");
+    if (syncSpokenTb) syncSpokenTb.addEventListener("click", openSpokenSyncModal);
     loadReport(false);
   }
 
@@ -1431,6 +1433,8 @@
       setupEditorCascadingDropdowns();
       $("sylEditorAdd").onclick = addEditorRow;
       $("sylEditorBulkSave").onclick = saveManualEditorClass;
+      var syncSpokenEdBtn = $("sylEditorSyncSpoken");
+      if (syncSpokenEdBtn) syncSpokenEdBtn.onclick = openSpokenSyncModal;
       var fileInput = $("sylEditorFileInput");
       var aiBtn = $("sylEditorAiUpload");
       if (aiBtn && fileInput) {
@@ -1704,7 +1708,7 @@
     syllabusEditorSaving = !!disabled;
     var modal = $("sylEditorModal");
     if (!modal) return;
-    Array.prototype.forEach.call(modal.querySelectorAll(".syl-cell-input, #sylEditorClass, #sylEditorSubject, #sylEditorPair, #sylEditorAdd, #sylEditorAiUpload, #sylEditorBulkSave, .syl-editor-mode, .syl-row-remove, .syl-ed-drag-handle"), function (el) {
+    Array.prototype.forEach.call(modal.querySelectorAll(".syl-cell-input, #sylEditorClass, #sylEditorSubject, #sylEditorPair, #sylEditorAdd, #sylEditorAiUpload, #sylEditorSyncSpoken, #sylEditorBulkSave, .syl-editor-mode, .syl-row-remove, .syl-ed-drag-handle"), function (el) {
       el.disabled = !!disabled;
     });
     var save = $("sylEditorBulkSave");
@@ -1718,11 +1722,28 @@
     var pendingDeleteCount = editorPairPendingDeletes(pair).length;
     var isAiOverwrite = drafts.length > 0 && pendingDeleteCount > 0;
     var deleteNote = (pendingDeleteCount && !isAiOverwrite) ? '<div class="syl-editor-gap"><i class="material-icons">delete_outline</i><span>' + pendingDeleteCount + ' lesson ' + (pendingDeleteCount === 1 ? 'row marked' : 'rows marked') + ' for removal. Will apply on update.</span></div>' : '';
+    var isSpoken = pair && (editorNormSubject(pair.subject) === "spokenenglish" || editorNormSubject(pair.subject) === "spokenskills");
+    var spokenBanner = isSpoken ?
+      '<div class="syl-spoken-sync-bar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin-bottom:12px;flex-wrap:wrap;">' +
+        '<div style="display:flex;align-items:center;gap:10px;">' +
+          '<i class="material-icons" style="font-size:24px;color:#15803d;">record_voice_over</i>' +
+          '<div>' +
+            '<div style="font-size:13px;font-weight:700;color:#166534;">Spoken English Daily Lessons</div>' +
+            '<div style="font-size:11.5px;color:#15803d;">Synced directly from Google Drive. Slices multi-day PDFs per class and extracts authentic Telugu checklists.</div>' +
+          '</div>' +
+        '</div>' +
+        '<button type="button" class="syl-btn-primary syl-open-spoken-sync-btn" style="background:#15803d;height:32px;font-size:12px;padding:0 12px;cursor:pointer;">' +
+          '<i class="material-icons" style="font-size:15px;">sync</i> Check Drive &amp; Redo Slicing' +
+        '</button>' +
+      '</div>' : '';
+
     if (!rows.length) {
-      $("sylEditorList").innerHTML = deleteNote + '<div class="syl-empty"><i class="material-icons">menu_book</i>No lessons listed for ' + esc(pair.grade) + ' · ' + esc(pair.subject) + '. Use <b>Add Row</b> or <b>Upload Contents (AI)</b> to create chapters.</div>';
+      $("sylEditorList").innerHTML = spokenBanner + deleteNote + '<div class="syl-empty"><i class="material-icons">menu_book</i>No lessons listed for ' + esc(pair.grade) + ' · ' + esc(pair.subject) + '. Use <b>Add Row</b> or <b>Upload Contents (AI)</b> to create chapters.</div>';
+      var emptySyncBtn = $("sylEditorList").querySelector(".syl-open-spoken-sync-btn");
+      if (emptySyncBtn) emptySyncBtn.onclick = openSpokenSyncModal;
       return;
     }
-    var html = deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-drag" title="Drag to reorder">Move</th><th class="syl-col-no">No.</th><th>Lesson / Chapter Title</th><th class="syl-col-month">Target Month</th><th class="syl-col-link">PDF / Resource Link (Optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
+    var html = spokenBanner + deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-drag" title="Drag to reorder">Move</th><th class="syl-col-no">No.</th><th>Lesson / Chapter Title</th><th class="syl-col-month">Target Month</th><th class="syl-col-link">PDF / Resource Link (Optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
     rows.forEach(function (l) {
       var isDraft = !!l._draftKey;
       var id = isDraft ? l._draftKey : String(l.id);
@@ -1750,6 +1771,8 @@
     Array.prototype.forEach.call($("sylEditorList").querySelectorAll("[data-editor-delete]"), function (b) {
       b.onclick = function () { removeEditorRow(b.getAttribute("data-editor-delete")); };
     });
+    var spokenBtn = $("sylEditorList").querySelector(".syl-open-spoken-sync-btn");
+    if (spokenBtn) spokenBtn.onclick = openSpokenSyncModal;
     bindManualEditorDrag(pair);
   }
   function bindManualEditorDrag(pair) {
@@ -2139,6 +2162,134 @@
     Array.prototype.forEach.call(document.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { P.closeModal(b.getAttribute("data-close")); }); });
     Array.prototype.forEach.call(document.querySelectorAll(".modal-overlay"), function (m) { m.addEventListener("click", function (e) { if (e.target === m) P.closeModal(m.id); }); });
     var rex = $("sylExplainRegen"); if (rex) rex.addEventListener("click", regenExplain);
+    var trigBtn = $("sylSyncTriggerBtn"); if (trigBtn) trigBtn.addEventListener("click", triggerSpokenSyncFromModal);
+  }
+
+  function openSpokenSyncModal() {
+    P.openModal("sylSpokenSyncModal");
+    renderSpokenSyncStatus();
+  }
+
+  function renderSpokenSyncStatus() {
+    var statusEl = $("sylSyncCloudStatus");
+    if (!statusEl) return;
+    var savedToken = localStorage.getItem("gh_sync_token") || "";
+    if (savedToken) {
+      var masked = savedToken.slice(0, 4) + "••••••••" + savedToken.slice(-4);
+      statusEl.innerHTML = '<div style="font-size:11.5px;color:#166534;margin-bottom:8px;display:flex;align-items:center;gap:6px;">' +
+        '<i class="material-icons" style="font-size:14px;color:#16a34a;">vpn_key</i> GitHub Token configured (' + esc(masked) + ') ' +
+        '<button type="button" id="sylSyncClearToken" style="background:none;border:none;color:#dc2626;cursor:pointer;text-decoration:underline;padding:0;font-size:11px;">Clear token</button>' +
+        '</div>';
+      var clr = $("sylSyncClearToken");
+      if (clr) clr.onclick = clearSpokenSyncToken;
+    } else {
+      statusEl.innerHTML = "";
+    }
+  }
+
+  function clearSpokenSyncToken() {
+    localStorage.removeItem("gh_sync_token");
+    renderSpokenSyncStatus();
+  }
+
+  function triggerSpokenSyncFromModal() {
+    var btn = $("sylSyncTriggerBtn");
+    var statusEl = $("sylSyncCloudStatus");
+    if (!btn || !statusEl) return;
+
+    var savedToken = localStorage.getItem("gh_sync_token") || "";
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="material-icons syl-spin">sync</i> Triggering Sync…';
+    statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:#eff6ff;color:#1e40af;font-size:12px;"><i class="material-icons syl-spin">sync</i> Contacting GitHub Actions / Supabase…</div>';
+
+    P.api("triggerSpokenEnglishSync", [savedToken], { overlay: false }).then(function (res) {
+      if (res && res.dispatched) {
+        statusEl.innerHTML = '<div style="padding:10px 12px;border-radius:8px;background:#ecfdf5;color:#065f46;font-size:12px;border:1px solid #a7f3d0;">' +
+          '<b><i class="material-icons" style="font-size:16px;vertical-align:middle;">check_circle</i> Sync Workflow Started!</b><br>' +
+          'GitHub Actions is now downloading PDFs from Google Drive, slicing per-class lessons, and updating the database.<br>' +
+          '<a href="' + esc(res.actionsUrl || "https://github.com/sapthagiri-98/sapthagiri-website/actions/workflows/sync-spoken-english.yml") + '" target="_blank" rel="noopener" style="font-weight:700;color:#047857;text-decoration:underline;margin-top:6px;display:inline-block;">Watch live GitHub Action run ↗</a>' +
+          '</div>';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="material-icons">play_circle</i> Trigger Sync Again';
+        return;
+      }
+
+      if (res && res.needToken && !savedToken) {
+        var tokenPrompt = prompt("To trigger GitHub Actions directly from the portal, enter a GitHub Personal Access Token (classic with repo scope or fine-grained with Actions: Write):\n\n(Or click Cancel to open GitHub Actions directly in browser):");
+        if (tokenPrompt && tokenPrompt.trim()) {
+          localStorage.setItem("gh_sync_token", tokenPrompt.trim());
+          btn.disabled = false;
+          btn.innerHTML = '<i class="material-icons">play_circle</i> Trigger Sync Now';
+          triggerSpokenSyncFromModal();
+          return;
+        }
+      }
+
+      var runUrl = (res && res.actionsUrl) || "https://github.com/sapthagiri-98/sapthagiri-website/actions/workflows/sync-spoken-english.yml";
+      statusEl.innerHTML = '<div style="padding:10px 12px;border-radius:8px;background:#fffbeb;color:#92400e;font-size:12px;border:1px solid #fde68a;">' +
+        '<b>Ready to sync!</b> Open GitHub Actions and click <b>Run workflow</b> (takes 1 click):<br>' +
+        '<a href="' + esc(runUrl) + '" target="_blank" rel="noopener" class="syl-btn-primary" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#b45309;">' +
+        '<i class="material-icons">open_in_new</i> Open GitHub Actions ↗</a>' +
+        '</div>';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="material-icons">play_circle</i> Trigger Sync Now';
+    }).catch(function () {
+      var runUrl = "https://github.com/sapthagiri-98/sapthagiri-website/actions/workflows/sync-spoken-english.yml";
+      statusEl.innerHTML = '<div style="padding:10px 12px;border-radius:8px;background:#fffbeb;color:#92400e;font-size:12px;border:1px solid #fde68a;">' +
+        '<b>Run Workflow:</b> Open GitHub Actions to run the slicer in 1 click:<br>' +
+        '<a href="' + esc(runUrl) + '" target="_blank" rel="noopener" class="syl-btn-primary" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:#b45309;">' +
+        '<i class="material-icons">open_in_new</i> Open GitHub Actions ↗</a>' +
+        '</div>';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="material-icons">play_circle</i> Trigger Sync Now';
+    });
+  }
+
+  function spokenSyncModal() {
+    return '<div class="modal-overlay" id="sylSpokenSyncModal" style="z-index:1250;">' +
+      '<div class="modal-content syl-spoken-sync-dialog" style="max-width:680px;width:100%;max-height:90vh;display:flex;flex-direction:column;">' +
+        '<div class="syl-ed-header">' +
+          '<div class="syl-ed-title-group">' +
+            '<h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text-main,#0f172a);display:flex;align-items:center;gap:8px;">' +
+              '<i class="material-icons" style="color:var(--maroon,#800000);">auto_mode</i> Spoken English Slicer &amp; Drive Sync' +
+            '</h3>' +
+          '</div>' +
+          '<button class="modal-close-icon" data-close="sylSpokenSyncModal" title="Close">&times;</button>' +
+        '</div>' +
+        '<div class="syl-spoken-sync-body" style="padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;">' +
+          '<div class="syl-sync-card" style="padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">' +
+            '<div style="font-size:13px;font-weight:700;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:#2563eb;font-size:18px;">folder_shared</i> Google Drive Spoken English Folder</div>' +
+            '<div style="font-size:12px;color:#475569;margin:6px 0 10px;">Upload new multi-day PDFs or revised versions (e.g. Day 9-10, Day 5-6 Redo) to the school\'s Google Drive folder.</div>' +
+            '<a href="https://drive.google.com/drive/folders/1mmwlX_D5VDN_F2VdJAu25UxR3r61BDuP" target="_blank" rel="noopener" class="syl-btn-secondary syl-btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;width:fit-content;">' +
+              '<i class="material-icons" style="font-size:15px;">open_in_new</i> Open Drive Folder (1mmwlX_D5VDN_F2VdJAu25UxR3r61BDuP) ↗' +
+            '</a>' +
+          '</div>' +
+          '<div class="syl-sync-card" style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;">' +
+            '<div style="font-size:13px;font-weight:700;color:#166534;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:#16a34a;font-size:18px;">cloud_sync</i> Option 1: Trigger Cloud Sync (GitHub Actions)</div>' +
+            '<div style="font-size:12px;color:#15803d;margin:6px 0 10px;">Runs the automated slicer on GitHub Actions. It downloads Drive PDFs, slices them per-class into <code>Portal/spoken_pdf/</code>, generates authentic Telugu self-checklists, and syncs Supabase directly.</div>' +
+            '<div id="sylSyncCloudStatus" style="margin-bottom:10px;"></div>' +
+            '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
+              '<button type="button" class="syl-btn-primary" id="sylSyncTriggerBtn" style="background:#15803d;"><i class="material-icons">play_circle</i> Trigger Sync Now</button>' +
+              '<a href="https://github.com/sapthagiri-98/sapthagiri-website/actions/workflows/sync-spoken-english.yml" target="_blank" rel="noopener" class="syl-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">' +
+                '<i class="material-icons" style="font-size:16px;">visibility</i> View Live Runs on GitHub ↗' +
+              '</a>' +
+            '</div>' +
+          '</div>' +
+          '<div class="syl-sync-card" style="padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">' +
+            '<div style="font-size:13px;font-weight:700;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:#ea580c;font-size:18px;">desktop_windows</i> Option 2: 1-Click Desktop Slicer (Instant Local Sync)</div>' +
+            '<div style="font-size:12px;color:#475569;margin-top:4px;">Double-click <code>Sync_Spoken_English.bat</code> in the school website folder on your PC. It immediately slices PDFs from your <code>Downloads</code> folder or <code>source_pdfs/</code>, updates portal checklists, and syncs the database.</div>' +
+          '</div>' +
+          '<div class="syl-sync-card" style="padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">' +
+            '<div style="font-size:13px;font-weight:700;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:#6366f1;font-size:18px;">upload_file</i> Option 3: Direct Drop into source_pdfs/</div>' +
+            '<div style="font-size:12px;color:#475569;margin-top:4px;">You can also drag and drop any multi-day PDF directly into the <code>source_pdfs/</code> folder on GitHub. GitHub Actions triggers automatically on push.</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="syl-ed-footer" style="padding:12px 16px;">' +
+          '<div class="syl-ed-footer-hint"><i class="material-icons">info_outline</i> Existing lessons with the same day number are updated/replaced seamlessly without duplicates.</div>' +
+          '<button type="button" class="syl-btn-secondary syl-btn-sm" data-close="sylSpokenSyncModal">Close</button>' +
+        '</div>' +
+      '</div></div>';
   }
   function sessionsModal() {
     return '<div class="modal-overlay" id="sylSessModal"><div class="modal-content" style="max-width:720px;width:100%;max-height:88vh;display:flex;flex-direction:column;">' +
@@ -2198,6 +2349,7 @@
           '</div>' +
           '<div class="syl-ed-right-controls">' +
             '<input type="file" id="sylEditorFileInput" accept="image/*,application/pdf" style="display:none;">' +
+            '<button type="button" class="syl-btn-secondary" id="sylEditorSyncSpoken" title="Check Google Drive, slice new or revised PDFs, and sync Spoken English catalog across all classes"><i class="material-icons">sync</i> Sync Spoken English</button>' +
             '<button type="button" class="syl-btn-secondary" id="sylEditorAiUpload" title="Upload Table of Contents (image/PDF) for AI extraction"><i class="material-icons">document_scanner</i> Upload Contents (AI)</button>' +
             '<button type="button" class="syl-btn-secondary" id="sylEditorAdd"><i class="material-icons">add</i> Add Row</button>' +
             '<button type="button" class="syl-btn-primary syl-editor-bulk-save" id="sylEditorBulkSave"><i class="material-icons">save</i> Update Syllabus</button>' +

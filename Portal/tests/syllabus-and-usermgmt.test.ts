@@ -328,4 +328,19 @@ describe("Spoken English & Spoken Skills Day-wise Syllabus Integration", () => {
       expect(matchesSyllabusRow("Telugu (SL)", "1", "Telugu", "")).toBe(true);
     });
   });
+
+  describe("Spoken English Slicer & Drive Sync UI Controls", () => {
+    it("includes Sync Spoken English buttons and dialog in syllabus markup", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const syllabusCode = fs.readFileSync(path.resolve(__dirname, "../syllabus.js"), "utf8");
+
+      // Verify the toolbar and modal button IDs exist in the code
+      expect(syllabusCode).toContain('id="sylSyncSpokenToolbar"');
+      expect(syllabusCode).toContain('id="sylEditorSyncSpoken"');
+      expect(syllabusCode).toContain('id="sylSpokenSyncModal"');
+      expect(syllabusCode).toContain('syl-open-spoken-sync-btn');
+      expect(syllabusCode).toContain('triggerSpokenEnglishSync');
+    });
+  });
 });

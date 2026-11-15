@@ -837,6 +837,59 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
   return { success: true, lessonsCount: lessons.length, tasksCount: (tasks || []).length };
 }
 
+async function triggerSpokenEnglishSync(customPat?: string) {
+  const token = S(customPat) || Deno.env.get("GITHUB_TOKEN") || Deno.env.get("GH_PAT");
+  const repo = "sapthagiri-98/sapthagiri-website";
+  const workflow = "sync-spoken-english.yml";
+  const actionsUrl = `https://github.com/${repo}/actions/workflows/${workflow}`;
+
+  if (!token) {
+    return {
+      success: true,
+      dispatched: false,
+      needToken: true,
+      message: "No GitHub token configured on server. Open GitHub Actions to run the workflow in 1-click.",
+      actionsUrl
+    };
+  }
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Sapthagiri-Portal"
+      },
+      body: JSON.stringify({ ref: "main" })
+    });
+
+    if (res.status === 204) {
+      return {
+        success: true,
+        dispatched: true,
+        message: "Workflow dispatched! GitHub Action is downloading Google Drive PDFs, slicing per-class lessons, and syncing the database.",
+        actionsUrl
+      };
+    } else {
+      const errText = await res.text();
+      return {
+        success: false,
+        dispatched: false,
+        message: `GitHub returned HTTP ${res.status}: ${errText}`,
+        actionsUrl
+      };
+    }
+  } catch (e: any) {
+    return {
+      success: false,
+      dispatched: false,
+      message: String(e?.message || e),
+      actionsUrl
+    };
+  }
+}
+
 // =========================================================================
 // MANAGEMENT — timeline / audit report (bulk, paginated)
 // =========================================================================
@@ -949,6 +1002,10 @@ const HANDLERS: Record<string, (a: any[], who: any) => Promise<any>> = {
   },
   syncSpokenEnglishCatalog: async (a) => {
     return syncSpokenEnglishCatalog(a[0], a[1]);
+  },
+  triggerSpokenEnglishSync: async (a, w) => {
+    requireSyllabusManagement(w);
+    return triggerSpokenEnglishSync(a[0]);
   },
 };
 
