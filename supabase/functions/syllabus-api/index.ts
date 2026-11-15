@@ -344,10 +344,17 @@ async function extractTasksFromDrivePDF(grade: string, subject: string, lesson: 
   if (error) throw new Error(error.message);
   const bySession: Record<string, any[]> = {};
   for (const t of data || []) {
-    (bySession[t.session_name] ??= []).push({
-      taskKey: t.task_key, taskNum: t.task_num, content: t.content,
-      telugu: t.telugu, checked: !!t.checked, notes: t.notes, sheetRow: 1,
-    });
+    const list = (bySession[t.session_name] ??= []);
+    const norm = S(t.content).replace(/\s+/g, " ").trim();
+    const existing = list.find((x: any) => S(x.content).replace(/\s+/g, " ").trim() === norm);
+    if (existing) {
+      if (t.checked && !existing.checked) existing.checked = true;
+    } else {
+      list.push({
+        taskKey: t.task_key, taskNum: t.task_num, content: t.content,
+        telugu: t.telugu, checked: !!t.checked, notes: t.notes, sheetRow: 1,
+      });
+    }
   }
   return bySession;
 }
@@ -829,7 +836,24 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks: any[]) {
           content: S(t.content),
           lesson_name: S(t.lesson_name || t.lessonName)
         }).eq("id", keepTaskId);
+
+        // Delete any other duplicate task with same (class, lesson_name, task_num)
+        await db.from("syllabus_session_tasks")
+          .delete()
+          .eq("class", S(t.class))
+          .eq("subject", "Spoken English")
+          .eq("lesson_name", S(t.lesson_name || t.lessonName))
+          .eq("task_num", Number(t.task_num || t.taskNum) || 1)
+          .neq("id", keepTaskId);
       } else {
+        // Also ensure no old task exists with same (class, lesson_name, task_num) before inserting
+        await db.from("syllabus_session_tasks")
+          .delete()
+          .eq("class", S(t.class))
+          .eq("subject", "Spoken English")
+          .eq("lesson_name", S(t.lesson_name || t.lessonName))
+          .eq("task_num", Number(t.task_num || t.taskNum) || 1);
+
         await db.from("syllabus_session_tasks").insert({
           class: S(t.class),
           subject: "Spoken English",

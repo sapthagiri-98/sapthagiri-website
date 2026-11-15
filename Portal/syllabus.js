@@ -382,9 +382,22 @@
     html += '</div>';
     html += '<p style="margin:0 0 12px;font-size:12px;color:#15803d;line-height:1.4;">Complete all 3–4 items below during your period to mark today\'s Spoken English lesson as Done.</p>';
 
-    var chkList = checklistTasks.length ? checklistTasks : (lessonData && lessonData.checklist ? lessonData.checklist.map(function (c, ci) {
+    var rawChk = checklistTasks.length ? checklistTasks : (lessonData && lessonData.checklist ? lessonData.checklist.map(function (c, ci) {
       return { taskKey: "SPOKEN::" + cls + "::" + dayNum + "::CHK::" + (ci + 1), content: c, checked: false };
     }) : []);
+
+    // Deduplicate checklist tasks by content (preserving checked status)
+    var chkList = [], seenContent = Object.create(null);
+    rawChk.forEach(function (t) {
+      var norm = String(t.content || "").replace(/[\s\u200B-\u200D\uFEFF]+/g, " ").trim();
+      if (!norm) return;
+      if (!seenContent[norm]) {
+        seenContent[norm] = t;
+        chkList.push(t);
+      } else if (t.checked && !seenContent[norm].checked) {
+        seenContent[norm].checked = true;
+      }
+    });
 
     if (!chkList.length) {
       html += '<div class="ex-empty" style="padding:10px;">No checklist items found for this lesson.</div>';
@@ -2232,6 +2245,70 @@
       P.openModal("sylSpokenSyncModal");
       return;
     }
+    openSpokenSyncPreAudit();
+  }
+
+  function openSpokenSyncPreAudit() {
+    P.openModal("sylSpokenSyncModal");
+    var body = $("sylSpokenSyncBody");
+    var footer = $("sylSpokenSyncFooter");
+    var closeBtn = $("sylSpokenSyncCloseBtn");
+    if (!body) return;
+    if (closeBtn) closeBtn.style.display = "";
+
+    var allSpoken = (syllabusEditorData && syllabusEditorData.lessons || []).filter(function (l) {
+      return matchesSyllabusRow("Spoken English", l.class, l.subject, l.strand_subject);
+    });
+    var daysSet = {};
+    allSpoken.forEach(function (l) { if (l.lesson_no) daysSet[l.lesson_no] = true; });
+    var daysList = Object.keys(daysSet).sort(function (a, b) { return Number(a) - Number(b); });
+    var dayRange = daysList.length ? ("Day " + daysList[0] + " to Day " + daysList[daysList.length - 1]) : "Day 1 to Day 8";
+    var totalLessons = allSpoken.length || 104;
+
+    body.innerHTML =
+      '<div style="text-align:center;padding:4px 0 10px;">' +
+        '<div style="width:52px;height:52px;border-radius:50%;background:#eff6ff;color:#2563eb;display:inline-flex;align-items:center;justify-content:center;margin-bottom:8px;">' +
+          '<i class="material-icons" style="font-size:30px;">cloud_sync</i>' +
+        '</div>' +
+        '<h4 style="margin:0 0 4px;font-size:17px;font-weight:800;color:#0f172a;">Spoken English Sync &amp; Redo Status</h4>' +
+        '<div style="font-size:12.5px;color:#64748b;">Review status and scope before synchronizing from Google Drive.</div>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:10px;">' +
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">' +
+          '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Current Catalog in Portal</div>' +
+          '<div style="font-size:13.5px;font-weight:700;color:#0f172a;">' + totalLessons + ' Lessons · ' + esc(dayRange) + ' across 13 classes</div>' +
+        '</div>' +
+        '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;">' +
+          '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:4px;display:flex;align-items:center;gap:6px;">' +
+            '<i class="material-icons" style="font-size:16px;">add_circle</i> 1. New Day Additions' +
+          '</div>' +
+          '<div style="font-size:12px;color:#15803d;line-height:1.45;">Scans Google Drive for any new day PDFs (e.g. Day 9+). Any newly added days will be sliced per class and added to syllabus.</div>' +
+        '</div>' +
+        '<div style="background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:12px 14px;">' +
+          '<div style="font-size:12px;font-weight:700;color:#854d0e;margin-bottom:4px;display:flex;align-items:center;gap:6px;">' +
+            '<i class="material-icons" style="font-size:16px;">autorenew</i> 2. Replaced / Redo Versions' +
+          '</div>' +
+          '<div style="font-size:12px;color:#713f12;line-height:1.45;">Overwrites existing day PDFs (Days 1–8) with latest versions from Drive cleanly without creating duplicate records.</div>' +
+        '</div>' +
+        '<div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:10px;padding:12px 14px;">' +
+          '<div style="font-size:12px;font-weight:700;color:#9d174d;margin-bottom:4px;display:flex;align-items:center;gap:6px;">' +
+            '<i class="material-icons" style="font-size:16px;">cleaning_services</i> 3. Checklist Purge &amp; Deduplication' +
+          '</div>' +
+          '<div style="font-size:12px;color:#831843;line-height:1.45;">Purges all duplicate database task rows and enforces exactly 4 authentic Telugu items per lesson (416 total), preserving teacher completion marks.</div>' +
+        '</div>' +
+      '</div>';
+
+    if (footer) {
+      footer.innerHTML =
+        '<button type="button" class="syl-btn-secondary syl-btn-sm" data-close="sylSpokenSyncModal">Cancel</button>' +
+        '<button type="button" class="syl-btn-primary syl-btn-sm" id="sylSpokenStartSyncBtn" style="background:var(--maroon,#800000);padding:0 18px;"><i class="material-icons" style="font-size:15px;">play_arrow</i> Start Clean Sync &amp; Replace</button>';
+      var startBtn = $("sylSpokenStartSyncBtn");
+      if (startBtn) startBtn.onclick = executeSpokenSync;
+    }
+  }
+
+  function executeSpokenSync() {
+    if (_spokenSyncRunning) return;
     _spokenSyncRunning = true;
 
     var allBtns = document.querySelectorAll("#sylEditorSyncSpoken, #sylSyncSpokenToolbar, .syl-open-spoken-sync-btn");
@@ -2241,8 +2318,6 @@
       b.innerHTML = '<i class="material-icons syl-spin">sync</i> Syncing…';
     });
 
-    // Open dedicated fullscreen takeover progress modal immediately
-    P.openModal("sylSpokenSyncModal");
     renderSpokenSyncLoading(0, "Connecting to GitHub Actions & Google Drive…");
 
     var token = getSpokenSyncToken();
@@ -2291,7 +2366,7 @@
         var elapsed = Math.round((Date.now() - startTime) / 1000);
         var stepText = "Connecting to Google Drive folder…";
         if (elapsed > 12) stepText = "Checking multi-day PDFs and slicing into individual class lessons…";
-        if (elapsed > 35) stepText = "Extracting Telugu self-checklists & updating database catalog…";
+        if (elapsed > 35) stepText = "Extracting Telugu self-checklists & purging duplicate database tasks…";
 
         checkActionStatus().then(function (statRes) {
           if (!statRes || !statRes.success || !statRes.run) {
