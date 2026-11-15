@@ -359,9 +359,6 @@
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">';
     html += '<h4 style="margin:0;font-size:14px;color:#0f172a;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:var(--maroon,#7a151a);font-size:18px;">picture_as_pdf</i> Teaching Instructions &amp; Classroom Plan (PDF)</h4>';
     html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
-    if (videoUrl) {
-      html += '<a href="' + esc(videoUrl) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:5px;background:#dc2626;color:#fff;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;text-decoration:none;"><i class="material-icons" style="font-size:15px;color:#fff;">smart_display</i> Watch Video ↗</a>';
-    }
     html += '<a href="' + esc(pdfUrl) + '" target="_blank" rel="noopener" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:5px;background:#334155;color:#fff;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;text-decoration:none;"><i class="material-icons" style="font-size:15px;color:#fff;">open_in_new</i> Open PDF Fullscreen</a>';
     html += '</div>';
     html += '</div>';
