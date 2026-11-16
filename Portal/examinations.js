@@ -62,6 +62,14 @@
     var m = String(clsStr || "").match(/(\d+)/);
     return m ? parseInt(m[1], 10) : null;
   }
+  function classKey(clsStr) {
+    return String(clsStr || "").toUpperCase().replace(/GRADE|CLASS/g, "").replace(/[\s.-]/g, "").trim();
+  }
+  function displayClassName(clsStr) {
+    var key = classKey(clsStr);
+    if (key === "NURSERY" || key === "LKG" || key === "UKG") return key;
+    return "Class " + String(clsStr || "").replace(/^\s*(?:Grade|Class)\s*/i, "").trim();
+  }
   function normSubject(s) {
     var t = String(s || "").trim();
     if (/^math/i.test(t)) return "Maths";
@@ -169,7 +177,7 @@
     }
 
     if (locked) html += '<div class="ex-lock"><i class="material-icons">lock</i>' + (isMobileReadOnly ? "View Only — Mobile Admin Read Only Mode" : (isMgmt ? "Locked — unlock to edit." : "Locked by management. Contact management to change.")) + "</div>";
-    html += '<div class="ex-note" style="margin-bottom:10px;"><b>' + esc(g.className) + " · " + esc(g.subject) + "</b> — " + esc(g.bucket) + " · " + esc(g.componentLabel) + ' &middot; <span style="color:var(--text-muted);">max ' + esc(g.max) + "</span></div>";
+    html += '<div class="ex-note" style="margin-bottom:10px;"><b>' + esc(g.className) + " · " + esc(g.subject) + "</b> — " + esc(g.bucketLabel || g.bucket) + " · " + esc(g.componentLabel) + ' &middot; <span style="color:var(--text-muted);">max ' + esc(g.max) + "</span></div>";
     html += '<div class="ex-entrylist">';
     g.rows.forEach(function (r) {
       var over = (!r.absent && r.scored !== "" && r.scored != null && Number(r.scored) > Number(g.max));
@@ -218,21 +226,21 @@
         isSplit = (gn !== null && gn >= 8 && gn <= 10);
       }
       cols = g.subjects.map(function (s) {
-        var colMax = g.max;
-        if (isSplit && /^SA-[12]$/.test(g.bucket) && (s === "Physics" || s === "Biology")) {
+        var colMax = (g.isPrimary && g.subjectMaxes && g.subjectMaxes[s] != null) ? Number(g.subjectMaxes[s]) : g.max;
+        if (!g.isPrimary && isSplit && /^SA-[12]$/.test(g.bucket) && (s === "Physics" || s === "Biology")) {
           if (g.component === "EX" || g.component === "Exam" || g.component === "Summative Exam") {
             colMax = 40;
           } else if (g.component === "IN" || g.component === "Int" || g.component === "Internal Marks") {
             colMax = 10;
           }
         }
-        return { key: s, label: s, max: colMax };
+        return { key: s, label: g.isPrimary ? (s + " (" + colMax + ")") : s, max: colMax };
       });
     } else {
       cols = g.indicators.map(function (i) { return { key: i.key, label: i.label, max: i.max }; });
     }
     if (locked) html += '<div class="ex-lock"><i class="material-icons">lock</i>Locked — unlock to edit.</div>';
-    html += '<div class="ex-note" style="margin-bottom:10px;"><b>' + esc(g.className) + "</b> — " + esc(g.bucket) + " · " + esc(g.componentLabel || (g.mode === "holistic" ? "Holistic Indicators" : "")) + "</div>";
+    html += '<div class="ex-note" style="margin-bottom:10px;"><b>' + esc(g.className) + "</b> — " + esc(g.bucketLabel || g.bucket) + " · " + esc(g.componentLabel || (g.mode === "holistic" ? "Holistic Indicators" : "")) + "</div>";
     html += '<div class="ex-tablewrap"><table class="ex-table"><thead><tr><th class="name">Roll · Student</th>';
     cols.forEach(function (c) { html += "<th>" + esc(c.label) + "</th>"; });
     html += "</tr></thead><tbody>";
@@ -281,7 +289,7 @@
     var lb = host.querySelector(".mk-togglelock");
     if (lb) lb.addEventListener("click", function () {
       var willLock = !g.locked;
-      if (!confirm((willLock ? "Lock" : "Unlock") + " " + g.className + " · " + g.bucket + " for ALL teachers (academic + holistic)?")) return;
+      if (!confirm((willLock ? "Lock" : "Unlock") + " " + g.className + " · " + (g.bucketLabel || g.bucket) + (g.isPrimary ? " for all primary marks-entry teachers?" : " for ALL teachers (academic + holistic)?"))) return;
       P.api("marksSetLock", [g.className, g.bucket, willLock, user]).then(function () { if (onLockToggled) onLockToggled(); }).catch(function (e) { toast("Error: " + (e.message || e), "err"); });
     });
   }
@@ -387,12 +395,12 @@
         var b = o.bucket;
         var existing = buckets.find(function (x) { return x.name === b; });
         if (!existing) {
-          buckets.push({ name: b, locked: !!o.locked, gated: !!o.gated });
+          buckets.push({ name: b, label: o.bucketLabel || b, locked: !!o.locked, gated: !!o.gated });
         }
       });
       bSel.disabled = false;
       bSel.innerHTML = '<option value="">Select assessment…</option>' + buckets.map(function (b) {
-        return '<option value="' + esc(b.name) + '">' + esc(b.name) + (b.locked ? " 🔒 (Locked)" : " 🔓 (Open)") + (b.gated ? " [gated]" : "") + "</option>";
+        return '<option value="' + esc(b.name) + '">' + esc(b.label || b.name) + (b.locked ? " 🔒 (Locked)" : " 🔓 (Open)") + (b.gated ? " [gated]" : "") + "</option>";
       }).join("");
     });
 
@@ -537,7 +545,7 @@
       '<div id="mkAHolControls"></div>' +
       '<div id="mkAHost"><div class="ex-empty"><i class="material-icons">grid_on</i>Pick a class and exam to enter all subjects at once.</div></div>';
 
-    P.api("marksGetHighSchoolClasses", []).then(function (cs) {
+    P.api("marksGetAcademicClasses", []).then(function (cs) {
       cs = cs || []; $("mkAClass").innerHTML = '<option value="">Select class…</option>' + cs.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + "</option>"; }).join("");
     }).catch(function () { $("mkAClass").innerHTML = '<option value="">Error</option>'; });
 
@@ -559,17 +567,18 @@
       loading("mkAHost", "Loading marks…");
       P.api("marksGetClassGrid", [cls, bucket, comp]).then(function (g) {
         renderClassGrid(g, "mkAHost", user, function () { $("mkAExam").dispatchEvent(new Event("change")); });
-        renderAdminHolControls(cls, bucket, comp, user);
+        renderAdminHolControls(cls, bucket, comp, user, !!g.isPrimary, g.bucketLabel);
       }).catch(function (e) { empty("mkAHost", esc(e.message || e), "error_outline"); });
     });
   }
 
-  function renderAdminHolControls(cls, bucket, comp, user) {
+  function renderAdminHolControls(cls, bucket, comp, user, isPrimary, bucketLabel) {
+    var visibleBucket = isPrimary ? (bucketLabel || bucket) : bucket;
     var isSABucket = String(bucket).indexOf("SA") === 0;
     var box = $("mkAHolControls");
     box.innerHTML =
       '<div class="ex-lock" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">' +
-      '<span><i class="material-icons" style="vertical-align:middle;color:var(--accent);">lock</i> Lock controls · <b>' + esc(cls) + " · " + esc(bucket) + "</b> <span style=\"color:var(--text-muted);\">(locks academic + holistic together)</span></span>" +
+      '<span><i class="material-icons" style="vertical-align:middle;color:var(--accent);">lock</i> Lock controls · <b>' + esc(cls) + " · " + esc(visibleBucket) + "</b> <span style=\"color:var(--text-muted);\">(" + (isPrimary ? "locks primary academic marks" : "locks academic + holistic together") + ")</span></span>" +
       '<span style="display:flex;gap:8px;flex-wrap:wrap;">' +
       (comp === "HOLISTIC" && !isSABucket ? '<button class="ex-abtn accent" id="mkHARun"><i class="material-icons">bolt</i> Auto-fill Attendance</button>' : "") +
       '<button class="ex-abtn" id="mkHALock"><i class="material-icons">lock</i> Lock</button>' +
@@ -585,8 +594,8 @@
     });
     $("mkHALock").addEventListener("click", function () {
       var willLock = $("mkHALock").getAttribute("data-locked") !== "1";
-      if (!confirm((willLock ? "Lock " : "Unlock ") + cls + " · " + bucket + "?" + (willLock ? " This blocks teacher edits until unlocked." : ""))) return;
-      P.api("marksSetLock", [cls, bucket, willLock, user]).then(function () { toast((willLock ? "Locked " : "Unlocked ") + bucket, "ok"); refreshLockState(); }).catch(function (e) { toast("Error: " + (e.message || e), "err"); });
+      if (!confirm((willLock ? "Lock " : "Unlock ") + cls + " · " + visibleBucket + "?" + (willLock ? " This blocks teacher edits until unlocked." : ""))) return;
+      P.api("marksSetLock", [cls, bucket, willLock, user]).then(function () { toast((willLock ? "Locked " : "Unlocked ") + visibleBucket, "ok"); refreshLockState(); }).catch(function (e) { toast("Error: " + (e.message || e), "err"); });
     });
     function refreshLockState() {
       P.api("getHolisticLockState", [cls, bucket], { overlay: false }).then(function (s) {
@@ -993,55 +1002,45 @@
           }).join("");
         });
       }
-      if (!mobProgBuckets.length) {
-        P.api("progressGetBucketList", [], { overlay: false }).then(function (bs) {
-          var labels = {};
-          if (Array.isArray(bs)) {
-            bs.forEach(function (b) {
-              if (typeof b === "string") labels[b] = b;
-              else if (b && typeof b === "object") {
-                var k = String(b.bucket || b.id || b.name || "");
-                var v = String(b.label || b.name || b.bucket || "");
-                if (k) labels[k] = v;
-              }
-            });
-          } else if (bs && typeof bs === "object") {
-            Object.keys(bs).forEach(function (k) {
-              var val = bs[k];
-              labels[k] = (typeof val === "string") ? val : String((val && (val.label || val.name || val.bucket)) || k);
-            });
-          }
-          mobProgBuckets = BUCKET_SEQ.map(function (bucket) {
-            var lbl = labels[bucket] || bucket;
-            if (typeof lbl !== "string") lbl = String(bucket);
-            return { value: bucket, label: lbl };
-          });
-          bkSel.innerHTML = '<option value="">Select assessment…</option>' + mobProgBuckets.map(function (b) {
-            return '<option value="' + esc(b.value) + '">' + esc(b.label) + '</option>';
-          }).join("");
-        }).catch(function () {
-          mobProgBuckets = BUCKET_SEQ.map(function (bucket) { return { value: bucket, label: bucket }; });
-          bkSel.innerHTML = '<option value="">Select assessment…</option>' + mobProgBuckets.map(function (b) {
-            return '<option value="' + esc(b.value) + '">' + esc(b.label) + '</option>';
-          }).join("");
-        });
-      }
+      bkSel.disabled = true;
+      bkSel.innerHTML = '<option value="">Select class first…</option>';
 
       clsSel.onchange = function () {
         mobProgSelectedStudent = null;
+        loadMobileProgressBucketOptions(this.value);
         loadMobProgressClassData();
       };
       bkSel.onchange = function () {
         mobProgSelectedStudent = null;
         loadMobProgressClassData();
       };
-
       var sInput = $("exMobProgStudentSearch");
       if (sInput) {
         sInput.oninput = function () {
           renderMobProgressView();
         };
       }
+    }
+
+    function loadMobileProgressBucketOptions(className) {
+      var select = $("exMobProgBucket");
+      mobProgBuckets = [];
+      if (!select) return;
+      select.disabled = true;
+      select.innerHTML = '<option value="">' + (className ? "Loading assessments…" : "Select class first…") + '</option>';
+      if (!className) return;
+      P.api("progressGetBucketList", [className], { overlay: false }).then(function (bs) {
+        mobProgBuckets = (bs || []).filter(function (b) { return b && b.bucket; }).map(function (b) {
+          return { value: b.bucket, label: b.label || b.bucket };
+        });
+        select.innerHTML = '<option value="">Select assessment…</option>' + mobProgBuckets.map(function (b) {
+          return '<option value="' + esc(b.value) + '">' + esc(b.label) + '</option>';
+        }).join("");
+        select.disabled = mobProgBuckets.length === 0;
+      }).catch(function (e) {
+        select.innerHTML = '<option value="">Unable to load assessments</option>';
+        toast("Unable to load assessments: " + (e.message || e), "err");
+      });
     }
 
     function loadMobProgressClassData() {
@@ -1098,10 +1097,12 @@
 
       var subjects = filterSubjects(d);
       var isSABucket = !!d.isSA;
-      var overallMax = subjects.length * (isSABucket ? 100 : 50);
+      var overallMax = d.isPrimary
+        ? subjects.reduce(function (sum, subject) { return sum + Number((d.subjectMaxes || {})[subject] || 0); }, 0)
+        : subjects.length * (isSABucket ? 100 : 50);
 
       var html = '<div class="ex-mob-student-list">';
-      html += '<div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:8px;">Showing ' + visStudents.length + ' students in Class ' + esc(d.class) + ' · ' + esc(d.bucket) + '</div>';
+      html += '<div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:8px;">Showing ' + visStudents.length + ' students in Class ' + esc(d.class) + ' · ' + esc(d.bucketLabel || bucketTitleWords(d.bucket)) + '</div>';
 
       visStudents.forEach(function (s, idx) {
         var evalRes = Calc.calculateStudent(s, d.bucket, d.class);
@@ -1147,6 +1148,7 @@
       var isSABucket = !!d.isSA;
       var maxPerSubject = isSABucket ? 100 : 50;
       var impression = intelligentImpression(s, Object.keys(evalRes.subjects), maxPerSubject);
+      if (d.isPrimary && evalRes.isComplete) impression = "All scheduled subject marks have been entered for this assessment.";
 
       var subRowsHtml = Object.keys(evalRes.subjects).map(function (subjKey) {
         var rep = evalRes.subjects[subjKey];
@@ -1178,13 +1180,13 @@
         }
 
         var scoredText = "";
-        if (rep.isComplete) {
+        if (rep.isAbsent) {
+          scoredText = '<span style="color:#b91c1c;font-weight:800;">Ab (Absent)</span> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.max + '</span>';
+        } else if (rep.isComplete) {
           var val = rep.scored;
           var subPct = (val / rep.max) * 100;
           var subCol = subPct >= 80 ? "#15803d" : (subPct >= 35 ? "#0284c7" : "#b45309");
           scoredText = '<b style="color:' + subCol + ';">' + val + '</b> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.max + '</span>';
-        } else if (rep.isAbsent) {
-          scoredText = '<span style="color:#b91c1c;font-weight:800;">Ab (Absent)</span> <span style="font-size:11px;color:#94a3b8;">/ ' + rep.max + '</span>';
         } else {
           scoredText = '<span style="color:#d97706;font-style:italic;"><i class="material-icons" style="font-size:13px;vertical-align:middle;">pending</i> Marks not yet entered</span>';
         }
@@ -1214,12 +1216,12 @@
           '<div class="ex-mob-rep-card">' +
             '<div class="ex-mob-rep-header">' +
               '<div class="ex-mob-rep-title">' + esc(s.name) + '</div>' +
-              '<div class="ex-mob-rep-sub">Roll #' + esc(s.roll || "—") + ' · ID: ' + esc(studentIdText(s)) + ' · ' + esc(bucketTitleWords(d.bucket)) + '</div>' +
+              '<div class="ex-mob-rep-sub">Roll #' + esc(s.roll || "—") + ' · ID: ' + esc(studentIdText(s)) + ' · ' + esc(d.bucketLabel || bucketTitleWords(d.bucket)) + '</div>' +
             '</div>' +
             '<div class="ex-mob-rep-kpis">' +
               '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val">' + (evalRes.isComplete ? (evalRes.totalScored + '/' + evalRes.totalMax) : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Total Marks</div></div>' +
               '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#0284c7;">' + (evalRes.isComplete ? (evalRes.percent + '%') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Percentage</div></div>' +
-              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:' + (evalRes.status === 'PASSED' ? '#15803d' : (evalRes.status === 'NOT PASSED' ? '#b91c1c' : '#d97706')) + ';">' + esc(evalRes.status) + '</div><div class="ex-mob-rep-kpi-lbl">Overall Result</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:' + (evalRes.status === 'PASSED' || evalRes.status === 'COMPLETE' ? '#15803d' : (evalRes.status === 'NOT PASSED' ? '#b91c1c' : '#d97706')) + ';">' + esc(evalRes.status) + '</div><div class="ex-mob-rep-kpi-lbl">Overall Result</div></div>' +
               '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#64748b;">' + (evalRes.isComplete ? (s.rank || '—') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Class Rank</div></div>' +
             '</div>' +
             '<div class="ex-mob-rep-subjs-box">' +
@@ -1533,7 +1535,7 @@
           var bkt = $("exSchLockModalBucketSel").value;
           var rows = (st.lockMatrix && st.lockMatrix.rows) || [];
           var classes = rows.map(function (r) { return r.class; });
-          if (!classes.length) classes = ["6", "7", "8", "9", "10"];
+          if (!classes.length) { toast("No classes are available to update.", "err"); return; }
           setBatchLock(classes, bkt, false, $("exSchLockModalUnlockAllBtn"));
         });
       }
@@ -1542,7 +1544,7 @@
           var bkt = $("exSchLockModalBucketSel").value;
           var rows = (st.lockMatrix && st.lockMatrix.rows) || [];
           var classes = rows.map(function (r) { return r.class; });
-          if (!classes.length) classes = ["6", "7", "8", "9", "10"];
+          if (!classes.length) { toast("No classes are available to update.", "err"); return; }
           setBatchLock(classes, bkt, true, $("exSchLockModalLockAllBtn"));
         });
       }
@@ -1634,8 +1636,11 @@
       var matrixRows = st.lockMatrix.rows;
       var targetClasses = [];
       if (className) {
+        var key = classKey(className);
         var gn = gradeNumFromClass(className);
-        var matched = matrixRows.find(function (r) { return gradeNumFromClass(r.class) === gn; });
+        var matched = matrixRows.find(function (r) {
+          return classKey(r.class) === key || (gn != null && gradeNumFromClass(r.class) === gn);
+        });
         if (matched) targetClasses.push(matched.class);
         else targetClasses.push(className);
       } else {
@@ -1656,15 +1661,14 @@
       if (bucket) {
         var lockedCount = 0;
         targetClasses.forEach(function (c) {
-          var gn = gradeNumFromClass(c);
-          var row = matrixRows.find(function (r) { return gradeNumFromClass(r.class) === gn; });
+          var row = matrixRows.find(function (r) { return classKey(r.class) === classKey(c) || (gradeNumFromClass(r.class) != null && gradeNumFromClass(r.class) === gradeNumFromClass(c)); });
           if (row && row.locks && row.locks[bucket]) lockedCount++;
         });
 
         var allLocked = lockedCount === targetClasses.length;
         var allOpen = lockedCount === 0;
         var bucketLabel = BUCKET_LABELS[bucket] || bucket;
-        var classLabel = className ? ("Class " + className) : "Classes 6–10";
+        var classLabel = className ? displayClassName(className) : "All classes";
 
         var bg = allLocked ? "#fff8f8" : (allOpen ? "#f0fdf4" : "#fffdf5");
         var border = allLocked ? "#fecaca" : (allOpen ? "#bbf7d0" : "#fef08a");
@@ -1784,14 +1788,14 @@
       var buckets = st.lockMatrix.buckets || BUCKET_SEQ;
       var rows = st.lockMatrix.rows || [];
       if (!rows.length) {
-        body.innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No high-school classes found.</div>';
+        body.innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No classes found in the examination schedule yet.</div>';
         return;
       }
 
       var activeBucket = $("exSchLockModalBucketSel") ? $("exSchLockModalBucketSel").value : "";
-      var html = '<div class="ex-tablewrap" style="margin:0;"><table class="ex-table" style="font-size:12.5px;"><thead><tr><th class="name" style="width:110px;">Class</th>';
+      var html = '<style>#exSchLockModalBody .ex-tablewrap{width:100%;max-height:none!important;overflow-x:hidden!important;overflow-y:visible!important;margin:0!important}#exSchLockModalBody .ex-table{width:100%;min-width:0;table-layout:fixed;font-size:12px}#exSchLockModalBody .ex-table th,#exSchLockModalBody .ex-table td{white-space:normal;padding:8px 5px;overflow-wrap:anywhere}#exSchLockModalBody .ex-table th.name,#exSchLockModalBody .ex-table td.name{width:100px}#exSchLockModalBody .smlock-cell{white-space:nowrap;padding:4px 6px!important;font-size:11px!important}</style><div class="ex-tablewrap" style="margin:0;width:100%;max-height:none;overflow-x:hidden;overflow-y:visible;"><table class="ex-table" style="width:100%;min-width:0;table-layout:fixed;font-size:12px;"><thead><tr><th class="name" style="width:100px;">Class</th>';
       buckets.forEach(function (b) {
-        var sub = b === "FA-1" ? "CT 1-2" : (b === "FA-2" ? "CT 3-4" : (b === "SA-1" ? "Term 1" : (b === "FA-3" ? "CT 5-6" : (b === "FA-4" ? "CT 7-8" : "Final"))));
+        var sub = b === "FA-1" ? "Formative 1 / CT 1-2" : (b === "FA-2" ? "Formative 2 / CT 3-4" : (b === "SA-1" ? "Summative 1 / Term 1" : (b === "FA-3" ? "Formative 3 / CT 5-6" : (b === "FA-4" ? "Formative 4 / CT 7-8" : "Summative 2 / Final"))));
         var isColActive = b === activeBucket;
         var colStyle = isColActive ? 'background:rgba(243,112,33,0.08);border-left:2px solid var(--accent);border-right:2px solid var(--accent);' : '';
         html += '<th style="text-align:center;' + colStyle + '">' + esc(b) + '<br><span style="font-size:10px;font-weight:normal;color:var(--text-muted);">' + esc(sub) + '</span></th>';
@@ -1799,7 +1803,7 @@
       html += '</tr></thead><tbody>';
 
       rows.forEach(function (row) {
-        html += '<tr><td class="name"><b>Class ' + esc(row.class) + '</b></td>';
+        html += '<tr><td class="name"><b>' + esc(displayClassName(row.class)) + '</b></td>';
         buckets.forEach(function (b) {
           var locked = !!(row.locks && row.locks[b]);
           var isColActive = b === activeBucket;
@@ -2105,7 +2109,7 @@
     /* ---------------- LOCKS tab (NEW) ---------------- */
     function initLocks() {
       $("exPaneLocks").innerHTML =
-        '<p class="view-description" style="margin-top:0;">Lock a class + assessment to stop teachers entering or editing marks (academic and holistic together). Management can still edit while locked.</p>' +
+        '<p class="view-description" style="margin-top:0;">Lock a class + assessment to stop teachers entering or editing marks. This matrix covers Nursery to Grade 10. Management can still edit while locked.</p>' +
         '<div id="exLocksBody"><div class="ex-loading"><i class="material-icons">sync</i></div></div>';
       loadLocks();
     }
@@ -2114,12 +2118,12 @@
     }
     function renderLocks(m) {
       var buckets = m.buckets || BUCKET_SEQ, rows = m.rows || [];
-      if (!rows.length) { $("exLocksBody").innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No high-school classes found yet.</div>'; return; }
+      if (!rows.length) { $("exLocksBody").innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No classes found in the examination schedule yet.</div>'; return; }
       var html = '<div class="ex-tablewrap"><table class="ex-table"><thead><tr><th class="name">Class</th>';
       buckets.forEach(function (b) { html += "<th>" + esc(b) + "</th>"; });
       html += "</tr></thead><tbody>";
       rows.forEach(function (row) {
-        html += '<tr><td class="name">' + esc(row.class) + "</td>";
+        html += '<tr><td class="name">' + esc(displayClassName(row.class)) + "</td>";
         buckets.forEach(function (b) {
           var locked = !!row.locks[b];
           html += '<td><button class="ex-abtn ' + (locked ? "danger" : "") + ' lockcell" data-class="' + esc(row.class) + '" data-bucket="' + esc(b) + '" data-locked="' + (locked ? "1" : "0") + '"><i class="material-icons">' + (locked ? "lock" : "lock_open") + "</i> " + (locked ? "Locked" : "Open") + "</button></td>";
@@ -2524,18 +2528,33 @@
         '<div id="prPanel"></div>' +
         '<div id="progRepPrintArea"></div>';
       P.api("progressGetClasses", [], { overlay: false }).then(function (cs) { $("repClass").innerHTML = '<option value="">Select class…</option>' + (cs || []).map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + "</option>"; }).join(""); });
-      P.api("progressGetBucketList", [], { overlay: false }).then(function (bs) {
-        var labels = {};
-        (bs || []).forEach(function (b) { if (b && b.bucket) labels[b.bucket] = b.label || b.bucket; });
-        $("repBucket").innerHTML = '<option value="">Select assessment…</option>' + BUCKET_SEQ.map(function (bucket) {
-          return '<option value="' + esc(bucket) + '">' + esc(labels[bucket] || bucket) + '</option>';
-        }).join("");
+      $("repBucket").disabled = true;
+      $("repClass").addEventListener("change", function () {
+        clearReport();
+        loadReportBucketOptions(this.value);
       });
-      $("repClass").addEventListener("change", clearReport); $("repBucket").addEventListener("change", clearReport);
+      $("repBucket").addEventListener("change", clearReport);
       $("repLoad").addEventListener("click", loadTab);
       $("repPrint").addEventListener("click", function () { printContainer("repTab", "landscape"); });
       $("repCsv").addEventListener("click", exportCsv);
     }
+    function loadReportBucketOptions(className) {
+      var select = $("repBucket");
+      select.disabled = true;
+      select.innerHTML = '<option value="">' + (className ? "Loading assessments…" : "Select class first…") + '</option>';
+      if (!className) return;
+      P.api("progressGetBucketList", [className], { overlay: false }).then(function (bs) {
+        var items = (bs || []).filter(function (b) { return b && b.bucket; });
+        select.innerHTML = '<option value="">Select assessment…</option>' + items.map(function (b) {
+          return '<option value="' + esc(b.bucket) + '">' + esc(b.label || b.bucket) + '</option>';
+        }).join("");
+        select.disabled = items.length === 0;
+      }).catch(function (e) {
+        select.innerHTML = '<option value="">Unable to load assessments</option>';
+        toast("Unable to load assessments: " + (e.message || e), "err");
+      });
+    }
+
     function clearReport() {
       st.reportData = null; $("repTab").style.display = "none"; $("repHint").style.display = "block";
       $("repHint").textContent = "Choose a class + assessment, then Load Tabulation.";
@@ -2548,9 +2567,13 @@
       $("repHint").style.display = "block"; $("repHint").textContent = "Loading tabulation…";
       P.api("progressGetClassData", [cls, bk], { overlay: false }).then(function (data) {
         st.reportData = data || { students: [] };
+        if (st.reportData.isPrimary) {
+          st.reportData.attendanceReports = [];
+          return [];
+        }
         return loadAssessmentAttendance(cls, bk);
       }).then(function (reports) {
-        st.reportData.attendanceReports = reports || [];
+        if (!st.reportData.isPrimary) st.reportData.attendanceReports = reports || [];
         renderTab(); renderProgressPanel();
       }).catch(function (e) { $("repHint").textContent = "Error: " + (e.message || e); });
     }
@@ -2635,9 +2658,58 @@
       });
     }
 
+    function renderPrimaryTabulation(d) {
+      var subjects = d.subjects || [];
+      var maxes = d.subjectMaxes || {};
+      var evals = (d.students || []).map(function (student, index) {
+        return { index: index, result: Calc.calculateStudent(student, d.bucket, d.class) };
+      });
+      var ranked = evals.filter(function (x) { return x.result.isComplete; })
+        .sort(function (a, b) { return b.result.totalScored - a.result.totalScored; });
+      var rankMap = {}, lastScore = null, rank = 0;
+      ranked.forEach(function (x, pos) {
+        if (lastScore === null || Math.abs(x.result.totalScored - lastScore) > 0.000001) rank = pos + 1;
+        rankMap[x.index] = rank;
+        lastScore = x.result.totalScored;
+      });
+
+      $("repDocTitle").textContent = (d.bucketLabel || bucketTitleWords(d.bucket)) + " MARKS SHEET (" + academicYearStr() + ")";
+      $("repDocLegend").innerHTML = '<b>Assessment type:</b> Direct subject-wise marks. Each subject is evaluated independently. <b>Complete:</b> All scheduled subject marks have been entered. <b>Incomplete:</b> One or more subject marks are pending.';
+      var head = '<thead><tr><th>Sl No.</th><th>Roll</th><th>Student Name</th>';
+      subjects.forEach(function (subject) {
+        head += '<th>' + esc(subject) + '<span class="mx">(' + esc(maxes[subject]) + ')</span></th>';
+      });
+      head += '<th>Total<span class="mx">(' + esc(d.students[0] ? Calc.calculateStudent(d.students[0], d.bucket, d.class).totalMax : 0) + ')</span></th><th>%</th><th>Status</th><th>Rank</th></tr></thead>';
+      var body = '<tbody>';
+      d.students.forEach(function (student, index) {
+        var result = evals[index].result;
+        var rowClass = result.isComplete ? '' : 'norow';
+        body += '<tr class="' + rowClass + '"><td>' + (index + 1) + '</td><td>' + esc(student.roll == null ? '' : student.roll) + '</td><td class="student-name">' + esc(student.name) + '</td>';
+        subjects.forEach(function (subject) {
+          var rep = result.subjects[subject];
+          var content = '&ndash;', cls = 'miss';
+          if (rep && rep.isAbsent) { content = 'Ab'; cls = 'pr-absent'; }
+          else if (rep && rep.isComplete) { content = esc(roundHalfValue(rep.scored)); cls = ''; }
+          body += '<td class="' + cls + '">' + content + '</td>';
+        });
+        body += '<td class="grand-total">' + (result.isComplete ? esc(roundHalfValue(result.totalScored)) : '&ndash;') + '</td>';
+        body += '<td class="grand-total">' + (result.isComplete ? esc(result.percent) + '%' : '&ndash;') + '</td>';
+        body += '<td class="grand-total">' + esc(result.status) + '</td>';
+        body += '<td class="grand-total">' + (rankMap[index] || '&ndash;') + '</td></tr>';
+      });
+      body += '</tbody>';
+      $("repTable").innerHTML = head + body;
+      $("repPrintGen").textContent = "Direct marks · No averaging or internal-mark carry-forward";
+      $("repHint").style.display = "none";
+      $("repTab").style.display = "block";
+      $("repPrint").disabled = false;
+      $("repCsv").disabled = false;
+    }
+
     function renderTab() {
       var d = st.reportData;
       if (!d || !d.students || !d.students.length) { $("repHint").textContent = "No students found for this class."; $("repTab").style.display = "none"; return; }
+      if (d.isPrimary) { renderPrimaryTabulation(d); return; }
 
       var subjects = filterSubjects(d);
       var isSABucket = !!d.isSA;
@@ -2788,6 +2860,37 @@
     }
     function exportCsv() {
       var d = st.reportData; if (!d || !d.students || !d.students.length) return;
+      if (d.isPrimary) {
+        var primarySubjects = d.subjects || [];
+        var csvHeader = ["Roll", "Student"].concat(primarySubjects.map(function (subject) {
+          return subject + " (" + Number((d.subjectMaxes || {})[subject] || 0) + ")";
+        })).concat(["Total", "Maximum", "Percentage", "Status", "Rank"]);
+        var calcRows = d.students.map(function (student) { return Calc.calculateStudent(student, d.bucket, d.class); });
+        var rankOrder = calcRows.map(function (result, index) { return { index: index, score: result.isComplete ? result.totalScored : null }; })
+          .filter(function (x) { return x.score != null; }).sort(function (a, b) { return b.score - a.score; });
+        var rankByStudent = {}, previousScore = null, currentRank = 0;
+        rankOrder.forEach(function (x, pos) { if (previousScore === null || Math.abs(x.score - previousScore) > 0.000001) currentRank = pos + 1; rankByStudent[x.index] = currentRank; previousScore = x.score; });
+        var csvLines = [csvHeader.map(csvEsc).join(",")];
+        d.students.forEach(function (student, index) {
+          var result = calcRows[index];
+          var row = [student.roll, student.name];
+          primarySubjects.forEach(function (subject) {
+            var rep = result.subjects[subject];
+            row.push(rep && rep.isAbsent ? "Ab" : (rep && rep.isComplete ? roundHalfValue(rep.scored) : ""));
+          });
+          row.push(result.isComplete ? roundHalfValue(result.totalScored) : "");
+          row.push(result.totalMax);
+          row.push(result.isComplete ? result.percent : "");
+          row.push(result.status);
+          row.push(rankByStudent[index] || "");
+          csvLines.push(row.map(csvEsc).join(","));
+        });
+        var primaryBlob = new Blob([csvLines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+        var primaryLink = document.createElement("a"); primaryLink.href = URL.createObjectURL(primaryBlob);
+        primaryLink.download = "Tabulation_" + d.class + "_" + String(d.bucketLabel || d.bucket).replace(/[^a-z0-9_-]+/gi, "_") + ".csv";
+        document.body.appendChild(primaryLink); primaryLink.click(); document.body.removeChild(primaryLink);
+        return;
+      }
       var subjects = filterSubjects(d);
       var isSABucket = d.isSA, subCols = isSABucket ? ["Exam", "Int", "Tot"] : ["CT1", "CT2", "HA", "UT", "Tot"];
       var colLabels = d.colLabels || {};
@@ -2866,7 +2969,7 @@
       host.innerHTML =
         '<div class="pr-panel">' +
           '<div class="pr-panel-head"><div><h4><i class="material-icons" style="font-size:16px;vertical-align:middle;">description</i> Print Progress Reports</h4>' +
-          '<div class="pr-panel-sub">One printable report per selected student — ' + esc(bucketTitleWords(d.bucket)) + '.</div></div>' +
+          '<div class="pr-panel-sub">One printable report per selected student — ' + esc(d.bucketLabel || bucketTitleWords(d.bucket)) + '.</div></div>' +
           '<label class="pr-selectall"><input type="checkbox" id="prSelectAll" checked> Select all</label></div>' +
           '<div class="pr-studentlist" id="prStudentList"></div>' +
           '<div class="pr-panel-foot"><span class="pr-count" id="prCount"></span>' +
@@ -2925,8 +3028,44 @@
          SA: [Subject][Exam][Int][Total]        = 4 left cols + [Parameter][Value] = 2 holistic cols -> 6 total
        "Total" gets its own rowspan-2 header (like "Subject"), separate
        from the "Academic Parameters" super-header, matching the sample. */
+    function buildPrimaryProgressReports(idxs) {
+      var d = st.reportData;
+      var title = (d.bucketLabel || bucketTitleWords(d.bucket)) + " PROGRESS REPORT (" + academicYearStr() + ")";
+      var pages = idxs.map(function (idx) {
+        var student = d.students[idx];
+        if (!student) return "";
+        var result = Calc.calculateStudent(student, d.bucket, d.class);
+        var subjectRows = (d.subjects || []).map(function (subject) {
+          var rep = result.subjects[subject];
+          var score = rep && rep.isAbsent ? "Ab (Absent)" : (rep && rep.isComplete ? esc(roundHalfValue(rep.scored)) : "Marks pending");
+          return '<tr><td>' + esc(subject) + '</td><td>' + score + '</td><td>' + esc((d.subjectMaxes || {})[subject]) + '</td></tr>';
+        }).join("");
+        var missing = result.missingSubjects.length
+          ? '<p style="margin:8px 0;color:#92400e;"><b>Marks pending:</b> ' + esc(result.missingSubjects.join(", ")) + '</p>'
+          : '<p style="margin:8px 0;color:#166534;"><b>All subject marks have been entered.</b></p>';
+        var total = result.isComplete ? esc(roundHalfValue(result.totalScored)) : "—";
+        var percent = result.isComplete ? esc(result.percent) + "%" : "—";
+        return '<div class="pr-page pr-primary" style="box-sizing:border-box;padding:8mm 5mm;">' +
+          '<div class="pr-scale-inner" style="font-family:Arial,sans-serif;color:#172033;">' +
+          '<div class="pr-header"><img src="logo-full.jpg" alt="School" onerror="this.src=&quot;header-logo.png&quot;"></div>' +
+          '<div class="pr-title" style="text-align:center;font-weight:800;margin:12px 0;">' + esc(title) + '</div>' +
+          '<table class="pr-student-table"><tr><th>Name of the Student</th><td>' + esc(student.name) + '</td><th>Roll No.</th><td>' + esc(student.roll == null ? "" : student.roll) + '</td></tr>' +
+          '<tr><th>Class</th><td>' + esc(d.class) + '</td><th>Assessment</th><td>' + esc(d.bucketLabel || bucketTitleWords(d.bucket)) + '</td></tr></table>' +
+          '<div class="pr-section-title">Academic Assessment · Direct Marks</div>' +
+          '<table class="pr-table pr-academic-table"><thead><tr><th>Subject</th><th>Marks Obtained</th><th>Maximum Marks</th></tr></thead><tbody>' + subjectRows +
+          '<tr class="pr-total-row"><th>Total</th><th>' + total + '</th><th>' + esc(result.totalMax) + '</th></tr></tbody></table>' +
+          missing +
+          '<div class="pr-result-strip"><div class="pr-result-card"><span>Percentage</span><b>' + percent + '</b></div><div class="pr-result-card"><span>Completion Status</span><b>' + esc(result.status) + '</b></div></div>' +
+          '<div style="margin-top:34px;display:flex;justify-content:space-between;"><span>Class Teacher&#39;s Signature</span><span>Parent&#39;s Signature</span><span>Principal&#39;s Signature</span></div>' +
+          '</div></div>';
+      }).join("");
+      $("progRepPrintArea").innerHTML = pages;
+      printContainer("progRepPrintArea", "portrait");
+    }
+
     function buildProgressReports(idxs) {
       var d = st.reportData;
+      if (d && d.isPrimary) { buildPrimaryProgressReports(idxs); return; }
       var isSABucket = !!d.isSA;
       var maxPerSubject = isSABucket ? 100 : 50;
       var title = bucketTitleWords(d.bucket) + " PROGRESS REPORT (" + academicYearStr() + ")";
@@ -3279,14 +3418,14 @@
     }
     function lockManagerModal() {
       return '<div class="modal-overlay" id="exSchLockModal" style="z-index:1150;">' +
-        '<div class="modal-content" style="max-width:760px;width:100%;max-height:90vh;display:flex;flex-direction:column;">' +
+        '<div class="modal-content" style="max-width:1180px;width:calc(100vw - 40px);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;overflow:hidden;">' +
           '<div class="modal-header-container">' +
             '<div>' +
               '<h3 style="margin:0;display:flex;align-items:center;gap:8px;">' +
                 '<i class="material-icons" style="color:var(--maroon);">admin_panel_settings</i>' +
                 'Examinations &amp; Syllabus Lock Manager' +
               '</h3>' +
-              '<p class="ex-note" style="margin:4px 0 0 0;">Control syllabus mapping and marks entry windows for teachers across High School classes. Unlocked = Teachers can add syllabus and marks. Locked = View-only.</p>' +
+              '<p class="ex-note" style="margin:4px 0 0 0;">Control syllabus mapping and marks entry windows for all classes from Nursery to Grade 10. Unlocked = Teachers can add syllabus and marks. Locked = View-only.</p>' +
             '</div>' +
             '<button class="modal-close-icon" data-close="exSchLockModal">&times;</button>' +
           '</div>' +
@@ -3306,7 +3445,7 @@
               '</button>' +
             '</div>' +
           '</div>' +
-          '<div id="exSchLockModalBody" style="overflow-y:auto;flex-grow:1;min-height:180px;">' +
+          '<div id="exSchLockModalBody" style="overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:180px;min-width:0;">' +
             '<div class="ex-loading"><i class="material-icons">sync</i>Loading lock matrix…</div>' +
           '</div>' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">' +

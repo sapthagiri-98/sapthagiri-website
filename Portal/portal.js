@@ -89,7 +89,7 @@
     if (!base && usersFns.indexOf(fn) >= 0 && CONFIG.SUPABASE_USERS_BASE) base = CONFIG.SUPABASE_USERS_BASE;
     if (!base && saFns.indexOf(fn)    >= 0 && CONFIG.SUPABASE_SA_BASE)    base = CONFIG.SUPABASE_SA_BASE;
     if (!base && sylFns.indexOf(fn)   >= 0 && CONFIG.SUPABASE_SYL_BASE)   base = CONFIG.SUPABASE_SYL_BASE;
-    if (!base && examFns.indexOf(fn)  >= 0 && CONFIG.SUPABASE_EXAM_BASE)  base = CONFIG.SUPABASE_EXAM_BASE;
+    if (!base && (examFns.indexOf(fn) >= 0 || fn === "marksGetAcademicClasses") && CONFIG.SUPABASE_EXAM_BASE) { base = CONFIG.SUPABASE_EXAM_BASE;}
     if (!base && feeFns.indexOf(fn) >= 0 && CONFIG.SUPABASE_FEE_BASE) base = CONFIG.SUPABASE_FEE_BASE;
     if (!base && dashFns.indexOf(fn) >= 0 && CONFIG.SUPABASE_DASH_BASE) base = CONFIG.SUPABASE_DASH_BASE;
 

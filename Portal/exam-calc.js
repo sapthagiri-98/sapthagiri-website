@@ -65,6 +65,16 @@
     return /^SA-[12]$/i.test(String(bucket || "").trim());
   }
 
+  // Nursery to Grade 5 use independent, direct subject marks. Keep this
+  // detector deliberately narrow so Grades 6-10 always use the existing
+  // CCE calculation path below.
+  function isPrimaryClass(clsStr) {
+    var raw = String(clsStr == null ? "" : clsStr).trim().toUpperCase();
+    if (["NURSERY", "LKG", "UKG"].indexOf(raw) >= 0) return true;
+    var n = gradeNum(raw);
+    return n !== null && n >= 1 && n <= 5;
+  }
+
   function roundHalf(v) {
     if (v === "" || v == null || isNaN(Number(v))) return null;
     return Math.round((Number(v) + Number.EPSILON) * 2) / 2;
@@ -256,6 +266,33 @@
    * and Combined Science (out of 50/100).
    */
   function calculateSubjectReport(student, subjectName, bucket, className, options) {
+    if (isPrimaryClass(className)) {
+      var primarySub = getRawSubject(student, subjectName);
+      var primaryCells = primarySub && primarySub.cells ? primarySub.cells : (primarySub || {});
+      var directCell = primaryCells.Direct || primaryCells.direct || primaryCells.Marks || primaryCells.marks || primaryCells.Tot || primaryCells.tot;
+      var absent = isAbsentCell(directCell);
+      var has = !!(directCell && (directCell.has === true || absent));
+      var directRaw = directCell && directCell.value != null && directCell.value !== ""
+        ? Number(directCell.value)
+        : (directCell && directCell.scored != null && directCell.scored !== "" ? Number(directCell.scored) : null);
+      var maximum = Number((primarySub && primarySub.max) || (directCell && directCell.max));
+      if (!Number.isFinite(maximum) || maximum <= 0) maximum = isSABucket(bucket) ? 100 : 50;
+      var directScored = absent ? 0 : (has && Number.isFinite(directRaw) ? directRaw : null);
+      var complete = has && (absent || directScored != null);
+      var component = { scored: directScored, max: maximum, has: complete, absent: absent };
+      return {
+        subject: subjectName,
+        displayName: subjectName,
+        isSplit: false,
+        isComplete: complete,
+        isAbsent: absent,
+        scored: complete ? directScored : null,
+        max: maximum,
+        missingNotes: complete ? [] : ["Marks not entered"],
+        components: { Direct: component, Tot: component }
+      };
+    }
+
     var isSA = isSABucket(bucket);
     var isSplit = isSplitScienceGrade(className);
 
@@ -418,6 +455,49 @@
    * Total Max = 300 (FA) or 600 (SA).
    */
   function calculateStudent(student, bucket, className, options) {
+    if (isPrimaryClass(className)) {
+      var primarySubjects = (student && Array.isArray(student.subjectOrder) && student.subjectOrder.length)
+        ? student.subjectOrder.slice()
+        : Object.keys((student && student.subjects) || {});
+      var primaryEval = {};
+      var primaryMissing = [];
+      var primaryTotal = 0;
+      var primaryMax = 0;
+      primarySubjects.forEach(function (subj) {
+        var rep = calculateSubjectReport(student, subj, bucket, className, options);
+        primaryEval[subj] = rep;
+        primaryMax += Number(rep.max) || 0;
+        if (!rep.isComplete) primaryMissing.push(subj);
+        else primaryTotal += Number(rep.scored) || 0;
+      });
+      var primaryComplete = primarySubjects.length > 0 && primaryMissing.length === 0;
+      var roundedPrimaryTotal = primaryComplete ? roundHalf(primaryTotal) : null;
+      var primaryPercent = primaryComplete && primaryMax > 0
+        ? Math.round((roundedPrimaryTotal / primaryMax) * 10000) / 100
+        : null;
+      return {
+        studentId: student.id || student.studentId || student.admNo || "—",
+        name: student.name || "—",
+        roll: student.roll || "",
+        className: className,
+        bucket: bucket,
+        isSA: isSABucket(bucket),
+        isSplitScience: false,
+        isPrimary: true,
+        isComplete: primaryComplete,
+        missingSubjects: primaryMissing,
+        failedSubjects: [],
+        totalScored: roundedPrimaryTotal,
+        totalMax: primaryMax,
+        percent: primaryPercent,
+        status: primaryComplete ? "COMPLETE" : "INCOMPLETE",
+        resultText: primaryComplete
+          ? "All subject marks have been entered."
+          : "INCOMPLETE (Marks pending in: " + primaryMissing.join(", ") + ")",
+        subjects: primaryEval
+      };
+    }
+
     var isSA = isSABucket(bucket);
     var isSplit = isSplitScienceGrade(className);
     var grade = gradeNum(className);
@@ -493,6 +573,7 @@
     SUBJECTS_8_10_DISPLAY: SUBJECTS_8_10_DISPLAY,
     gradeNum: gradeNum,
     isSplitScienceGrade: isSplitScienceGrade,
+    isPrimaryClass: isPrimaryClass,
     isSABucket: isSABucket,
     roundHalf: roundHalf,
     roundHalfStr: roundHalfStr,
