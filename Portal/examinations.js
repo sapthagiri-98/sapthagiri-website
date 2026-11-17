@@ -62,14 +62,6 @@
     var m = String(clsStr || "").match(/(\d+)/);
     return m ? parseInt(m[1], 10) : null;
   }
-  function classKey(clsStr) {
-    return String(clsStr || "").toUpperCase().replace(/GRADE|CLASS/g, "").replace(/[\s.-]/g, "").trim();
-  }
-  function displayClassName(clsStr) {
-    var key = classKey(clsStr);
-    if (key === "NURSERY" || key === "LKG" || key === "UKG") return key;
-    return "Class " + String(clsStr || "").replace(/^\s*(?:Grade|Class)\s*/i, "").trim();
-  }
   function normSubject(s) {
     var t = String(s || "").trim();
     if (/^math/i.test(t)) return "Maths";
@@ -1110,7 +1102,7 @@
         if (evalRes.isComplete) {
           var pct = evalRes.percent;
           var pcol = pct >= 80 ? "#15803d" : (pct >= 50 ? "#0284c7" : "#b45309");
-          scorePill = '<span class="pill" style="background:#f0fdf4;color:' + pcol + ';font-weight:800;font-size:11px;">' + evalRes.totalScored + '/' + evalRes.totalMax + ' (' + pct + '%) · ' + esc(evalRes.status) + '</span>';
+          scorePill = '<span class="pill" style="background:#f0fdf4;color:' + pcol + ';font-weight:800;font-size:11px;">' + evalRes.totalScored + '/' + evalRes.totalMax + ' (' + Math.round(Number(pct)) + '%) · ' + esc(evalRes.status) + '</span>';
         } else {
           scorePill = '<span class="pill" style="background:#fffbeb;color:#b45309;font-weight:700;font-size:11px;"><i class="material-icons" style="font-size:12px;vertical-align:middle;">warning</i> Marks Pending</span>';
         }
@@ -1220,7 +1212,7 @@
             '</div>' +
             '<div class="ex-mob-rep-kpis">' +
               '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val">' + (evalRes.isComplete ? (evalRes.totalScored + '/' + evalRes.totalMax) : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Total Marks</div></div>' +
-              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#0284c7;">' + (evalRes.isComplete ? (evalRes.percent + '%') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Percentage</div></div>' +
+              '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#0284c7;">' + (evalRes.isComplete ? (Math.round(Number(evalRes.percent)) + '%') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Percentage</div></div>' +
               '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:' + (evalRes.status === 'PASSED' || evalRes.status === 'COMPLETE' ? '#15803d' : (evalRes.status === 'NOT PASSED' ? '#b91c1c' : '#d97706')) + ';">' + esc(evalRes.status) + '</div><div class="ex-mob-rep-kpi-lbl">Overall Result</div></div>' +
               '<div class="ex-mob-rep-kpi"><div class="ex-mob-rep-kpi-val" style="color:#64748b;">' + (evalRes.isComplete ? (s.rank || '—') : '—') + '</div><div class="ex-mob-rep-kpi-lbl">Class Rank</div></div>' +
             '</div>' +
@@ -1535,7 +1527,7 @@
           var bkt = $("exSchLockModalBucketSel").value;
           var rows = (st.lockMatrix && st.lockMatrix.rows) || [];
           var classes = rows.map(function (r) { return r.class; });
-          if (!classes.length) { toast("No classes are available to update.", "err"); return; }
+          if (!classes.length) classes = ["6", "7", "8", "9", "10"];
           setBatchLock(classes, bkt, false, $("exSchLockModalUnlockAllBtn"));
         });
       }
@@ -1544,7 +1536,7 @@
           var bkt = $("exSchLockModalBucketSel").value;
           var rows = (st.lockMatrix && st.lockMatrix.rows) || [];
           var classes = rows.map(function (r) { return r.class; });
-          if (!classes.length) { toast("No classes are available to update.", "err"); return; }
+          if (!classes.length) classes = ["6", "7", "8", "9", "10"];
           setBatchLock(classes, bkt, true, $("exSchLockModalLockAllBtn"));
         });
       }
@@ -1636,11 +1628,8 @@
       var matrixRows = st.lockMatrix.rows;
       var targetClasses = [];
       if (className) {
-        var key = classKey(className);
         var gn = gradeNumFromClass(className);
-        var matched = matrixRows.find(function (r) {
-          return classKey(r.class) === key || (gn != null && gradeNumFromClass(r.class) === gn);
-        });
+        var matched = matrixRows.find(function (r) { return gradeNumFromClass(r.class) === gn; });
         if (matched) targetClasses.push(matched.class);
         else targetClasses.push(className);
       } else {
@@ -1661,14 +1650,15 @@
       if (bucket) {
         var lockedCount = 0;
         targetClasses.forEach(function (c) {
-          var row = matrixRows.find(function (r) { return classKey(r.class) === classKey(c) || (gradeNumFromClass(r.class) != null && gradeNumFromClass(r.class) === gradeNumFromClass(c)); });
+          var gn = gradeNumFromClass(c);
+          var row = matrixRows.find(function (r) { return gradeNumFromClass(r.class) === gn; });
           if (row && row.locks && row.locks[bucket]) lockedCount++;
         });
 
         var allLocked = lockedCount === targetClasses.length;
         var allOpen = lockedCount === 0;
         var bucketLabel = BUCKET_LABELS[bucket] || bucket;
-        var classLabel = className ? displayClassName(className) : "All classes";
+        var classLabel = className ? ("Class " + className) : "Classes 6–10";
 
         var bg = allLocked ? "#fff8f8" : (allOpen ? "#f0fdf4" : "#fffdf5");
         var border = allLocked ? "#fecaca" : (allOpen ? "#bbf7d0" : "#fef08a");
@@ -1788,14 +1778,14 @@
       var buckets = st.lockMatrix.buckets || BUCKET_SEQ;
       var rows = st.lockMatrix.rows || [];
       if (!rows.length) {
-        body.innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No classes found in the examination schedule yet.</div>';
+        body.innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No high-school classes found.</div>';
         return;
       }
 
       var activeBucket = $("exSchLockModalBucketSel") ? $("exSchLockModalBucketSel").value : "";
-      var html = '<style>#exSchLockModalBody .ex-tablewrap{width:100%;max-height:none!important;overflow-x:hidden!important;overflow-y:visible!important;margin:0!important}#exSchLockModalBody .ex-table{width:100%;min-width:0;table-layout:fixed;font-size:12px}#exSchLockModalBody .ex-table th,#exSchLockModalBody .ex-table td{white-space:normal;padding:8px 5px;overflow-wrap:anywhere}#exSchLockModalBody .ex-table th.name,#exSchLockModalBody .ex-table td.name{width:100px}#exSchLockModalBody .smlock-cell{white-space:nowrap;padding:4px 6px!important;font-size:11px!important}</style><div class="ex-tablewrap" style="margin:0;width:100%;max-height:none;overflow-x:hidden;overflow-y:visible;"><table class="ex-table" style="width:100%;min-width:0;table-layout:fixed;font-size:12px;"><thead><tr><th class="name" style="width:100px;">Class</th>';
+      var html = '<div class="ex-tablewrap" style="margin:0;"><table class="ex-table" style="font-size:12.5px;"><thead><tr><th class="name" style="width:110px;">Class</th>';
       buckets.forEach(function (b) {
-        var sub = b === "FA-1" ? "Formative 1 / CT 1-2" : (b === "FA-2" ? "Formative 2 / CT 3-4" : (b === "SA-1" ? "Summative 1 / Term 1" : (b === "FA-3" ? "Formative 3 / CT 5-6" : (b === "FA-4" ? "Formative 4 / CT 7-8" : "Summative 2 / Final"))));
+        var sub = b === "FA-1" ? "CT 1-2" : (b === "FA-2" ? "CT 3-4" : (b === "SA-1" ? "Term 1" : (b === "FA-3" ? "CT 5-6" : (b === "FA-4" ? "CT 7-8" : "Final"))));
         var isColActive = b === activeBucket;
         var colStyle = isColActive ? 'background:rgba(243,112,33,0.08);border-left:2px solid var(--accent);border-right:2px solid var(--accent);' : '';
         html += '<th style="text-align:center;' + colStyle + '">' + esc(b) + '<br><span style="font-size:10px;font-weight:normal;color:var(--text-muted);">' + esc(sub) + '</span></th>';
@@ -1803,7 +1793,7 @@
       html += '</tr></thead><tbody>';
 
       rows.forEach(function (row) {
-        html += '<tr><td class="name"><b>' + esc(displayClassName(row.class)) + '</b></td>';
+        html += '<tr><td class="name"><b>Class ' + esc(row.class) + '</b></td>';
         buckets.forEach(function (b) {
           var locked = !!(row.locks && row.locks[b]);
           var isColActive = b === activeBucket;
@@ -2109,7 +2099,7 @@
     /* ---------------- LOCKS tab (NEW) ---------------- */
     function initLocks() {
       $("exPaneLocks").innerHTML =
-        '<p class="view-description" style="margin-top:0;">Lock a class + assessment to stop teachers entering or editing marks. This matrix covers Nursery to Grade 10. Management can still edit while locked.</p>' +
+        '<p class="view-description" style="margin-top:0;">Lock a class + assessment to stop teachers entering or editing marks (academic and holistic together). Management can still edit while locked.</p>' +
         '<div id="exLocksBody"><div class="ex-loading"><i class="material-icons">sync</i></div></div>';
       loadLocks();
     }
@@ -2118,12 +2108,12 @@
     }
     function renderLocks(m) {
       var buckets = m.buckets || BUCKET_SEQ, rows = m.rows || [];
-      if (!rows.length) { $("exLocksBody").innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No classes found in the examination schedule yet.</div>'; return; }
+      if (!rows.length) { $("exLocksBody").innerHTML = '<div class="ex-empty"><i class="material-icons">groups</i>No high-school classes found yet.</div>'; return; }
       var html = '<div class="ex-tablewrap"><table class="ex-table"><thead><tr><th class="name">Class</th>';
       buckets.forEach(function (b) { html += "<th>" + esc(b) + "</th>"; });
       html += "</tr></thead><tbody>";
       rows.forEach(function (row) {
-        html += '<tr><td class="name">' + esc(displayClassName(row.class)) + "</td>";
+        html += '<tr><td class="name">' + esc(row.class) + "</td>";
         buckets.forEach(function (b) {
           var locked = !!row.locks[b];
           html += '<td><button class="ex-abtn ' + (locked ? "danger" : "") + ' lockcell" data-class="' + esc(row.class) + '" data-bucket="' + esc(b) + '" data-locked="' + (locked ? "1" : "0") + '"><i class="material-icons">' + (locked ? "lock" : "lock_open") + "</i> " + (locked ? "Locked" : "Open") + "</button></td>";
@@ -2567,13 +2557,9 @@
       $("repHint").style.display = "block"; $("repHint").textContent = "Loading tabulation…";
       P.api("progressGetClassData", [cls, bk], { overlay: false }).then(function (data) {
         st.reportData = data || { students: [] };
-        if (st.reportData.isPrimary) {
-          st.reportData.attendanceReports = [];
-          return [];
-        }
         return loadAssessmentAttendance(cls, bk);
       }).then(function (reports) {
-        if (!st.reportData.isPrimary) st.reportData.attendanceReports = reports || [];
+        st.reportData.attendanceReports = reports || [];
         renderTab(); renderProgressPanel();
       }).catch(function (e) { $("repHint").textContent = "Error: " + (e.message || e); });
     }
@@ -2658,6 +2644,21 @@
       });
     }
 
+    function primaryGradeFromPercent(percent) {
+      var p = Number(percent);
+      if (!isFinite(p)) return "-";
+      if (p >= 91) return "A1";
+      if (p >= 81) return "A2";
+      if (p >= 71) return "B1";
+      if (p >= 61) return "B2";
+      if (p >= 51) return "C1";
+      if (p >= 41) return "C2";
+      if (p >= 35) return "D";
+      return "E";
+    }
+    function primaryPercentText(percent) {
+      return percent == null || !isFinite(Number(percent)) ? "–" : String(Math.round(Number(percent))) + "%";
+    }
     function renderPrimaryTabulation(d) {
       var subjects = d.subjects || [];
       var maxes = d.subjectMaxes || {};
@@ -2669,47 +2670,57 @@
       var rankMap = {}, lastScore = null, rank = 0;
       ranked.forEach(function (x, pos) {
         if (lastScore === null || Math.abs(x.result.totalScored - lastScore) > 0.000001) rank = pos + 1;
-        rankMap[x.index] = rank;
-        lastScore = x.result.totalScored;
+        rankMap[x.index] = rank; lastScore = x.result.totalScored;
       });
-
-      $("repDocTitle").textContent = (d.bucketLabel || bucketTitleWords(d.bucket)) + " MARKS SHEET (" + academicYearStr() + ")";
-      $("repDocLegend").innerHTML = '<b>Assessment type:</b> Direct subject-wise marks. Each subject is evaluated independently. <b>Complete:</b> All scheduled subject marks have been entered. <b>Incomplete:</b> One or more subject marks are pending.';
-      var head = '<thead><tr><th>Sl No.</th><th>Roll</th><th>Student Name</th>';
-      subjects.forEach(function (subject) {
-        head += '<th>' + esc(subject) + '<span class="mx">(' + esc(maxes[subject]) + ')</span></th>';
-      });
-      head += '<th>Total<span class="mx">(' + esc(d.students[0] ? Calc.calculateStudent(d.students[0], d.bucket, d.class).totalMax : 0) + ')</span></th><th>%</th><th>Status</th><th>Rank</th></tr></thead>';
+      $("repDocTitle").textContent = String(d.bucketLabel || bucketTitleWords(d.bucket)).toUpperCase() + " MARKS SHEET (" + academicYearStr() + ")";
+      // Match the high-school print sheet: no explanatory legend or direct-marks footer.
+      $("repDocLegend").textContent = "";
+      var totalMax = d.students[0] ? Calc.calculateStudent(d.students[0], d.bucket, d.class).totalMax : subjects.reduce(function (a, sub) { return a + Number(maxes[sub] || 0); }, 0);
+      // Give subject columns more room so longer labels (e.g. Problem Solving)
+      // remain readable while preserving a practical student-name column.
+      var markWidth = (100 - 4 - 19 - 8 - 9 - 8 - 7 - 6) / Math.max(subjects.length, 1);
+      var colHtml = '<colgroup><col class="c-sl" style="width:4%"><col class="c-name" style="width:19%">';
+      subjects.forEach(function () { colHtml += '<col class="c-mark" style="width:' + markWidth.toFixed(2) + '%">'; });
+      colHtml += '<col class="c-total" style="width:8%"><col class="c-percent" style="width:9%"><col class="c-pf" style="width:8%"><col class="c-grade" style="width:7%"><col class="c-rank" style="width:6%"></colgroup>';
+      var head = '<thead><tr class="top"><th>Sl No.</th><th>Student Name</th>';
+      subjects.forEach(function (subject) { head += '<th>' + esc(subject) + '<span class="mx">(' + esc(maxes[subject]) + ')</span></th>'; });
+      head += '<th class="total-head">Total<span class="mx">(' + esc(totalMax) + ')</span></th><th class="total-head">Percentage</th><th class="total-head">Result</th><th class="total-head">Grade</th><th class="total-head">Rank</th></tr></thead>';
       var body = '<tbody>';
       d.students.forEach(function (student, index) {
         var result = evals[index].result;
-        var rowClass = result.isComplete ? '' : 'norow';
-        body += '<tr class="' + rowClass + '"><td>' + (index + 1) + '</td><td>' + esc(student.roll == null ? '' : student.roll) + '</td><td class="student-name">' + esc(student.name) + '</td>';
+        var complete = result.isComplete;
+        // ExamCalc reports primary records as COMPLETE/INCOMPLETE because it
+        // does not apply a high-school subject-wise pass rule to primary grades.
+        // For the primary tabulation, show the overall 35% school benchmark.
+        var status = complete
+          ? (Number(result.percent) + 0.000001 >= 35 ? "Passed" : "Failed")
+          : "–";
+        body += '<tr><td>' + (index + 1) + '</td><td class="student-name">' + esc(student.name) + '</td>';
         subjects.forEach(function (subject) {
-          var rep = result.subjects[subject];
-          var content = '&ndash;', cls = 'miss';
+          var rep = result.subjects[subject], content = '&ndash;', cls = '';
           if (rep && rep.isAbsent) { content = 'Ab'; cls = 'pr-absent'; }
-          else if (rep && rep.isComplete) { content = esc(roundHalfValue(rep.scored)); cls = ''; }
+          else if (rep && rep.isComplete) content = esc(roundHalfValue(rep.scored));
           body += '<td class="' + cls + '">' + content + '</td>';
         });
-        body += '<td class="grand-total">' + (result.isComplete ? esc(roundHalfValue(result.totalScored)) : '&ndash;') + '</td>';
-        body += '<td class="grand-total">' + (result.isComplete ? esc(result.percent) + '%' : '&ndash;') + '</td>';
-        body += '<td class="grand-total">' + esc(result.status) + '</td>';
+        body += '<td class="grand-total">' + (complete ? esc(roundHalfValue(result.totalScored)) : '&ndash;') + '</td>';
+        body += '<td class="grand-total">' + (complete ? primaryPercentText(result.percent) : '&ndash;') + '</td>';
+        body += '<td class="grand-total">' + (complete ? esc(status) : '&ndash;') + '</td>';
+        body += '<td class="grand-total">' + (complete ? esc(primaryGradeFromPercent(result.percent)) : '&ndash;') + '</td>';
         body += '<td class="grand-total">' + (rankMap[index] || '&ndash;') + '</td></tr>';
       });
       body += '</tbody>';
-      $("repTable").innerHTML = head + body;
-      $("repPrintGen").textContent = "Direct marks · No averaging or internal-mark carry-forward";
-      $("repHint").style.display = "none";
-      $("repTab").style.display = "block";
-      $("repPrint").disabled = false;
-      $("repCsv").disabled = false;
+      $("repTable").innerHTML = colHtml + head + body;
+      $("repTable").classList.add("rep-primary-table");
+      $("repPrintGen").textContent = "";
+      $("repHint").style.display = "none"; $("repTab").style.display = "block";
+      $("repPrint").disabled = false; $("repCsv").disabled = false;
     }
 
     function renderTab() {
       var d = st.reportData;
       if (!d || !d.students || !d.students.length) { $("repHint").textContent = "No students found for this class."; $("repTab").style.display = "none"; return; }
       if (d.isPrimary) { renderPrimaryTabulation(d); return; }
+      $("repTable").classList.remove("rep-primary-table");
 
       var subjects = filterSubjects(d);
       var isSABucket = !!d.isSA;
@@ -2758,7 +2769,7 @@
       h1 += '<th class="grp" colspan="4">Holistic Indicators</th>';
       h2 += '<th class="grp">1<span class="mx">(10)</span></th><th>2<span class="mx">(10)</span></th><th>3<span class="mx">(10)</span></th><th class="sumhead">T<span class="mx">(30)</span></th>';
       h1 += '<th class="grp total-head" colspan="4">TOTAL</th></tr>';
-      h2 += '<th class="grp total-head">' + esc(d.bucket) + '<span class="mx">(' + overallMax + ')</span></th><th class="total-head">%</th><th class="total-head">P/F</th><th class="total-head">Rank</th></tr>';
+      h2 += '<th class="grp total-head">' + esc(d.bucket) + '<span class="mx">(' + overallMax + ')</span></th><th class="total-head">%</th><th class="total-head">Result</th><th class="total-head">Rank</th></tr>';
 
       var rankRows = d.students.map(function (student, index) {
         var evalRes = window.ExamCalc ? window.ExamCalc.calculateStudent(student, d.bucket, d.class, calcOpts) : null;
@@ -2817,8 +2828,8 @@
 
         var isComplete = evalRes ? evalRes.isComplete : false;
         var totalScoredStr = (evalRes && evalRes.isComplete) ? roundHalfValue(evalRes.totalScored) : '&ndash;';
-        var pctStr = (evalRes && evalRes.isComplete) ? (evalRes.percent + "%") : '&ndash;';
-        var pfCode = evalRes ? (evalRes.status === "PASSED" ? "P" : (evalRes.status === "NOT PASSED" ? "F" : "I")) : passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject);
+        var pctStr = (evalRes && evalRes.isComplete) ? (Math.round(Number(evalRes.percent)) + "%") : '&ndash;';
+        var pfCode = evalRes ? (evalRes.status === "PASSED" ? "Passed" : (evalRes.status === "NOT PASSED" ? "Failed" : "–")) : (passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject) === "P" ? "Passed" : "Failed");
         var rankStr = (evalRes && evalRes.isComplete && rankByIndex[idx]) ? rankByIndex[idx] : '&ndash;';
 
         body += '<tr class="' + (!isComplete ? 'norow' : '') + '">' +
@@ -2880,7 +2891,7 @@
           });
           row.push(result.isComplete ? roundHalfValue(result.totalScored) : "");
           row.push(result.totalMax);
-          row.push(result.isComplete ? result.percent : "");
+          row.push(result.isComplete ? Math.round(Number(result.percent)) : "");
           row.push(result.status);
           row.push(rankByStudent[index] || "");
           csvLines.push(row.map(csvEsc).join(","));
@@ -2950,7 +2961,7 @@
         
         var totScored = (evalRes && evalRes.isComplete) ? roundHalfValue(evalRes.totalScored) : "";
         var totMax = evalRes ? evalRes.totalMax : (isSABucket ? 600 : 300);
-        var pct = (evalRes && evalRes.isComplete) ? evalRes.percent : "";
+        var pct = (evalRes && evalRes.isComplete) ? Math.round(Number(evalRes.percent)) : "";
         var pf = evalRes ? (evalRes.status === "PASSED" ? "P" : (evalRes.status === "NOT PASSED" ? "F" : "I")) : passFailCode(s, subjects, d.bucket, d.class, d.maxPerSubject);
         row.push(totScored, totMax, pct, pf);
         lines.push(row.map(csvEsc).join(","));
@@ -3030,33 +3041,120 @@
        from the "Academic Parameters" super-header, matching the sample. */
     function buildPrimaryProgressReports(idxs) {
       var d = st.reportData;
-      var title = (d.bucketLabel || bucketTitleWords(d.bucket)) + " PROGRESS REPORT (" + academicYearStr() + ")";
+      var title = ((d.bucketLabel || bucketTitleWords(d.bucket)) + " PROGRESS REPORT (" + academicYearStr() + ")").toUpperCase();
+      var isSummative = /^SA-/.test(d.bucket);
       var pages = idxs.map(function (idx) {
         var student = d.students[idx];
         if (!student) return "";
         var result = Calc.calculateStudent(student, d.bucket, d.class);
-        var subjectRows = (d.subjects || []).map(function (subject) {
+        var subjects = d.subjects || [];
+        var subjectRows = subjects.map(function (subject) {
           var rep = result.subjects[subject];
-          var score = rep && rep.isAbsent ? "Ab (Absent)" : (rep && rep.isComplete ? esc(roundHalfValue(rep.scored)) : "Marks pending");
-          return '<tr><td>' + esc(subject) + '</td><td>' + score + '</td><td>' + esc((d.subjectMaxes || {})[subject]) + '</td></tr>';
+          var score = rep && rep.isAbsent ? "Ab" : (rep && rep.isComplete ? esc(roundHalfValue(rep.scored)) : "–");
+          return '<tr><td class="pr-subjectname">' + esc(subject) + '</td><td>' + score + '</td><td>' + esc((d.subjectMaxes || {})[subject]) + '</td></tr>';
         }).join("");
-        var missing = result.missingSubjects.length
-          ? '<p style="margin:8px 0;color:#92400e;"><b>Marks pending:</b> ' + esc(result.missingSubjects.join(", ")) + '</p>'
-          : '<p style="margin:8px 0;color:#166534;"><b>All subject marks have been entered.</b></p>';
-        var total = result.isComplete ? esc(roundHalfValue(result.totalScored)) : "—";
-        var percent = result.isComplete ? esc(result.percent) + "%" : "—";
-        return '<div class="pr-page pr-primary" style="box-sizing:border-box;padding:8mm 5mm;">' +
-          '<div class="pr-scale-inner" style="font-family:Arial,sans-serif;color:#172033;">' +
-          '<div class="pr-header"><img src="logo-full.jpg" alt="School" onerror="this.src=&quot;header-logo.png&quot;"></div>' +
-          '<div class="pr-title" style="text-align:center;font-weight:800;margin:12px 0;">' + esc(title) + '</div>' +
+        var total = result.totalScored != null ? esc(roundHalfValue(result.totalScored)) : "–";
+        var totalMax = esc(result.totalMax);
+        var percent = result.isComplete ? primaryPercentText(result.percent) : "–";
+        var grade = result.isComplete ? primaryGradeFromPercent(result.percent) : "–";
+        // Primary ExamCalc deliberately reports COMPLETE/INCOMPLETE only; it does not
+        // assign high-school pass/fail status. Apply the primary-school 35% overall
+        // benchmark here to avoid incorrectly labelling every complete primary
+        // assessment as Failed.
+        var status = result.isComplete
+          ? (Number(result.percent) + 0.000001 >= 35 ? "Passed" : "Failed")
+          : "–";
+        var attendance = attendanceRowsForStudent(d, student);
+        function attendanceTableHtml() {
+          var rows = attendance.rows || [];
+          var monthHead = rows.map(function (r) { return '<th>' + esc(r.month) + '</th>'; }).join("");
+          var present = rows.map(function (r) { return '<td>' + (r.present == null ? '–' : esc(roundHalfValue(r.present))) + '</td>'; }).join("");
+          var working = rows.map(function (r) { return '<td>' + (r.working == null ? '–' : esc(roundHalfValue(r.working))) + '</td>'; }).join("");
+          var pct = rows.map(function (r) { return '<td>' + (r.percentage == null ? '–' : esc(Math.round(Number(r.percentage))) + '%') + '</td>'; }).join("");
+          var cumPresent = attendance.cumulativePresent == null ? '–' : esc(roundHalfValue(attendance.cumulativePresent));
+          var cumWorking = attendance.cumulativeWorking == null ? '–' : esc(roundHalfValue(attendance.cumulativeWorking));
+          var cumPct = attendance.overallPercentage == null ? '–' : esc(Math.round(Number(attendance.overallPercentage))) + '%';
+          return '<table class="pr-table pr-attendance-table"><thead><tr><th>Attendance</th>' + monthHead + '<th class="pr-col-total">Cumulative</th></tr></thead><tbody>' +
+            '<tr><th>Days Present</th>' + present + '<td class="pr-col-total">' + cumPresent + '</td></tr>' +
+            '<tr><th>Working Days</th>' + working + '<td class="pr-col-total">' + cumWorking + '</td></tr>' +
+            '<tr><th>Attendance %</th>' + pct + '<td class="pr-col-total">' + cumPct + '</td></tr></tbody></table>';
+        }
+        var attendanceHtml = attendanceTableHtml();
+        var graphSubjects = subjects.slice(), graphValues = [], graphMax = isSummative ? 100 : 50;
+        var primaryGrade = gradeNumFromClass(d.class);
+        if (!isSummative && primaryGrade >= 1 && primaryGrade <= 5 && subjects.indexOf("GK") >= 0 && subjects.indexOf("CS") >= 0) {
+          graphSubjects = ["Telugu", "Hindi", "English", "Maths", "EVS", "GK + CS"].filter(function (name) {
+            return name === "GK + CS" || subjects.indexOf(name) >= 0;
+          });
+          graphValues = graphSubjects.map(function (subject) {
+            if (subject === "GK + CS") {
+              var gk = result.subjects.GK, cs = result.subjects.CS;
+              return (gk && gk.isComplete ? Number(gk.scored) : 0) + (cs && cs.isComplete ? Number(cs.scored) : 0);
+            }
+            var item = result.subjects[subject];
+            return item && item.isComplete && item.scored != null ? Number(item.scored) : 0;
+          });
+        } else {
+          graphValues = graphSubjects.map(function (subject) {
+            var rep = result.subjects[subject];
+            return rep && rep.isComplete && rep.scored != null ? Number(rep.scored) : 0;
+          });
+        }
+        // Calculate the class average for each displayed graph category. The
+        // dotted line is a class benchmark, not an individual-student trend.
+        // For FA in Grades 1-5, GK + CS is averaged as one combined /50 category.
+        var graphAverages = graphSubjects.map(function (graphSubject) {
+          var sum = 0, count = 0;
+          (d.students || []).forEach(function (classStudent) {
+            var classResult = Calc.calculateStudent(classStudent, d.bucket, d.class);
+            var value = null, maximum = graphMax;
+            if (graphSubject === "GK + CS") {
+              var classGk = classResult.subjects.GK, classCs = classResult.subjects.CS;
+              if (classGk && classGk.isComplete && classCs && classCs.isComplete) {
+                value = Number(classGk.scored) + Number(classCs.scored);
+              }
+            } else {
+              var classSubject = classResult.subjects[graphSubject];
+              if (classSubject && classSubject.isComplete && classSubject.scored != null) {
+                value = Number(classSubject.scored);
+              }
+            }
+            if (value != null && isFinite(value)) { sum += value; count++; }
+          });
+          return count ? (sum / count) : null;
+        });
+        var graphHtml = buildChartHtml(graphSubjects, graphValues, graphMax, graphAverages);
+        // Concise teacher-facing comment, using the same Overall Impression
+        // presentation block as the high-school progress report.
+        var completedForComment = subjects.map(function (subject) {
+          var rep = result.subjects[subject];
+          return { subject: subject, scored: rep && rep.isComplete ? Number(rep.scored) : null, max: rep ? Number(rep.max) : 0 };
+        }).filter(function (item) { return item.scored != null && item.max > 0; });
+        var impression = "Assessment marks are incomplete. Please continue regular practice and seek teacher guidance where needed.";
+        if (result.isComplete && completedForComment.length) {
+          completedForComment.sort(function (a, b) { return (b.scored / b.max) - (a.scored / a.max); });
+          var strongest = completedForComment[0], focus = completedForComment[completedForComment.length - 1];
+          var overallPct = Number(result.percent) || 0;
+          var opening = overallPct >= 80 ? "A very good effort overall." : overallPct >= 60 ? "A good effort overall." : overallPct >= 35 ? "A satisfactory effort, with scope for improvement." : "The student needs additional support and regular practice.";
+          var strength = "The performance in " + strongest.subject + " is encouraging.";
+          var nextStep = strongest.subject === focus.subject
+            ? "Continue the same consistent effort across all subjects."
+            : "Give extra attention to " + focus.subject + " through daily revision and practice.";
+          impression = [opening, strength, nextStep].join(" ");
+        }
+        return '<div class="pr-page pr-primary ' + (isSummative ? 'pr-sa' : 'pr-fa') + '"><div class="pr-scale-inner">' +
+          '<div class="pr-header"><img src="logo-full.jpg" alt="School" onerror="this.src=\'header-logo.png\'"></div>' +
+          '<div class="pr-title">' + esc(title) + '</div>' +
           '<table class="pr-student-table"><tr><th>Name of the Student</th><td>' + esc(student.name) + '</td><th>Roll No.</th><td>' + esc(student.roll == null ? "" : student.roll) + '</td></tr>' +
           '<tr><th>Class</th><td>' + esc(d.class) + '</td><th>Assessment</th><td>' + esc(d.bucketLabel || bucketTitleWords(d.bucket)) + '</td></tr></table>' +
-          '<div class="pr-section-title">Academic Assessment · Direct Marks</div>' +
+          '<div class="pr-section-title">Academic Assessment</div>' +
           '<table class="pr-table pr-academic-table"><thead><tr><th>Subject</th><th>Marks Obtained</th><th>Maximum Marks</th></tr></thead><tbody>' + subjectRows +
-          '<tr class="pr-total-row"><th>Total</th><th>' + total + '</th><th>' + esc(result.totalMax) + '</th></tr></tbody></table>' +
-          missing +
-          '<div class="pr-result-strip"><div class="pr-result-card"><span>Percentage</span><b>' + percent + '</b></div><div class="pr-result-card"><span>Completion Status</span><b>' + esc(result.status) + '</b></div></div>' +
-          '<div style="margin-top:34px;display:flex;justify-content:space-between;"><span>Class Teacher&#39;s Signature</span><span>Parent&#39;s Signature</span><span>Principal&#39;s Signature</span></div>' +
+          '<tr class="pr-total-row"><th>Total</th><th>' + total + '</th><th>' + totalMax + '</th></tr></tbody></table>' +
+          '<div class="pr-result-strip"><div class="pr-result-card"><span>Percentage</span><b>' + percent + '</b></div><div class="pr-result-card"><span>Grade</span><b>' + grade + '</b></div><div class="pr-result-card"><span>Result</span><b>' + status + '</b></div></div>' +
+          '<div class="pr-section-title">Attendance</div>' + attendanceHtml + graphHtml +
+          '<div class="pr-impression-box"><div class="pr-impression-title">Overall Impression</div><div class="pr-impression-text">' + esc(impression) + '</div></div>' +
+          '<div class="pr-signature-space" style="height:12mm;min-height:12mm;flex:0 0 12mm;"></div>' +
+          '<div class="pr-footer" style="margin-top:0!important;flex:0 0 auto!important;"><span>Class Teacher\'s Signature</span><span>Parent\'s Signature</span><span>Principal\'s Signature</span></div>' +
           '</div></div>';
       }).join("");
       $("progRepPrintArea").innerHTML = pages;
@@ -3226,7 +3324,7 @@
         }
 
         var resultStrip = '<div class="pr-result-strip">' +
-          '<div class="pr-result-card"><span>Percentage</span><b>' + (isComp ? esc(evalRes.percent) + '%' : '&ndash;') + '</b></div>' +
+          '<div class="pr-result-card"><span>Percentage</span><b>' + (isComp ? esc(Math.round(Number(evalRes.percent))) + '%' : '&ndash;') + '</b></div>' +
           '<div class="pr-result-card"><span>Rank</span><b>' + (isComp && ranks[idx] ? ranks[idx] : '&ndash;') + '</b></div>' +
           '<div class="pr-result-card"><span>Overall Result</span><b>' + esc(statusStr) + '</b>' + resultDetail + '</div>' +
         '</div>';
@@ -3418,14 +3516,14 @@
     }
     function lockManagerModal() {
       return '<div class="modal-overlay" id="exSchLockModal" style="z-index:1150;">' +
-        '<div class="modal-content" style="max-width:1180px;width:calc(100vw - 40px);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;overflow:hidden;">' +
+        '<div class="modal-content" style="max-width:760px;width:100%;max-height:90vh;display:flex;flex-direction:column;">' +
           '<div class="modal-header-container">' +
             '<div>' +
               '<h3 style="margin:0;display:flex;align-items:center;gap:8px;">' +
                 '<i class="material-icons" style="color:var(--maroon);">admin_panel_settings</i>' +
                 'Examinations &amp; Syllabus Lock Manager' +
               '</h3>' +
-              '<p class="ex-note" style="margin:4px 0 0 0;">Control syllabus mapping and marks entry windows for all classes from Nursery to Grade 10. Unlocked = Teachers can add syllabus and marks. Locked = View-only.</p>' +
+              '<p class="ex-note" style="margin:4px 0 0 0;">Control syllabus mapping and marks entry windows for teachers across High School classes. Unlocked = Teachers can add syllabus and marks. Locked = View-only.</p>' +
             '</div>' +
             '<button class="modal-close-icon" data-close="exSchLockModal">&times;</button>' +
           '</div>' +
@@ -3445,7 +3543,7 @@
               '</button>' +
             '</div>' +
           '</div>' +
-          '<div id="exSchLockModalBody" style="overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:180px;min-width:0;">' +
+          '<div id="exSchLockModalBody" style="overflow-y:auto;flex-grow:1;min-height:180px;">' +
             '<div class="ex-loading"><i class="material-icons">sync</i>Loading lock matrix…</div>' +
           '</div>' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">' +
