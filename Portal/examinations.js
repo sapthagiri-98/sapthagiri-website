@@ -1502,6 +1502,7 @@
           '<div class="ex-field"><label>Class</label><select id="exSchClass"><option value="">All classes</option></select></div>' +
           '<button class="ex-abtn" id="exSchClear"><i class="material-icons">refresh</i> Clear</button>' +
           '<button class="ex-abtn" id="exSchLockMgrBtn" title="Manage syllabus mapping & marks locks"><i class="material-icons">admin_panel_settings</i> Lock Manager</button>' +
+          '<button class="ex-abtn" id="exSchPrintBtn" title="Print Examination Schedule for notice boards and classroom display"><i class="material-icons">print</i> Print Schedule</button>' +
           (isAdmin ? '<button class="ex-abtn primary" id="exSchImportBtn" style="margin-left:auto;"><i class="material-icons">upload_file</i> Import Excel Schedule</button>' : '') +
         '</div>' +
         '<div id="exSchLockBanner" style="margin-bottom:12px;display:none;"></div>' +
@@ -1510,6 +1511,19 @@
       $("exSchExam").addEventListener("change", loadSchedule);
       $("exSchClass").addEventListener("change", loadSchedule);
       $("exSchClear").addEventListener("click", function () { $("exSchExam").value = ""; $("exSchClass").value = ""; loadSchedule(); });
+      if ($("exSchPrintBtn")) {
+        $("exSchPrintBtn").addEventListener("click", function () {
+          if (window.ExamSchedulePrint && typeof window.ExamSchedulePrint.open === "function") {
+            window.ExamSchedulePrint.open({
+              rows: st.lastScheduleRows,
+              currentExam: $("exSchExam") ? $("exSchExam").value : "",
+              currentClass: $("exSchClass") ? $("exSchClass").value : ""
+            });
+          } else {
+            toast("Print Schedule module is loading...", "info");
+          }
+        });
+      }
       if ($("exSchLockMgrBtn")) {
         $("exSchLockMgrBtn").addEventListener("click", function () {
           var curExam = $("exSchExam").value;

@@ -280,9 +280,10 @@
    ======================================================================= */
 @media print{
   body *{visibility:hidden}
-  #repTab, #repTab *, #progRepPrintArea, #progRepPrintArea *{visibility:visible}
+  #repTab, #repTab *, #progRepPrintArea, #progRepPrintArea *, #exPrintDoc, #exPrintDoc *, .ex-print-doc, .ex-print-doc *, #exPrintPaper, #exPrintPaper *, .ex-print-preview-paper, .ex-print-preview-paper *{visibility:visible}
   #repTab{position:absolute;left:0;top:0;width:100%}
   #progRepPrintArea{position:absolute;left:0;top:0;width:100%}
+  #exPrintDoc, .ex-print-doc{position:absolute;left:0;top:0;width:100%}
   .rep-print-head{display:flex !important}
   .rep-tablewrap{max-height:none !important;overflow:visible !important;border:none}
   .rep-table thead th{position:static !important}
