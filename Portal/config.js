@@ -160,6 +160,10 @@ window.PORTAL_CONFIG = {
   SUPABASE_SYL_FNS: [
     "getTeacherClassSubjects",
     "getSyllabusAndPlansCatalog",
+    "saveSpokenChecklist",
+    "getSpokenLessonIndex",
+    "uploadSpokenAsset",
+    "publishSpokenLessons",
     "extractTasksFromDrivePDF",
     "saveTaskProgress",
     "regenerateTeluguForTask",

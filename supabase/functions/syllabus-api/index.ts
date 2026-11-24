@@ -14,6 +14,8 @@
 // translate / explain buttons return a friendly "not configured" message.
 // =========================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { spokenStatusFromRows, computeSpokenStatus, filterLegacySyncPayload } from "./spoken-status.ts";
+import { createSpokenService, SPOKEN_BUCKET } from "./spoken-service.ts";
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   { auth: { persistSession: false }, db: { schema: "app" } });
 
@@ -278,7 +280,31 @@ async function getSyllabusAndPlansCatalog(grade: string, subject: string, _teach
     matchesSyllabusRow(subject, grade, l.subject, l.strand_subject)).sort(compareSyllabusLessons);
 
   const astragen = lessonRows.filter((l: any) => l.item_type === "AstraGen");
-  const manualIds = lessonRows.filter((l: any) => l.item_type !== "AstraGen").map((l: any) => l.id);
+  const spokenLessons = lessonRows.filter((l: any) => l.item_type === "SpokenEnglish");
+  const manualIds = lessonRows
+    .filter((l: any) => l.item_type !== "AstraGen" && l.item_type !== "SpokenEnglish")
+    .map((l: any) => l.id);
+
+  // Spoken English: status is DERIVED from the checklist tasks (never from a
+  // separately stored progress row), so ticks and status can never disagree.
+  const spokenStatusByKey: Record<string, ReturnType<typeof spokenStatusFromRows>> = {};
+  if (spokenLessons.length) {
+    const bySubj: Record<string, { classes: Set<string>; names: string[] }> = {};
+    for (const l of spokenLessons) {
+      const g = (bySubj[l.subject] ??= { classes: new Set(), names: [] });
+      g.classes.add(l.class); g.names.push(l.name);
+    }
+    const rowsByKey: Record<string, any[]> = {};
+    for (const [realSubj, g] of Object.entries(bySubj)) {
+      const taskRows = await fetchAll("syllabus_session_tasks", "class, lesson_name, task_key, content, checked",
+        (q) => q.in("class", [...g.classes]).eq("subject", realSubj).in("lesson_name", g.names));
+      for (const t of taskRows) (rowsByKey[`${t.class}|${realSubj}|${t.lesson_name}`] ??= []).push(t);
+    }
+    for (const l of spokenLessons) {
+      const k = `${l.class}|${l.subject}|${l.name}`;
+      spokenStatusByKey[k] = spokenStatusFromRows(rowsByKey[k] || []);
+    }
+  }
 
   // group by the lesson's OWN stored (class, subject) so downstream task
   // queries use the exact strings the tasks were written with.
@@ -307,7 +333,14 @@ async function getSyllabusAndPlansCatalog(grade: string, subject: string, _teach
 
   const out: any[] = [];
   for (const l of lessonRows) {
-    if (l.item_type === "AstraGen") {
+    if (l.item_type === "SpokenEnglish") {
+      const st = spokenStatusByKey[`${l.class}|${l.subject}|${l.name}`] || computeSpokenStatus(0, 0);
+      out.push({
+        type: "SpokenEnglish", name: l.name, lessonNo: l.lesson_no, sortOrder: l.sort_order,
+        driveLink: l.drive_link, totalTasks: st.total, completedTasks: st.done,
+        currentState: st.state, statusLabel: st.label, pct: st.pct,
+      });
+    } else if (l.item_type === "AstraGen") {
       const agg = taskAgg[l.name] || { total: 0, done: 0 };
       out.push({
         type: "AstraGen", name: l.name, lessonNo: l.lesson_no, sortOrder: l.sort_order, targetMonth: l.target_month,
@@ -1006,7 +1039,7 @@ async function getSessionDetailedExplanation(grade: string, subject: string, les
 // No schema changes are required. All writes use existing syllabus tables.
 // =========================================================================
 function requireSyllabusManagement(who: any) {
-  if (!who || (who.role !== "Management" && who.role !== "SyncAgent")) throw new Error("Management only.");
+  if (!who || who.role !== "Management") throw new Error("Management only.");
 }
 function editorGradeLabel(value: any): string {
   const raw = numText(value);
@@ -1189,6 +1222,14 @@ async function reorderSyllabusLessons(idsValue: any) {
 
 async function syncSpokenEnglishCatalog(lessons: any[], tasks?: any[]) {
   if (!Array.isArray(lessons) || !lessons.length) return { success: false, message: "No lessons provided" };
+
+  // Lessons published through the portal upload (PDF kept in portal storage) are managed
+  // there. The legacy Drive sync must never touch them or their checklist rows.
+  const { data: managedRows } = await db.from("syllabus_lessons").select("class, name, lesson_no")
+    .eq("subject", "Spoken English").like("drive_link", `%/${SPOKEN_BUCKET}/%`);
+  const filtered = filterLegacySyncPayload(lessons, tasks, managedRows || [], syllabusLessonNoValue);
+  lessons = filtered.lessons; tasks = filtered.tasks;
+  if (!lessons.length) return { success: true, lessonsCount: 0, tasksCount: 0, message: "All lessons are managed by portal upload; nothing to sync." };
   
   for (const l of lessons) {
     const cls = S(l.class), subj = "Spoken English", name = S(l.name);
@@ -1202,7 +1243,9 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks?: any[]) {
       .eq("subject", subj)
       .eq("lesson_no", String(dayNum));
 
-    const targetMonth = S(l.target_month) || "November";
+    // Spoken English is day-wise: no target month is assigned any more, and an
+    // existing row's target_month is left exactly as it was (never overwritten).
+    const targetMonth = S(l.target_month);
 
     if (existingList && existingList.length > 0) {
       const keepId = existingList[0].id;
@@ -1214,7 +1257,6 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks?: any[]) {
         name: name,
         sort_order: sortOrder,
         lesson_no: String(dayNum),
-        target_month: targetMonth,
         drive_link: driveLink,
         item_type: "SpokenEnglish"
       }).eq("id", keepId);
@@ -1298,6 +1340,20 @@ async function syncSpokenEnglishCatalog(lessons: any[], tasks?: any[]) {
 
   return { success: true, lessonsCount: lessons.length, tasksCount: tasksToProcess.length };
 }
+
+// =========================================================================
+// SPOKEN ENGLISH — checklist save (batch), portal PDF upload, publish
+// =========================================================================
+
+// Real Management accounts only (the legacy "SyncAgent" shared secret is NOT
+// accepted for uploads/publishing).
+function requireStrictManagement(who: any) {
+  if (!who || who.role !== "Management") throw new Error("Management only.");
+}
+
+// Checklist saving, PDF upload, publish and explicit replace live in spoken-service.ts
+// (dependency-injected so they are unit-tested against an in-memory database).
+const spoken = createSpokenService({ db, S, today, lessonNoValue: syllabusLessonNoValue, resolveLesson, fetchAll });
 
 async function triggerSpokenEnglishSync(customPat?: string) {
   const token = S(customPat) || Deno.env.get("GITHUB_TOKEN") || Deno.env.get("GH_PAT");
@@ -1400,10 +1456,12 @@ async function getManagementTimelineAuditReport() {
 
   const lessons = await fetchAll("syllabus_lessons", "*");
 
-  const taskRows = await fetchAll("syllabus_session_tasks", "class, subject, lesson_name, checked");
+  const taskRows = await fetchAll("syllabus_session_tasks", "class, subject, lesson_name, task_key, content, checked");
   const taskAgg: Record<string, { total: number; done: number }> = {};
+  const spokenTaskRows: Record<string, any[]> = {};
   for (const t of taskRows) {
     const k = `${t.class}|${t.subject}|${t.lesson_name}`;
+    if (/spoken/i.test(S(t.subject))) { (spokenTaskRows[k] ??= []).push(t); continue; }
     const agg = (taskAgg[k] ??= { total: 0, done: 0 });
     agg.total++;
     if (t.checked) agg.done++;
@@ -1423,7 +1481,12 @@ async function getManagementTimelineAuditReport() {
     let totalTasks = 0, completedTasks = 0;
     for (const l of matched) {
       let done = false, active = false, completedOn = "-";
-      if (l.item_type === "AstraGen") {
+      let spokenSt: ReturnType<typeof spokenStatusFromRows> | null = null;
+      if (l.item_type === "SpokenEnglish") {
+        // Day-wise programme: derived from checklist ticks, no target month.
+        spokenSt = spokenStatusFromRows(spokenTaskRows[`${l.class}|${l.subject}|${l.name}`] || []);
+        done = spokenSt.state === "TRUE"; active = spokenSt.state === "IN_PROGRESS";
+      } else if (l.item_type === "AstraGen") {
         hasTaskPlan = true;
         const agg = taskAgg[`${l.class}|${l.subject}|${l.name}`];
         const total = agg?.total || 0, dn = agg?.done || 0;
@@ -1439,16 +1502,16 @@ async function getManagementTimelineAuditReport() {
       if (done) completed++; else if (active) inProgress++;
       const agg = l.item_type === "AstraGen" ? (taskAgg[`${l.class}|${l.subject}|${l.name}`] || { total: 0, done: 0 }) : null;
       lessonsList.push({
-        type: l.item_type === "AstraGen" ? "AstraGen" : "Manual",
+        type: l.item_type === "AstraGen" ? "AstraGen" : (spokenSt ? "SpokenEnglish" : "Manual"),
         name: l.name,
         lessonNo: l.lesson_no,
         sortOrder: l.sort_order,
-        targetMonth: l.target_month,
+        targetMonth: spokenSt ? "" : l.target_month,
         completed: done,
         inProgress: active,
         completedOn,
-        totalTasks: agg ? agg.total : 0,
-        completedTasks: agg ? agg.done : 0
+        totalTasks: spokenSt ? spokenSt.total : (agg ? agg.total : 0),
+        completedTasks: spokenSt ? spokenSt.done : (agg ? agg.done : 0)
       });
     }
     out.push({
@@ -1492,6 +1555,21 @@ const HANDLERS: Record<string, (a: any[], who: any) => Promise<any>> = {
     requireSyllabusManagement(w);
     return reorderSyllabusLessons(a[0]);
   },
+  saveSpokenChecklist: async (a, w) => {
+    return spoken.saveSpokenChecklist(S(a[0]), S(a[1]), S(a[2]), a[3], S(a[4]) || S(w?.name), S(a[5]));
+  },
+  getSpokenLessonIndex: async (_a, w) => {
+    requireStrictManagement(w);
+    return spoken.getSpokenLessonIndex();
+  },
+  uploadSpokenAsset: async (a, w) => {
+    requireStrictManagement(w);
+    return spoken.uploadSpokenAsset(S(a[0]), S(a[1]), S(a[2]));
+  },
+  publishSpokenLessons: async (a, w) => {
+    requireStrictManagement(w);
+    return spoken.publishSpokenLessons(a[0]);
+  },
   syncSpokenEnglishCatalog: async (a) => {
     return syncSpokenEnglishCatalog(a[0], a[1]);
   },
@@ -1518,7 +1596,9 @@ Deno.serve(async (req) => {
     const token = (req.headers.get("x-session-token") || "").trim();
     const syncSecret = (req.headers.get("x-sync-secret") || "").trim();
     const who = token ? (await db.rpc("whoami", { p_token: token })).data : null;
-    const isSyncAuthorized = syncSecret && (syncSecret === (Deno.env.get("SPOKEN_SYNC_SECRET") || "sapthagiri-spoken-sync-2026"));
+    // No built-in fallback: if SPOKEN_SYNC_SECRET is not configured, the shared-secret route is disabled.
+    const configuredSyncSecret = (Deno.env.get("SPOKEN_SYNC_SECRET") || "").trim();
+    const isSyncAuthorized = !!(syncSecret && configuredSyncSecret && configuredSyncSecret.length >= 16 && syncSecret === configuredSyncSecret);
     if (!who && !isSyncAuthorized) return errJson("Not signed in or session expired.");
     const data = await h(args, who || { role: "SyncAgent" });
     return okJson(data);

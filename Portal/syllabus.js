@@ -36,6 +36,16 @@
   }
   var me = cleanTeacherName(session.name) || session.name;
 
+  // Small self-contained notification (the portal has no shared toast helper; each page defines its own).
+  function toast(msg, kind) {
+    var t = $("sylToast");
+    if (!t) { t = document.createElement("div"); t.id = "sylToast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
+    t.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:4000;max-width:90vw;padding:10px 16px;border-radius:10px;color:#fff;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(15,23,42,.3);background:" +
+      (kind === "err" ? "#b91c1c" : (kind === "ok" ? "#087f5b" : "#334155")) + ";";
+    t.textContent = String(msg == null ? "" : msg);
+    clearTimeout(t._h); t._h = setTimeout(function () { t.style.display = "none"; }, 5000);
+  }
+
   // -------- month helpers (academic year June -> May) --------
   var MONTH_ORDER = ["june", "july", "august", "september", "october", "november", "december", "january", "february", "march", "april", "may"];
   var MONTH_LABEL = { june: "June", july: "July", august: "August", september: "September", october: "October", november: "November", december: "December", january: "January", february: "February", march: "March", april: "April", may: "May" };
@@ -120,7 +130,8 @@
 
     if (isSpoken) {
       // Day-wise presentation for Spoken English / Spoken Skills
-      var out = '<div class="syl-sechead focus"><i class="material-icons">record_voice_over</i> Day-wise Spoken English Plans (' + catalog.length + ' Days)</div>';
+      var out = spokenSummaryHtml(catalog, cls);
+      out += '<div class="syl-sechead focus"><i class="material-icons">record_voice_over</i> Day-wise Spoken English Plans (' + catalog.length + ' Days)</div>';
       out += catalog.map(function (item, idx) {
         return cardHtml(item, idx, cls, subject);
       }).join("");
@@ -128,7 +139,7 @@
 
       Array.prototype.forEach.call(cards.querySelectorAll("[data-spoken]"), function (b) {
         b.addEventListener("click", function () {
-          openSpokenModal(cls, subject, b.getAttribute("data-spoken"), b.getAttribute("data-day"));
+          openSpokenModal(cls, subject, b.getAttribute("data-spoken"), b.getAttribute("data-day"), catalog[parseInt(b.getAttribute("data-idx"), 10)]);
         });
       });
       return;
@@ -181,20 +192,23 @@
     var isSpokenCard = item.type === "SpokenEnglish" || /spoken\s*(english|skills)/i.test(String(subject).trim());
     var cardVideoUrl = isSpokenCard ? getSpokenVideoUrl(cls, item.lessonNo || (idx + 1), (window.SpokenEnglishData && window.SpokenEnglishData[cls + "||" + (item.lessonNo || (idx + 1))])) : "";
     var videoPill = cardVideoUrl ? '<a class="syl-pill video" href="' + esc(cardVideoUrl) + '" target="_blank" rel="noopener" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="material-icons" style="color:#dc2626;font-size:13px;">smart_display</i>Video</a>' : "";
-    var monthPill = '<span class="syl-pill month"><i class="material-icons">event</i>' + esc(item.targetMonth || "—") + '</span>';
+    var monthPill = isSpokenCard ? "" : '<span class="syl-pill month"><i class="material-icons">event</i>' + esc(item.targetMonth || "—") + '</span>';
 
     var actions;
     if (item.type === "SpokenEnglish" || /spoken\s*(english|skills)/i.test(String(subject).trim())) {
-      var doneTasks = item.completedTasks || 0;
-      var totTasks = item.totalTasks || 4;
-      var statusBadge = pct === 100
-        ? '<span class="syl-pill" style="background:#dcfce7;color:#15803d;font-weight:700;"><i class="material-icons" style="font-size:13px;">check_circle</i> Completed</span>'
-        : (pct > 0
-          ? '<span class="syl-pill" style="background:#fef3c7;color:#b45309;font-weight:700;"><i class="material-icons" style="font-size:13px;">timelapse</i> In Progress (' + doneTasks + '/' + totTasks + ')</span>'
-          : '<span class="syl-pill" style="background:#f1f5f9;color:#64748b;font-weight:700;"><i class="material-icons" style="font-size:13px;">pending</i> Pending</span>');
+      // Spoken English: status is derived from the ticked checklist items only.
+      var sp = spokenStatusOf(item);
+      pct = sp.pct;
+      pcolor = sp.state === "TRUE" ? "var(--success)" : (sp.state === "IN_PROGRESS" ? "var(--warning)" : "#cbd5e1");
+      stateCls = sp.state === "TRUE" ? "done" : (sp.state === "IN_PROGRESS" ? "active" : "pending");
+      var statusBadge = sp.state === "TRUE"
+        ? '<span class="syl-pill" style="background:#dcfce7;color:#15803d;font-weight:700;"><i class="material-icons" style="font-size:13px;">check_circle</i> Completed &middot; 100%</span>'
+        : (sp.state === "IN_PROGRESS"
+          ? '<span class="syl-pill" style="background:#fef3c7;color:#b45309;font-weight:700;"><i class="material-icons" style="font-size:13px;">timelapse</i> In Progress &middot; ' + sp.pct + '% (' + sp.done + '/' + sp.total + ')</span>'
+          : '<span class="syl-pill" style="background:#f1f5f9;color:#64748b;font-weight:700;"><i class="material-icons" style="font-size:13px;">pending</i> Pending &middot; 0%</span>');
       actions = '<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px;">' +
         statusBadge +
-        '<button class="syl-view" data-spoken="' + esc(item.name) + '" data-day="' + esc(item.lessonNo || idx + 1) + '"><i class="material-icons">menu_book</i> View Lesson &amp; Checklist</button>' +
+        '<button class="syl-view" data-spoken="' + esc(item.name) + '" data-day="' + esc(item.lessonNo || idx + 1) + '" data-idx="' + idx + '"><i class="material-icons">menu_book</i> View Lesson &amp; Checklist</button>' +
         '</div>';
     } else if (item.type === "AstraGen") {
       actions = '<button class="syl-view" data-sessions="' + esc(item.name) + '"><i class="material-icons">play_circle</i> View Sessions</button>';
@@ -297,7 +311,7 @@
   };
 
   function getSpokenVideoUrl(cls, dayNum, lessonData) {
-    if (lessonData && lessonData.video_url && String(lessonData.video_url).trim().length > 10) {
+    if (lessonData && lessonData.video_url && /^https:\/\/(www\.)?(youtu\.be\/|youtube\.com\/)[^\s"'<>]{3,200}$/i.test(String(lessonData.video_url).trim())) {
       return String(lessonData.video_url).trim();
     }
     var dayInt = parseInt(String(dayNum).replace(/\D/g, ""), 10);
@@ -306,7 +320,33 @@
     return target || "";
   }
 
-  function openSpokenModal(cls, subject, lessonName, dayNum) {
+  /* Single source of truth for Spoken English status (shared with the server: see SpokenCore.computeStatus). */
+  function spokenStatusOf(item) {
+    var core = window.SpokenCore;
+    var tot = Number(item && item.totalTasks) || 0, done = Number(item && item.completedTasks) || 0;
+    return core ? core.computeStatus(done, tot) : { state: "FALSE", label: "Pending", pct: 0, done: 0, total: tot };
+  }
+
+  function spokenSummaryHtml(catalog, cls) {
+    var core = window.SpokenCore;
+    if (!core || !catalog || !catalog.length) return "";
+    var sm = core.summarize(catalog.map(function (it) { return { currentState: spokenStatusOf(it).state }; }));
+    function box(n, label, color) {
+      return '<div style="flex:1 1 90px;min-width:90px;text-align:center;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:8px 6px;">' +
+        '<div style="font-size:20px;font-weight:800;color:' + color + ';">' + n + '</div>' +
+        '<div style="font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;">' + label + '</div></div>';
+    }
+    return '<div class="syl-spoken-summary" style="grid-column:1/-1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;margin-bottom:6px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
+        '<div style="font-size:13px;font-weight:800;color:#0f172a;">' + esc(cls) + ' &middot; Spoken English progress</div>' +
+        '<div style="font-size:13px;font-weight:800;color:#15803d;">' + sm.pct + '% complete</div></div>' +
+      '<div class="syl-prog-track" style="margin-bottom:10px;"><div class="syl-prog-fill" style="width:' + sm.pct + '%;background:var(--success);"></div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        box(sm.total, "Total lessons", "#0f172a") + box(sm.completed, "Completed", "#15803d") +
+        box(sm.inProgress, "In Progress", "#b45309") + box(sm.pending, "Pending", "#64748b") + '</div></div>';
+  }
+
+  function openSpokenModal(cls, subject, lessonName, dayNum, item) {
     var titleEl = $("sylSpokenTitle"), bodyEl = $("sylSpokenBody");
     if (!titleEl || !bodyEl) return;
     titleEl.textContent = lessonName;
@@ -316,9 +356,20 @@
     // Retrieve embedded structured lesson content if available
     var dataMap = window.SpokenEnglishData || {};
     var lessonData = dataMap[cls + "||" + dayNum] || dataMap["Class " + cls.replace(/\D/g, "") + "||" + dayNum];
+    var storedPdf = item && item.driveLink ? String(item.driveLink).trim() : "";
+    // A lesson uploaded (or replaced) through the portal has its own PDF and details; the old data file must not override them.
+    if (/^https:\/\/[^/]+\/storage\/v1\/object\/public\/spoken-english-pdfs\//.test(storedPdf)) lessonData = null;
+    // Lessons uploaded through "Add New Spoken English PDFs" keep their details in a small JSON next to the PDF.
+    var metaReq = (!lessonData && /^https?:\/\/.+\.pdf$/i.test(storedPdf))
+      ? fetch(storedPdf.replace(/\.pdf$/i, ".json"), { cache: "no-cache" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+      : Promise.resolve(null);
 
     // Fetch checklist tasks from database
-    P.api("extractTasksFromDrivePDF", [cls, subject, lessonName, me], { overlay: false }).then(function (res) {
+    metaReq.then(function (meta) {
+      if (meta) lessonData = { objective: meta.objective, video_url: meta.video_url, pdf_url: storedPdf || meta.pdf_url };
+      else if (!lessonData && storedPdf) lessonData = { pdf_url: storedPdf };
+      return P.api("extractTasksFromDrivePDF", [cls, subject, lessonName, me], { overlay: false });
+    }).then(function (res) {
       var tasksBySession = res || {};
       var checklistTasks = tasksBySession["Daily Checklist"] || [];
       if (!checklistTasks.length) {
@@ -374,30 +425,33 @@
     // 4. Daily Teacher Checklist (Section 10)
     html += '<div class="syl-spoken-checklist-box" style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px;margin-top:14px;">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">';
-    html += '<h4 style="margin:0;font-size:14px;color:#166534;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:#16a34a;font-size:18px;">checklist</i> Teacher Daily Checklist (పాఠం చివర Self-check)</h4>';
+    html += '<h4 style="margin:0;font-size:14px;color:#166534;display:flex;align-items:center;gap:6px;"><i class="material-icons" style="color:#16a34a;font-size:18px;">checklist</i> Teacher Checklist for this lesson</h4>';
     html += '<span id="sylSpokenChkCount" style="font-size:12px;font-weight:800;color:#15803d;"></span>';
     html += '</div>';
-    html += '<p style="margin:0 0 12px;font-size:12px;color:#15803d;line-height:1.4;">Complete all 3–4 items below during your period to mark today\'s Spoken English lesson as Done.</p>';
+    html += '<p style="margin:0 0 12px;font-size:12px;color:#15803d;line-height:1.4;">Tick each item as you finish it. The lesson shows Pending until you tick something, In Progress while some items are ticked, and Completed only when every item is ticked.</p>';
 
-    var rawChk = checklistTasks.length ? checklistTasks : (lessonData && lessonData.checklist ? lessonData.checklist.map(function (c, ci) {
-      return { taskKey: "SPOKEN::" + cls + "::" + dayNum + "::CHK::" + (ci + 1), content: c, checked: false };
-    }) : []);
+    // Only checklist rows that exist in the database can be ticked (a made-up key could never be saved).
+    var rawChk = checklistTasks;
 
-    // Deduplicate checklist tasks by content (preserving checked status)
-    var chkList = [], seenContent = Object.create(null);
+    // One item per task key: older syncs left repeated rows (sometimes with different wording) for the same key.
+    // They are ticked together; the most frequent wording is shown; an item is ticked only if every stored row is.
+    var chkList = [], byKey = Object.create(null);
     rawChk.forEach(function (t) {
+      var key = String(t.taskKey || "");
       var norm = String(t.content || "").replace(/[\s\u200B-\u200D\uFEFF]+/g, " ").trim();
-      if (!norm) return;
-      if (!seenContent[norm]) {
-        seenContent[norm] = t;
-        chkList.push(t);
-      } else if (t.checked && !seenContent[norm].checked) {
-        seenContent[norm].checked = true;
-      }
+      if (!key || !norm) return;
+      var g = byKey[key];
+      if (!g) { g = byKey[key] = { taskKey: key, texts: {}, rows: 0, ticked: 0 }; chkList.push(g); }
+      g.texts[norm] = (g.texts[norm] || 0) + 1; g.rows++; if (t.checked) g.ticked++;
+    });
+    chkList.forEach(function (g) {
+      var best = "", n = 0;
+      Object.keys(g.texts).forEach(function (k) { if (g.texts[k] > n) { n = g.texts[k]; best = k; } });
+      g.content = best; g.checked = g.rows > 0 && g.ticked === g.rows;
     });
 
     if (!chkList.length) {
-      html += '<div class="ex-empty" style="padding:10px;">No checklist items found for this lesson.</div>';
+      html += '<div class="ex-empty" style="padding:10px;">This lesson has no checklist yet. Please ask the admin to review it.</div>';
     } else {
       html += '<div id="sylSpokenChkItems" style="display:flex;flex-direction:column;gap:8px;">';
       chkList.forEach(function (t, i) {
@@ -428,11 +482,11 @@
       var saveBtn = $("sylSpokenSaveBtn");
       if (saveBtn) {
         if (done === inputs.length && inputs.length > 0) {
-          saveBtn.innerHTML = '<i class="material-icons" style="font-size:16px;color:#fff;">check_circle</i> Mark Lesson Done (' + done + '/' + inputs.length + ')';
+          saveBtn.innerHTML = '<i class="material-icons" style="font-size:16px;color:#fff;">check_circle</i> Save &mdash; Completed (' + done + '/' + inputs.length + ')';
           saveBtn.classList.remove("btn-primary");
           saveBtn.classList.add("btn-success");
         } else {
-          saveBtn.innerHTML = '<i class="material-icons" style="font-size:16px;color:#fff;">save</i> Save In Progress (' + done + '/' + inputs.length + ')';
+          saveBtn.innerHTML = '<i class="material-icons" style="font-size:16px;color:#fff;">save</i> Save Progress (' + done + '/' + inputs.length + ')';
           saveBtn.classList.remove("btn-success");
           saveBtn.classList.add("btn-primary");
         }
@@ -466,8 +520,7 @@
     var inputs = bodyEl.querySelectorAll("#sylSpokenChkItems input[type='checkbox']");
     if (!inputs.length) return;
 
-    var total = inputs.length, checkedCount = 0;
-    var savePromises = [];
+    var total = inputs.length, items = [];
 
     if (saveBtn) {
       saveBtn.disabled = true;
@@ -475,25 +528,28 @@
     }
 
     Array.prototype.forEach.call(inputs, function (inp) {
-      var isChecked = inp.checked;
-      if (isChecked) checkedCount++;
       var taskKey = inp.getAttribute("data-task-key");
-      if (taskKey) {
-        savePromises.push(P.api("saveTaskProgress", [taskKey, isChecked, me, "Spoken English Check"], { overlay: false }));
-      }
+      if (taskKey) items.push({ taskKey: taskKey, checked: !!inp.checked });
     });
 
-    Promise.all(savePromises).then(function () {
+    // One atomic call: the server saves every tick, reads it back, and returns the status it derived.
+    P.api("saveSpokenChecklist", [cls, subject, lessonName, items, me, "Spoken English Check"], { overlay: false }).then(function (res) {
       P.closeModal("sylSpokenModal");
-      var isFullyDone = (checkedCount === total && total > 0);
-      var msg = isFullyDone
-        ? "All " + total + " checklist items completed! Lesson marked Done."
-        : "Checklist progress saved (" + checkedCount + "/" + total + " completed).";
+      var st = res || {};
+      if (st.conflict) {
+        toast("Someone else changed this lesson at the same moment. The latest saved progress is shown; please tick again if needed.", "err");
+        delete catalogCache[cls + "||" + subject];
+        delete tasksCache[cls + "||" + subject + "||" + lessonName];
+        mgmtReport = null;
+        loadCatalog(cls, subject);
+        return;
+      }
+      var msg = st.state === "TRUE" ? "All " + total + " items completed. Lesson marked Completed."
+        : (st.state === "IN_PROGRESS" ? "Progress saved: In Progress (" + st.done + "/" + st.total + ")." : "Progress saved: Pending (0/" + total + ").");
       toast(msg, "ok");
-
-      // Reload catalog to refresh progress bar and badges
       delete catalogCache[cls + "||" + subject];
       delete tasksCache[cls + "||" + subject + "||" + lessonName];
+      mgmtReport = null;
       loadCatalog(cls, subject);
     }).catch(function (e) {
       toast("Error saving checklist: " + (e.message || e), "err");
@@ -611,7 +667,7 @@
           '<button class="active" data-view="class"><i class="material-icons">grid_view</i> By Class</button>' +
           '<button data-view="date"><i class="material-icons">event</i> By Day</button>' +
         '</div>' +
-        '<div class="mod-toolbar syl-admin-toolbar" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;"><button class="refresh-btn" id="sylRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh</button><button class="refresh-btn syl-edit-catalog-btn" id="sylEditCatalog"><i class="material-icons" style="font-size:16px;">edit_note</i> Edit Syllabus</button><button class="refresh-btn syl-sync-spoken-btn" id="sylSyncSpokenToolbar" title="Check Google Drive &amp; Redo Slicing for Spoken English"><i class="material-icons" style="font-size:16px;">sync</i> Sync Spoken English</button></div>' +
+        '<div class="mod-toolbar syl-admin-toolbar" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;"><button class="refresh-btn" id="sylRefresh"><i class="material-icons" style="font-size:16px;">refresh</i> Refresh</button><button class="refresh-btn syl-edit-catalog-btn" id="sylEditCatalog"><i class="material-icons" style="font-size:16px;">edit_note</i> Edit Syllabus</button><button class="refresh-btn syl-sync-spoken-btn" id="sylSyncSpokenToolbar" title="Upload new Spoken English PDFs"><i class="material-icons" style="font-size:16px;">note_add</i> Add New Spoken English PDFs</button></div>' +
         '<div class="timing-line" id="sylTiming"></div>' +
         '<div id="sylClassView"></div>' +
         '<div id="sylDateView" style="display:none;"></div>' +
@@ -660,6 +716,7 @@
   // lessons still count as behind if their month has passed — the intent is to
   // surface work that is late versus its target month, not the raw pending total.
   function lessonOverdue(l) {
+    if (l && l.type === "SpokenEnglish") return false; // Spoken English is day-wise: no target month
     var done = l.completed === true || String(l.completed).toLowerCase() === "true";
     if (done) return false;
     var mk = normMonth(l.targetMonth);
@@ -684,8 +741,8 @@
     if (curMobileGrade && byGrade[curMobileGrade]) {
       var g = curMobileGrade;
       var subs = byGrade[g].slice().sort(function (a, b) { return String(a.subject).localeCompare(String(b.subject)); });
-      var done = 0, tot = 0, gLag = 0;
-      subs.forEach(function (s) { done += s._done; tot += s._total; gLag += s._lag; });
+      var done = 0, tot = 0, gLag = 0, gOpen = 0;
+      subs.forEach(function (s) { done += s._done; tot += s._total; gLag += s._lag; if (s._open) gOpen++; });
       var pct = tot > 0 ? Math.round(done / tot * 100) : 0;
       var pcolor = pct === 100 ? "#15803d" : (pct >= 50 ? "#0284c7" : (pct > 0 ? "#b45309" : "#64748b"));
 
@@ -702,7 +759,7 @@
           '<div class="syl-mob-banner">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
               '<h3 style="margin:0;font-size:18px;font-weight:900;color:#0f172a;">' + esc(g) + '</h3>' +
-              (gLag > 0 ? '<span class="syl-gbadge behind">' + gLag + ' behind</span>' : '<span class="syl-gbadge ok"><i class="material-icons">check</i>On track</span>') +
+              gBadge(gLag, gOpen) +
             '</div>' +
             '<div class="syl-mob-cc-stats">' +
               '<div class="syl-mob-stat-col"><div class="syl-mob-stat-val">' + tot + '</div><div class="syl-mob-stat-lbl">Total Lessons</div></div>' +
@@ -721,10 +778,11 @@
       subs.forEach(function (s, subIdx) {
         var pk = "d_" + gw(g) + "_" + subIdx;
         _drillCache[pk] = s;
-        var subPct = s._total > 0 ? Math.round(s._done / s._total * 100) : 0;
+        var subPct = s._spoken ? s._sPct : (s._total > 0 ? Math.round(s._done / s._total * 100) : 0);
         var subColor = subPct === 100 ? "#15803d" : (subPct >= 50 ? "#0284c7" : (subPct > 0 ? "#b45309" : "#64748b"));
         var badgeHtml = "";
-        if (s._total === 0) badgeHtml = '<span class="syl-cpill grey">No lesson plan</span>';
+        if (s._spoken) badgeHtml = spokenCardView(s).pill;
+        else if (s._total === 0) badgeHtml = '<span class="syl-cpill grey">No lesson plan</span>';
         else if (s._lag > 0) badgeHtml = '<span class="syl-cpill red"><i class="material-icons">schedule</i>' + s._lag + ' behind</span>';
         else if (s._active > 0) badgeHtml = '<span class="syl-cpill amber">In progress</span>';
         else badgeHtml = '<span class="syl-cpill green"><i class="material-icons">check</i>On track</span>';
@@ -742,7 +800,7 @@
             '</div>' +
             '<div class="syl-mob-cc-prog" style="margin:6px 0;"><div class="syl-mob-cc-bar" style="width:' + subPct + '%;background:' + subColor + ';"></div></div>' +
             '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#64748b;font-weight:700;">' +
-              '<span>' + s._done + '/' + s._total + ' lessons (' + subPct + '%)</span>' +
+              '<span>' + (s._spoken ? s._sDone + '/' + s._sItems + ' items · ' + subPct + '% · ' + s._done + '/' + s._total + ' lessons' : s._done + '/' + s._total + ' lessons (' + subPct + '%)') + '</span>' +
               (clickable ? '<span style="color:#7a151a;font-weight:800;display:inline-flex;align-items:center;">Lessons <i class="material-icons" style="font-size:16px;">chevron_right</i></span>' : '') +
             '</div>' +
           '</div>';
@@ -772,21 +830,21 @@
     }
 
     // Level 1: Classes Overview
-    var totalLag = 0, subjLagCount = 0, classesAffected = 0;
+    var totalLag = 0, subjLagCount = 0, classesAffected = 0, spokenOpenCount = 0;
     grades.forEach(function (g) {
-      var gl = 0; byGrade[g].forEach(function (s) { if (s._lag > 0) { gl += s._lag; subjLagCount++; } });
-      if (gl > 0) classesAffected++; totalLag += gl;
+      var gl = 0, go = 0; byGrade[g].forEach(function (s) { if (s._lag > 0) { gl += s._lag; subjLagCount++; } if (s._open) { go++; spokenOpenCount++; } });
+      if (gl > 0 || go > 0) classesAffected++; totalLag += gl;
     });
 
     var visGrades = grades;
     if (mgmtFilter === "attention") {
       visGrades = grades.filter(function (g) {
-        var gl = 0; byGrade[g].forEach(function (s) { gl += s._lag; });
+        var gl = 0; byGrade[g].forEach(function (s) { gl += s._lag + (s._open ? 1 : 0); });
         return gl > 0;
       });
     } else if (mgmtFilter === "ontrack") {
       visGrades = grades.filter(function (g) {
-        var gl = 0; byGrade[g].forEach(function (s) { gl += s._lag; });
+        var gl = 0; byGrade[g].forEach(function (s) { gl += s._lag + (s._open ? 1 : 0); });
         return gl <= 0;
       });
     }
@@ -829,12 +887,12 @@
     } else {
       visGrades.forEach(function (g) {
         var subs = byGrade[g];
-        var done = 0, tot = 0, gLag = 0;
-        subs.forEach(function (s) { done += s._done; tot += s._total; gLag += s._lag; });
+        var done = 0, tot = 0, gLag = 0, gOpen = 0;
+        subs.forEach(function (s) { done += s._done; tot += s._total; gLag += s._lag; if (s._open) gOpen++; });
         var pct = tot > 0 ? Math.round(done / tot * 100) : 0;
         var pcolor = pct === 100 ? "#15803d" : (pct >= 50 ? "#0284c7" : (pct > 0 ? "#b45309" : "#64748b"));
-        var badge = gLag > 0
-          ? '<span class="syl-mob-cc-badge behind">' + gLag + ' behind</span>'
+        var badge = (gLag > 0 || gOpen > 0)
+          ? '<span class="syl-mob-cc-badge behind">' + (gLag > 0 ? gLag + ' behind' : 'Spoken incomplete') + '</span>'
           : '<span class="syl-mob-cc-badge ok"><i class="material-icons">check</i>On track</span>';
 
         html +=
@@ -945,6 +1003,8 @@
       }
     });
 
+    rep.forEach(spokenAnnotate);
+
     var byGrade = {};
     rep.forEach(function (r) { (byGrade[r.grade] = byGrade[r.grade] || []).push(r); });
     var grades = Object.keys(byGrade).sort(function (a, b) { return gw(a) - gw(b); });
@@ -957,37 +1017,35 @@
     }
 
     // system-wide "behind" summary
-    var totalLag = 0, subjLagCount = 0, classesAffected = 0;
+    var totalLag = 0, subjLagCount = 0, classesAffected = 0, spokenOpenCount = 0;
     grades.forEach(function (g) {
-      var gl = 0; byGrade[g].forEach(function (s) { if (s._lag > 0) { gl += s._lag; subjLagCount++; } });
-      if (gl > 0) classesAffected++; totalLag += gl;
+      var gl = 0, go = 0; byGrade[g].forEach(function (s) { if (s._lag > 0) { gl += s._lag; subjLagCount++; } if (s._open) { go++; spokenOpenCount++; } });
+      if (gl > 0 || go > 0) classesAffected++; totalLag += gl;
     });
 
     var seg = '<div class="syl-viewseg syl-filterseg" id="sylFilterSeg">' +
       '<button class="' + (mgmtFilter === "attention" ? "active" : "") + '" data-f="attention"><i class="material-icons">priority_high</i> Needs attention</button>' +
       '<button class="' + (mgmtFilter === "all" ? "active" : "") + '" data-f="all"><i class="material-icons">apps</i> All classes</button></div>';
 
-    var summary = (totalLag > 0)
+    var summary = (totalLag > 0 || spokenOpenCount > 0)
       ? '<div class="syl-summary behind"><span class="syl-sum-ic"><i class="material-icons">running_with_errors</i></span>' +
-          '<span class="syl-sum-tx"><b>' + subjLagCount + ' subject' + (subjLagCount > 1 ? "s" : "") + ' behind schedule</b>' +
-          '<em>' + totalLag + ' lesson' + (totalLag > 1 ? "s" : "") + ' past their target month · ' + classesAffected + ' class' + (classesAffected > 1 ? "es" : "") + ' affected</em></span></div>'
+          '<span class="syl-sum-tx"><b>' + (subjLagCount + spokenOpenCount) + ' subject' + ((subjLagCount + spokenOpenCount) > 1 ? "s" : "") + ' need attention</b>' +
+          '<em>' + totalLag + ' lesson' + (totalLag > 1 ? "s" : "") + ' past their target month · ' + spokenOpenCount + ' Spoken incomplete · ' + classesAffected + ' class' + (classesAffected > 1 ? "es" : "") + ' affected</em></span></div>'
       : '<div class="syl-summary ok"><span class="syl-sum-ic"><i class="material-icons">verified</i></span>' +
           '<span class="syl-sum-tx"><b>Everything is on track</b><em>No lessons are behind their target month.</em></span></div>';
 
     var body = "";
     grades.forEach(function (g) {
       var subs = byGrade[g].slice().sort(function (a, b) { return String(a.subject).localeCompare(String(b.subject)); });
-      var gLag = 0; subs.forEach(function (s) { gLag += s._lag; });
-      var visSubs = (mgmtFilter === "attention") ? subs.filter(function (s) { return s._lag > 0; }) : subs;
+      var gLag = 0, gOpen = 0; subs.forEach(function (s) { gLag += s._lag; if (s._open) gOpen++; });
+      var visSubs = (mgmtFilter === "attention") ? subs.filter(function (s) { return s._lag > 0 || s._open; }) : subs;
       if (mgmtFilter === "attention" && !visSubs.length) return;
 
       var done = 0, tot = 0; subs.forEach(function (s) { done += s._done; tot += s._total; });
       var pct = tot > 0 ? Math.round(done / tot * 100) : 0;
-      var badge = gLag > 0
-        ? '<span class="syl-gbadge behind">' + gLag + ' behind</span>'
-        : '<span class="syl-gbadge ok"><i class="material-icons">check</i>On track</span>';
+      var badge = gBadge(gLag, gOpen);
       // open grades that need attention; collapse fully-on-track grades in "All"
-      var open = (gLag > 0) ? " open" : "";
+      var open = (gLag > 0 || gOpen > 0) ? " open" : "";
 
       body += '<details class="syl-gsec"' + open + '><summary class="syl-gsum">' +
         '<span class="syl-gname">' + esc(g) + '</span>' + badge +
@@ -1001,11 +1059,12 @@
         var pk = "d_" + gw(g) + "_" + subIdx;
         _drillCache[pk] = s;
         var col, pill;
-        if (s._total === 0) { col = "grey"; pill = '<span class="syl-cpill grey">No lesson plan</span>'; }
+        if (s._spoken) { var scv = spokenCardView(s); col = scv.col; pill = scv.pill; }
+        else if (s._total === 0) { col = "grey"; pill = '<span class="syl-cpill grey">No lesson plan</span>'; }
         else if (s._lag > 0) { col = "red"; pill = '<span class="syl-cpill red"><i class="material-icons">schedule</i>' + s._lag + ' behind schedule</span>'; }
         else if (s._active > 0) { col = "amber"; pill = '<span class="syl-cpill amber">On track · in progress</span>'; }
         else { col = "green"; pill = '<span class="syl-cpill green"><i class="material-icons">check</i>On track</span>'; }
-        var mini = s._total > 0 ? '<span class="syl-submini">' + s._done + '/' + s._total + ' done · ' + pct2(s._done, s._total) + '%</span>' : '';
+        var mini = s._spoken ? spokenCardView(s).mini : s._total > 0 ? '<span class="syl-submini">' + s._done + '/' + s._total + ' done · ' + pct2(s._done, s._total) + '%</span>' : '';
 
         // Any subject that has mapped lessons must be clickable, regardless
         // of whether its lessons are AstraGen tasks or Manual lessons.
@@ -1030,6 +1089,51 @@
   }
   function pct2(d, t) { return t > 0 ? Math.round(d / t * 100) : 0; }
 
+  // Spoken English / Spoken Skills: progress comes ONLY from the ticked checklist items
+  // (the server returns each lesson's item counts). No target month or schedule is used.
+  function spokenAnnotate(s) {
+    var arr = Array.isArray(s.lessonsList) ? s.lessonsList : [];
+    var sp = arr.filter(function (l) { return l.type === "SpokenEnglish"; });
+    if (!sp.length || !/spoken\s*(english|skills)/i.test(String(s.subject || ""))) return;
+    var it = 0, dn = 0, lc = 0, lp = 0;
+    sp.forEach(function (l) {
+      var st = spokenStatusOf(l);
+      it += st.total; dn += st.done;
+      if (st.state === "TRUE") lc++; else if (st.state === "IN_PROGRESS") lp++;
+    });
+    s._spoken = true; s._sItems = it; s._sDone = dn; s._sPct = pct2(dn, it);
+    s._total = sp.length; s._done = lc; s._active = lp; s._lag = 0;
+    s._open = lc < sp.length;
+  }
+  function spokenCardView(s) {
+    var mini = '<span class="syl-submini">' + (s._sItems > 0 ? s._sDone + '/' + s._sItems + ' items · ' + s._sPct + '%' : 'No checklist items') +
+      ' · ' + s._done + '/' + s._total + ' lessons</span>';
+    if (!s._open) return { col: "green", mini: mini, pill: '<span class="syl-cpill green"><i class="material-icons">check</i>Completed · 100%</span>' };
+    if (s._sDone > 0) return { col: "amber", mini: mini, pill: '<span class="syl-cpill amber">In progress · ' + s._sPct + '%</span>' };
+    return { col: "red", mini: mini, pill: '<span class="syl-cpill red">Pending · 0%</span>' };
+  }
+  function gBadge(gLag, gOpen) {
+    if (gLag > 0) return '<span class="syl-gbadge behind">' + gLag + ' behind</span>';
+    if (gOpen > 0) return '<span class="syl-gbadge behind">Spoken incomplete</span>';
+    return '<span class="syl-gbadge ok"><i class="material-icons">check</i>On track</span>';
+  }
+
+  function spokenDrillHtml(lessons) {
+    var arr = lessons.slice().sort(function (x, y) {
+      var nx = parseFloat(String(x.lessonNo || "").replace(/[^\d.]/g, "")), ny = parseFloat(String(y.lessonNo || "").replace(/[^\d.]/g, ""));
+      return (isNaN(nx) ? 9999 : nx) - (isNaN(ny) ? 9999 : ny);
+    });
+    return '<div class="syl-drillmonth"><i class="material-icons">record_voice_over</i>Day-wise lessons</div>' + arr.map(function (l) {
+      var sp = spokenStatusOf(l);
+      var st = sp.state === "TRUE" ? "done" : (sp.state === "IN_PROGRESS" ? "active" : "pending");
+      var lbl = sp.state === "TRUE" ? "Completed" : (sp.state === "IN_PROGRESS" ? "In Progress" : "Pending");
+      return '<div class="syl-drillrow ' + st + '"><span class="syl-drno">' + esc(l.lessonNo || "-") + '</span>' +
+        '<div class="syl-drbody"><div class="syl-drname">' + esc(l.name || "") + '</div>' +
+        '<div class="syl-drmeta"><span class="syl-dtag"><i class="material-icons">checklist</i>' + sp.done + '/' + sp.total + ' items &middot; ' + sp.pct + '%</span></div></div>' +
+        '<span class="syl-dstatus ' + st + '">' + lbl + '</span></div>';
+    }).join("");
+  }
+
   function openDrill(pk) {
     var r = _drillCache[pk]; if (!r) return;
     $("sylDrillTitle").textContent = r.grade + " · " + r.subject;
@@ -1046,6 +1150,13 @@
     var lessons = r.lessonsList || [];
     var body = $("sylDrillBody");
     if (!lessons.length) { body.innerHTML = '<div class="syl-empty"><i class="material-icons">inbox</i>No lessons mapped.</div>'; P.openModal("sylDrillModal"); return; }
+    if (r._spoken || (lessons.length && lessons.every(function (l) { return l.type === "SpokenEnglish"; }))) {
+      if (r._spoken) $("sylDrillMeta").innerHTML = '<span class="syl-cpill green">' + r._done + ' completed</span>' + (r._active > 0 ? '<span class="syl-cpill amber">' + r._active + ' in progress</span>' : '') +
+        '<span class="syl-cpill grey">' + r._sDone + '/' + r._sItems + ' items · ' + r._sPct + '%</span><span class="syl-cpill grey">' + r._total + ' lessons</span>';
+      body.innerHTML = spokenDrillHtml(lessons.filter(function (l) { return l.type === "SpokenEnglish"; }));
+      P.openModal("sylDrillModal");
+      return;
+    }
     var by = {}; lessons.forEach(function (l) { var mk = normMonth(l.targetMonth); (by[mk] = by[mk] || []).push(l); });
     function sec(mk) {
       var arr = by[mk]; if (!arr || !arr.length) return "";
@@ -1791,11 +1902,11 @@
           '<i class="material-icons" style="font-size:24px;color:#15803d;">record_voice_over</i>' +
           '<div>' +
             '<div style="font-size:13px;font-weight:700;color:#166534;">Spoken English Daily Lessons</div>' +
-            '<div style="font-size:11.5px;color:#15803d;">Synced directly from Google Drive. Slices multi-day PDFs per class and extracts authentic Telugu checklists.</div>' +
+            '<div style="font-size:11.5px;color:#15803d;">Upload multi-class PDFs here. Each class lesson is sliced out and a checklist is generated from the PDF itself.</div>' +
           '</div>' +
         '</div>' +
         '<button type="button" class="syl-btn-primary syl-open-spoken-sync-btn" style="background:#15803d;height:32px;font-size:12px;padding:0 12px;cursor:pointer;">' +
-          '<i class="material-icons" style="font-size:15px;">sync</i> Check Drive &amp; Redo Slicing' +
+          '<i class="material-icons" style="font-size:15px;">note_add</i> Add New Spoken English PDFs' +
         '</button>' +
       '</div>' : '';
 
@@ -1805,7 +1916,7 @@
       if (emptySyncBtn) emptySyncBtn.onclick = runSpokenEnglishAutoSync;
       return;
     }
-    var html = spokenBanner + deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-drag" title="Drag to reorder">Move</th><th class="syl-col-no">No.</th><th>Lesson / Chapter Title</th><th class="syl-col-month">Target Month</th><th class="syl-col-link">PDF / Resource Link (Optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
+    var html = spokenBanner + deleteNote + '<div class="syl-editor-table-wrap"><table class="syl-editor-table syl-manual-table"><thead><tr><th class="syl-col-drag" title="Drag to reorder">Move</th><th class="syl-col-no">No.</th><th>Lesson / Chapter Title</th>' + (isSpoken ? '' : '<th class="syl-col-month">Target Month</th>') + '<th class="syl-col-link">PDF / Resource Link (Optional)</th><th class="syl-col-actions">Actions</th></tr></thead><tbody>';
     rows.forEach(function (l) {
       var isDraft = !!l._draftKey;
       var id = isDraft ? l._draftKey : String(l.id);
@@ -1813,7 +1924,7 @@
         '<td class="syl-col-drag"><button type="button" class="syl-ed-drag-handle" draggable="true" aria-label="Drag to reorder" title="Drag to reorder"><i class="material-icons">drag_indicator</i></button></td>' +
         '<td><input class="syl-cell-input syl-cell-number" data-field="lesson_no" value="' + esc(editorManualValue(pair, l, "lesson_no")) + '" placeholder="1" inputmode="text"></td>' +
         '<td><input class="syl-cell-input syl-cell-title" data-field="name" value="' + esc(editorManualValue(pair, l, "name")) + '" placeholder="Enter chapter name"></td>' +
-        '<td><select class="syl-cell-input" data-field="target_month">' + editorMonthOptions(editorManualValue(pair, l, "target_month")) + '</select></td>' +
+        (isSpoken ? '' : '<td><select class="syl-cell-input" data-field="target_month">' + editorMonthOptions(editorManualValue(pair, l, "target_month")) + '</select></td>') +
         '<td><input class="syl-cell-input" data-field="drive_link" type="text" value="' + esc(editorManualValue(pair, l, "drive_link")) + '" placeholder="https://… or spoken_pdf/…"></td>' +
         '<td><div class="syl-row-actions">' + (isDraft ? '<span class="syl-ed-tag manual">New</span>' : '') + '<button type="button" class="btn btn-secondary syl-row-remove" data-editor-delete="' + esc(id) + '"><i class="material-icons">delete_outline</i> Remove</button></div></td></tr>';
     });
@@ -1935,8 +2046,11 @@
     tableRows.forEach(function (tr) {
       var id = tr.getAttribute("data-editor-row"), isDraft = tr.getAttribute("data-editor-draft") === "1";
       function field(name) { var el = tr.querySelector('[data-field="' + name + '"]'); return el ? String(el.value || "").trim() : ""; }
-      var lessonNo = field("lesson_no"), name = field("name"), month = field("target_month"), url = field("drive_link");
       var baseline = isDraft ? null : findEditorLesson(id);
+      var monthEl = tr.querySelector('[data-field="target_month"]');
+      var lessonNo = field("lesson_no"), name = field("name"), url = field("drive_link");
+      // Spoken English rows have no month column: keep whatever is stored, never overwrite it.
+      var month = monthEl ? field("target_month") : String(baseline && baseline.target_month != null ? baseline.target_month : "").trim();
       var changed = isDraft || !baseline ||
         lessonNo !== String(baseline.lesson_no == null ? "" : baseline.lesson_no).trim() ||
         name !== String(baseline.name == null ? "" : baseline.name).trim() ||
@@ -2254,6 +2368,16 @@
   }
 
   function runSpokenEnglishAutoSync() {
+    if (window.SpokenUpload) {
+      window.SpokenUpload.open({ me: me, api: P.api, esc: esc, toast: toast, onDone: function () {
+        catalogCache = {}; mgmtReport = null;
+        try { reloadEditorData(true); } catch (e) {}
+        try { if ($("sylClassView")) loadReport(true); } catch (e) {}
+      } });
+      return;
+    }
+    toast("The upload module did not load. Please refresh the page.", "err");
+    return;
     if (_spokenSyncRunning) {
       P.openModal("sylSpokenSyncModal");
       return;
@@ -2592,8 +2716,7 @@
         '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">' + daysBadges + '</div>' +
         '<div style="font-size:11.5px;color:#15803d;line-height:1.5;">' +
           '• <b>PDFs:</b> 104 individual class PDFs ready directly in <code>Portal/spoken_pdf/</code>.<br>' +
-          '• <b>Target Month:</b> Marked as November across all classes.<br>' +
-          '• <b>Checklists:</b> Authentic Telugu Section 10 items loaded for all teachers in dashboard.<br>' +
+                    '• <b>Checklists:</b> Authentic Telugu Section 10 items loaded for all teachers in dashboard.<br>' +
           '• <b>Updates:</b> Any revised day version was overwritten cleanly without duplicate rows.' +
         '</div>' +
       '</div>';
@@ -2688,7 +2811,7 @@
           '</div>' +
           '<div class="syl-ed-right-controls">' +
             '<input type="file" id="sylEditorFileInput" accept="image/*,application/pdf" style="display:none;">' +
-            '<button type="button" class="syl-btn-secondary" id="sylEditorSyncSpoken" title="Check Google Drive, slice new or revised PDFs, and sync Spoken English catalog across all classes"><i class="material-icons">sync</i> Sync Spoken English</button>' +
+            '<button type="button" class="syl-btn-secondary" id="sylEditorSyncSpoken" title="Upload new Spoken English PDFs. Lessons are detected, sliced per class and checklists are generated"><i class="material-icons">note_add</i> Add New Spoken English PDFs</button>' +
             '<button type="button" class="syl-btn-secondary" id="sylEditorAiUpload" title="Upload Table of Contents (image/PDF) for AI extraction"><i class="material-icons">document_scanner</i> Upload Contents (AI)</button>' +
             '<button type="button" class="syl-btn-secondary" id="sylEditorAdd"><i class="material-icons">add</i> Add Row</button>' +
             '<button type="button" class="syl-btn-primary syl-editor-bulk-save" id="sylEditorBulkSave"><i class="material-icons">save</i> Update Syllabus</button>' +
