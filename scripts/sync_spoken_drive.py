@@ -8,7 +8,7 @@ import pypdfium2
 DRIVE_FOLDER_ID = "1mmwlX_D5VDN_F2VdJAu25UxR3r61BDuP"
 SUPABASE_URL = "https://denmdonkbmcmqfxlunpy.functions.supabase.co/syllabus-api"
 SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlbm1kb25rYm1jbXFmeGx1bnB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxODAzMzYsImV4cCI6MjEwMTc1NjMzNn0.afDstbxNeOzkCCdx5GqUdedJAsQYSgZajYQlDoaIDWk"
-SYNC_SECRET = os.environ.get("SPOKEN_SYNC_SECRET", "sapthagiri-spoken-sync-2026")
+SYNC_SECRET = os.environ.get("SPOKEN_SYNC_SECRET", "").strip()   # no built-in default: the sync is skipped when it is not configured
 
 os.makedirs('Portal/spoken_pdf', exist_ok=True)
 os.makedirs('downloads_cache', exist_ok=True)
@@ -166,6 +166,9 @@ def parse_and_slice_pdf(file_path):
 
 def push_to_supabase(all_lessons):
     """Pushes lessons and tasks directly to Supabase via syllabus-api Edge Function."""
+    if not SYNC_SECRET:
+        print("SPOKEN_SYNC_SECRET is not configured - skipping the database push.")
+        return
     lessons_payload = []
     tasks_payload = []
     
