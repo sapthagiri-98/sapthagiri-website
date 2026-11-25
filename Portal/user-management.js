@@ -21,6 +21,7 @@
     { key: "My Attendance Log",        group: "teacherOnly" },
     { key: "Examinations Tracker",     group: "teacherOnly" },
     { key: "My Schedule",              group: "teacherOnly" },
+    { key: "Fee Follow-up",            group: "teacherOnly" },
     { key: "Staff Attendance Tracker", group: "mgmt" },
     { key: "Holidays Management",      group: "mgmt" },
     { key: "Examinations Management",  group: "mgmt" },
@@ -109,7 +110,8 @@
       return "<tr>" +
         '<td><div class="um-name">' + esc(u.name) + "</div>" +
           '<div class="um-sub">' + (u.biometricCode ? "Emp " + esc(u.biometricCode) : "No biometric") +
-          (u.whatsapp ? " · " + esc(u.whatsapp) : "") + "</div></td>" +
+          (u.whatsapp ? " · " + esc(u.whatsapp) : "") + "</div>" +
+          (window.UMIncharge ? window.UMIncharge.pill(u.name) : "") + "</td>" +
         "<td>" + rolePill(u.role) + "</td>" +
         "<td>" + esc(u.campus) + "</td>" +
         '<td class="um-sub">' + esc(shiftLabel(u)) + '<br><span style="color:#94a3b8">' + esc(workDaysLabel(u)) + "</span></td>" +
@@ -265,6 +267,12 @@
             list.push({ key: "My Schedule", group: "teacherOnly" });
           }
         }
+        if (!list.some(function (m) { return m && m.key === "Fee Follow-up"; })) {
+          var at = -1;
+          for (var j = list.length - 1; j >= 0; j--) { if (list[j] && list[j].group === "teacherOnly") { at = j; break; } }
+          if (at >= 0) list.splice(at + 1, 0, { key: "Fee Follow-up", group: "teacherOnly" });
+          else list.push({ key: "Fee Follow-up", group: "teacherOnly" });
+        }
         MODULES = list;
       } else {
         MODULES = MODULES_FALLBACK;
@@ -280,6 +288,7 @@
       onAction(btn.getAttribute("data-act"), btn.getAttribute("data-id"));
     });
     $("umSearch").addEventListener("input", render);
+    window.addEventListener("um-incharge-changed", function () { if (USERS.length) render(); });
     $("umAdd").addEventListener("click", function () { openEditor(null); });
     $("umClose").addEventListener("click", closeEditor);
     $("umCancel").addEventListener("click", closeEditor);
