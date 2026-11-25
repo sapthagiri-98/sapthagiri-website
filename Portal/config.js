@@ -273,5 +273,16 @@ window.PORTAL_CONFIG = {
 
   SUPABASE_DASH_FNS: [
     "getManagementDashboard"
+  ],
+
+  SUPABASE_FU_BASE:
+    "https://denmdonkbmcmqfxlunpy.supabase.co/functions/v1/followup-api",
+
+  SUPABASE_FU_FNS: [
+    "fuWhoAmI", "fuListAssignments", "fuAssignIncharge", "fuRemoveIncharge", "fuInchargeHistory",
+    "fuMyClass", "fuLogContact", "fuContactHistory",
+    "fuAdminClass", "fuAdminOverview", "fuGetPolicy", "fuSavePolicy",
+    "fuSetHold", "fuClearHold", "fuSetOverride", "fuClearOverride",
+    "fuProposeRestriction", "fuDecideRestriction", "fuAdminActivity"
   ]
 };

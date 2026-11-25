@@ -27,6 +27,7 @@
   var isMgmt = session.role === "Management";
   var readOnly = P.isMobileAdmin(session);
 
+  function paint() {
   var modules = P.getVisibleModules(session);
 
   var cardsHtml;
@@ -70,4 +71,7 @@
     roBanner +
     '<p class="dash-prompt">What would you like to do today?</p>' +
     cardsHtml;
+  }
+  paint();
+  if (P.fuReady) P.fuReady(session).then(function (found) { if (found) paint(); });
 })();

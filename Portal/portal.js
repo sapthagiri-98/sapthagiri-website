@@ -80,6 +80,7 @@
     var examFns  = CONFIG.SUPABASE_EXAM_FNS  || [];   // Examinations
     var feeFns = CONFIG.SUPABASE_FEE_FNS || [];
     var dashFns = CONFIG.SUPABASE_DASH_FNS || [];
+    var fuFns = CONFIG.SUPABASE_FU_FNS || [];            // Class In-charge & Fee Follow-up
     var base = null;
 
     if (attFns.indexOf(fn) >= 0 && CONFIG.SUPABASE_ATT_BASE) base = CONFIG.SUPABASE_ATT_BASE;
@@ -92,6 +93,7 @@
     if (!base && (examFns.indexOf(fn) >= 0 || fn === "marksGetAcademicClasses") && CONFIG.SUPABASE_EXAM_BASE) { base = CONFIG.SUPABASE_EXAM_BASE;}
     if (!base && feeFns.indexOf(fn) >= 0 && CONFIG.SUPABASE_FEE_BASE) base = CONFIG.SUPABASE_FEE_BASE;
     if (!base && dashFns.indexOf(fn) >= 0 && CONFIG.SUPABASE_DASH_BASE) base = CONFIG.SUPABASE_DASH_BASE;
+    if (!base && fuFns.indexOf(fn) >= 0 && CONFIG.SUPABASE_FU_BASE) base = CONFIG.SUPABASE_FU_BASE;
 
     if (base) {
       var sess = Session.get();
@@ -221,8 +223,28 @@
     { id: "studentmgmt", label: "Student Management",        icon: "badge",                  href: "student-management.html", perm: "Student Management", mgmt: true, desc: "Central student database · Admissions · Promotions" },
     { id: "usermgmt",    label: "User Management",           icon: "manage_accounts",        href: "user-management.html",    perm: "User Management", mgmt: true, desc: "Logins · Shift profiles · Campus & module access" },
     { id: "payroll", label: "Payroll Management", icon: "payments", href: "salary-management.html", perm: "Payroll Management", mgmt: true, desc: "Salary assignments · Monthly payroll · Salary slips" },
-    { id: "timetable", label: "Timetable Management", icon: "calendar_view_week", href: "timetable.html", perm: "Timetable Management", mgmt: true, desc: "Master class timetable · Drives Homework & Exams" }
+    { id: "timetable", label: "Timetable Management", icon: "calendar_view_week", href: "timetable.html", perm: "Timetable Management", mgmt: true, desc: "Master class timetable · Drives Homework & Exams" },
+    { id: "followup", label: "Fee Follow-up", icon: "support_agent", href: "class-followup.html", perm: "Fee Follow-up", fu: true, desc: "My class · Parent follow-up (no fee amounts)" }
   ];
+
+  /* Fee Follow-up is shown to Management and to the authorised class in-charge only.
+     The in-charge flag is a UI hint cached per tab session; the server re-checks every request. */
+  function _fuKey(session) { return "pv2_fu:" + ((session && session.name) || ""); }
+  /* Resolves true only when this call newly learns the user IS a class in-charge (so callers can repaint).
+     Management and already-cached users resolve false immediately. Any failure leaves the item hidden. */
+  function fuReady(session) {
+    if (!session || session.role === "Management") return Promise.resolve(false);
+    var k = _fuKey(session), seen = null;
+    try { seen = sessionStorage.getItem(k); } catch (e) {}
+    if (seen === "1") return Promise.resolve(false);
+    if (seen && seen.indexOf("0:") === 0 && Date.now() - Number(seen.slice(2)) < 60000) return Promise.resolve(false); // re-check "no" after 1 min
+    return api("fuWhoAmI", []).then(function (w) {
+      var yes = !!(w && w.classCode);
+      try { sessionStorage.setItem(k, yes ? "1" : "0:" + Date.now()); } catch (e) {}
+      return yes;
+    }).catch(function (e) { if (window.console) console.warn("[Fee Follow-up] in-charge check failed:", e && e.message); return false; });
+  }
+  function _fuInCharge(session) { try { return sessionStorage.getItem(_fuKey(session)) === "1"; } catch (e) { return false; } }
 
   /* Sub-tabs group two+ pages under one sidebar module. Key = sidebar nav id. */
   var SUBTABS = {
@@ -247,6 +269,7 @@
     var isMgmt = session.role === "Management", perms = session.permissions || {};
     var isMob = (window.innerWidth || document.documentElement.clientWidth || 0) < MOBILE_ADMIN_BP;
     return MENU.filter(function (m) {
+      if (m.fu) return isMgmt || (perms[m.perm] !== false && _fuInCharge(session));   // checkbox OFF hides it; ON still needs the in-charge assignment
       // Hide Users page in mobile admin view
       if (isMob && isMgmt && m.id === "usermgmt") return false;
 
@@ -284,7 +307,7 @@
     var side = document.getElementById("nav");
     if (side) side.innerHTML = '<div class="pv2-sidebar-inner"><div class="pv2-sidebar-title">Portal Modules</div>' + items.map(function (m) { return '<a class="pv2-navitem ' + (m.id === eff ? "active" : "") + '" href="' + _href(m) + '"><i class="material-icons">' + m.icon + '</i><span>' + m.label + '</span>' + (m.soon ? '<em class="pv2-soon">Soon</em>' : "") + '</a>'; }).join("") + '</div>';
     var mob = document.getElementById("mobileNav");
-    var SHORT = { home: "Home", attendance: "Attendance", homework: "Homework", schedule: "Schedule", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", feemgmt: "Fee Mgmt", studentmgmt: "Students", usermgmt: "Users", payroll: "Payroll", timetable: "Timetable" };
+    var SHORT = { home: "Home", attendance: "Attendance", homework: "Homework", schedule: "Schedule", attlog: "My Log", stafftrack: "Staff", holidays: "Holidays", syllabus: "Syllabus", exams: "Exams", examstrack: "Exam Track", fees: "Fees", feemgmt: "Fee Mgmt", studentmgmt: "Students", usermgmt: "Users", payroll: "Payroll", timetable: "Timetable", followup: "Follow-up" };
     // Mobile bottom navigation: a permanent "Home" (dashboard launcher) followed
     // by the same permission-filtered modules used on desktop. No duplicate logic.
     var homeItem = '<a class="' + (activeId === "home" ? "active" : "") + '" href="dashboard.html"><i class="material-icons">home</i><span>Home</span></a>';
@@ -383,6 +406,7 @@
     }
     renderChrome({ app: true, userName: session.name });
     renderNav(activeId, session); renderSubtabs(activeId, session);
+    fuReady(session).then(function (found) { if (found) renderNav(activeId, session); });
     _applyReadOnlyClass(session);
     window.addEventListener("resize", function () { _applyReadOnlyClass(session); });
     return session;
@@ -408,7 +432,7 @@
   window.Portal = {
     CONFIG: CONFIG, WA: WA, api: api, overlay: overlay, perf: perf,
     Session: Session, Cache: Cache,
-    renderChrome: renderChrome, renderNav: renderNav, bootPage: bootPage,
+    renderChrome: renderChrome, renderNav: renderNav, bootPage: bootPage, fuReady: fuReady,
     bootDashboard: bootDashboard, getVisibleModules: getVisibleModules, isMobileAdmin: isMobileAdmin,
     openModal: openModal, closeModal: closeModal,
     esc: esc, todayIso: todayIso, thisMonth: thisMonth, prettyDate: prettyDate, monthLabel: monthLabel, isSunday: isSunday, sortGrades: sortGrades, waLink: waLink
